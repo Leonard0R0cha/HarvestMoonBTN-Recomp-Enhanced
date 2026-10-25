@@ -131,15 +131,21 @@ typedef struct {
     char disc_path[1024];
     char save_dir[1024];
     int  scale;                 /* window scale */
+    int  upscale;               /* internal resolution multiplier 1..4 (1 = original) */
+    int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
+    int  perspective;           /* perspective-correct textures (needs pgxp) */
+    int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
     int  fullscreen;
     int  headless;              /* no window / audio (testing) */
     int  max_frames;            /* exit after N frames (testing) */
     int  unthrottled;
     int  screenshot_every;      /* dump frames to disk every N frames (testing) */
+    int  screenshot_start;      /* ... from this frame on (testing) */
     char screenshot_dir[1024];
-    char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." */
+    char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." or "@FILE" */
+    char record_path[1024];      /* testing: write the pad input of the session here */
     int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
-    int  smooth;                /* bilinear filtering when scaling */
+    int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;
     int  allow_fast_forward;     /* hold Tab to run unthrottled */
     int  dump_frame[8];          /* testing: dump RAM at these frames */
@@ -149,4 +155,5 @@ typedef struct {
     int  call_frame[4]; uint32_t call_addr[4], call_a0[4];   /* testing: call guest functions at frames */
     int  fuzz_start;             /* testing: frame at which random input starts */
 } Config;
+enum { SCALING_SHARP_BILINEAR, SCALING_SHARP, SCALING_SMOOTH };   /* Config.scaling; 0 = default */
 extern Config g_cfg;

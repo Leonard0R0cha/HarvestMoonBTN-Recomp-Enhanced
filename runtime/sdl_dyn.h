@@ -5,6 +5,7 @@
 
 #define SDL_DYN_FUNCS(X) \
     X(SDL_ClearQueuedAudio) X(SDL_CloseAudioDevice) X(SDL_CreateRenderer) X(SDL_CreateTexture) \
+    X(SDL_DestroyTexture) X(SDL_SetRenderTarget) X(SDL_SetTextureScaleMode) \
     X(SDL_CreateWindow) X(SDL_Delay) X(SDL_GameControllerClose) X(SDL_GameControllerGetAxis) \
     X(SDL_GameControllerGetButton) X(SDL_GameControllerGetButtonFromString) \
     X(SDL_GameControllerGetJoystick) X(SDL_GameControllerName) X(SDL_GameControllerOpen) \
@@ -37,6 +38,9 @@ static const char *sdl_dyn_load(void) {
 #define SDL_CreateRenderer dyn_SDL_CreateRenderer
 #define SDL_CreateTexture dyn_SDL_CreateTexture
 #define SDL_CreateWindow dyn_SDL_CreateWindow
+#define SDL_DestroyTexture dyn_SDL_DestroyTexture
+#define SDL_SetRenderTarget dyn_SDL_SetRenderTarget
+#define SDL_SetTextureScaleMode dyn_SDL_SetTextureScaleMode
 #define SDL_Delay dyn_SDL_Delay
 #define SDL_GameControllerClose dyn_SDL_GameControllerClose
 #define SDL_GameControllerGetAxis dyn_SDL_GameControllerGetAxis

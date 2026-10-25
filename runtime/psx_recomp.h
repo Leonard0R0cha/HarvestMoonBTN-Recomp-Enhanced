@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "gte.h"
+#include "gpu.h"
 
 #if defined(__GNUC__)
 #define LIKELY(x)   __builtin_expect(!!(x), 1)
@@ -75,6 +76,37 @@ static inline void MEM_W16(uint32_t a, uint32_t v) {
 static inline void MEM_W32(uint32_t a, uint32_t v) {
     if (LIKELY(RAM_HIT(a))) { memcpy(g_ram + (a & 0x1FFFFC), &v, 4); return; }
     mem_write32_slow(a, v);
+}
+
+/* PGXP for 2D sprites placed at GTE-projected points (hooks emitted by tools/recomp.py for the
+ * object projection and the sprite builders): remember the anchor's sub-pixel offset, look it
+ * up when a sprite is built at that anchor, and tag the words the builder writes. */
+static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y) {
+    float px, py, w;
+    if (g_pgxp && gte_sxy_precise(14, &px, &py, &w))
+        gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y,
+                          gte_ground_scale(px, py));
+}
+static inline void SPRITE_BEGIN(uint32_t x, uint32_t y) {
+    if (g_pgxp) gpu_sprite_begin((int16_t)x, (int16_t)y);
+}
+static inline void SPRITE_ALIAS(uint32_t ax, uint32_t ay, uint32_t bx, uint32_t by) {
+    if (g_pgxp) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);
+}
+static inline void SPRITE_TAG(uint32_t a) {
+    if (g_pgxp && RAM_HIT(a)) gpu_sprite_tag(a, MEM_R32(a & ~3u));
+}
+
+/* SWC2 of a screen XY register (SXY0-2/SXYP): the store, plus tagging the word with the
+ * precise position for PGXP (upscaled display only; the game sees a plain store) */
+static inline void PGXP_SWC2(uint32_t a, int reg) {
+    uint32_t v = gte_read_data(reg);
+    MEM_W32(a, v);
+    if (g_pgxp && RAM_HIT(a)) {
+        float x = 0, y = 0, w = 0;
+        int ok = gte_sxy_precise(reg, &x, &y, &w);
+        gpu_pgxp_store(a, v, ok, x, y, w);
+    }
 }
 
 /* unaligned load/store (little endian R3000A semantics) */

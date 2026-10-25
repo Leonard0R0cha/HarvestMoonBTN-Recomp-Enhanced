@@ -11,7 +11,9 @@ executable. No emulator runs the game, and no PlayStation BIOS is needed.
 
 - Plays like the original: same game logic, same graphics, music and timing (NTSC, 59.29 fps)
 - Keyboard and game controller support (Xbox / XInput and other SDL-supported controllers), fully remappable
-- Window or fullscreen, scaled from the original 320×240 (sharp or smooth, 4:3 or square pixels)
+- Window or fullscreen, scaled from the original 320×240 (sharp-bilinear, sharp or smooth, 4:3 or square pixels)
+- Optional higher internal resolution (2×–4×), precise 3D vertices (PGXP), perspective-correct textures
+  and 2D objects that scale with depth
 - Saving works as on the PlayStation, on a standard memory card file usable in emulators too
 - Optional hold-to-fast-forward, screenshots
 
@@ -177,7 +179,9 @@ layout above. All keys and buttons can be changed in `hmbtn.ini`.
 ## Configuration
 
 `hmbtn.ini` next to the executable is a commented settings file; remove the `#` in front of
-an option to change it.
+an option to change it. Or double-click `launcher.pyw` in the same folder (needs Python): it
+edits the same settings and starts the game. How the graphics options work, and what was
+learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 
 | Section | Setting | Default | |
 |---|---|---|---|
@@ -185,7 +189,11 @@ an option to change it.
 |  | `savedir` | `saves` | folder for the memory card file |
 | `[video]` | `scale` | `3` | initial window size as a multiple of 320×240 |
 |  | `fullscreen` | `0` | start in fullscreen |
-|  | `smooth` | `0` | `1` = bilinear (smooth) scaling, `0` = sharp pixels |
+|  | `scaling` | `sharp-bilinear` | `sharp-bilinear` = sharp pixels that stay even at any size, `sharp` = nearest pixel, `smooth` = bilinear |
+|  | `upscale` | `1` | internal resolution 1–4 (2–4 = smoother 3D edges, more CPU) |
+|  | `pgxp` | `0` | `1` = precise 3D vertex positions, no wobble (needs `upscale` 2+) |
+|  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
+|  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
 |  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |
@@ -193,7 +201,7 @@ an option to change it.
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
 
-Command line options: `--fullscreen`, `--scale N`, `--smooth`, `--fastcd`,
+Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--fastcd`,
 `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
 options are described in [docs/TECHNICAL.md](docs/TECHNICAL.md#testing-and-debugging).
 
@@ -264,8 +272,9 @@ tools/
   sheet.py            screenshot contact sheets (testing)
 runtime/              the native PlayStation hardware + BIOS reimplementation, frontend
   tests/              unit tests (GTE, GPU, SPU, memory card file system)
-dist-template/        hmbtn.ini, README.txt and licence text copied into each build
+dist-template/        hmbtn.ini, README.txt, launcher.pyw and licence text copied into each build
 docs/TECHNICAL.md     internals
+docs/GRAPHICS.md      the graphics enhancements (upscaling, PGXP, 2D objects) and findings
 LICENSE               MIT license for this port's source code
 ```
 

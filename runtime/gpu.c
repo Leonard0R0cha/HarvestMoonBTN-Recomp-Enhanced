@@ -29,6 +29,7 @@
  */
 #include "gpu.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -119,6 +120,111 @@ typedef struct {
 } GpuState;
 
 static GpuState S;
+
+/* Draw targets. Everything is drawn into the native VRAM (exact: the game reads it back
+ * and textures come from it). With upscaling, everything is drawn a second time into an
+ * n-times larger copy that is only used for display; polygons are rasterized at the higher
+ * resolution, sprites/lines/transfers are block-scaled. Textures always come from native VRAM. */
+typedef struct {
+    uint16_t *buf;
+    uint32_t sh, xm, ym;            /* log2 row stride, coordinate wrap masks */
+    int32_t  n;                     /* scale (1 = native VRAM) */
+    uint8_t  dcol[4096];            /* dither column for x: (x / n) & 3 */
+} Target;
+static Target TN = { S.vram, 10, 1023, 511, 1, { 0 } };
+static Target TH;                   /* upscaled copy; buf == NULL when off */
+
+/* PGXP shadow RAM: one entry per RAM word, used while the word still holds the tagged value
+ * (w = 0: no precise position; w < 0: sprite tag, below). cmd_addr: RAM address of each word
+ * in S.cmd. */
+int g_pgxp, g_pgxp_persp;
+uint32_t g_gp0_addr = 0xFFFFFFFFu;
+typedef struct { uint32_t value; float x, y, w; int16_t cx, cy; } PgxpWord;
+static PgxpWord pgxp_mem[0x200000 / 4];
+static uint32_t cmd_addr[16];
+
+void gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w)
+{
+    uint32_t i = (addr & 0x1FFFFCu) >> 2;
+    pgxp_mem[i].value = value;
+    pgxp_mem[i].x = x;
+    pgxp_mem[i].y = y;
+    pgxp_mem[i].w = ok ? w : 0.0f;
+}
+
+static int pgxp_lookup(uint32_t addr, uint32_t value, float *x, float *y, float *w)
+{
+    uint32_t i = (addr & 0x1FFFFCu) >> 2;
+    if (addr == 0xFFFFFFFFu || pgxp_mem[i].w <= 0.0f || pgxp_mem[i].value != value)
+        return 0;
+    *x = pgxp_mem[i].x;
+    *y = pgxp_mem[i].y;
+    *w = pgxp_mem[i].w;
+    return 1;
+}
+
+/* Sprites at projected points: anchors of the current and previous frame (by whole-pixel
+ * position) with their sub-pixel offset, depth scale and scale centre (the projected point;
+ * differs from x, y for an alias), the anchor selected for the sprite being built, and its
+ * shift in the upscaled copy while drawing (target pixels). Sprite tags live in pgxp_mem:
+ * x, y = offset, w = -scale, cx, cy = scale centre. */
+typedef struct { float dx, dy, s; int16_t cx, cy; } SpriteMap;
+static struct { int16_t x, y; SpriteMap m; uint32_t gen; } anchors[1024];
+static uint32_t anchor_gen = 1;
+static SpriteMap sprite_map;
+static int32_t sprite_ox, sprite_oy;
+int g_sprite_on, g_sprite_depth;
+
+static uint32_t anchor_slot(int x, int y)
+{
+    return ((uint32_t)(x * 73856093) ^ (uint32_t)(y * 19349663)) & 1023u;
+}
+
+static void anchor_set(int x, int y, const SpriteMap *m)
+{
+    uint32_t i = anchor_slot(x, y);
+    anchors[i].x = (int16_t)x;
+    anchors[i].y = (int16_t)y;
+    anchors[i].m = *m;
+    anchors[i].gen = anchor_gen;
+}
+
+void gpu_sprite_anchor(int x, int y, float dx, float dy, float s)
+{
+    SpriteMap m = { dx, dy, s, (int16_t)x, (int16_t)y };
+    anchor_set(x, y, &m);
+}
+
+void gpu_sprite_begin(int x, int y)
+{
+    uint32_t i = anchor_slot(x, y);
+    g_sprite_on = anchors[i].gen + 1 >= anchor_gen && anchors[i].x == x && anchors[i].y == y;
+    sprite_map = anchors[i].m;
+}
+
+void gpu_sprite_alias(int ax, int ay, int bx, int by)
+{
+    uint32_t i = anchor_slot(ax, ay);
+    if ((ax == bx && ay == by) || anchors[i].gen + 1 < anchor_gen || anchors[i].x != ax || anchors[i].y != ay)
+        return;
+    anchor_set(bx, by, &anchors[i].m);
+}
+
+void gpu_sprite_tag(uint32_t addr, uint32_t value)
+{
+    uint32_t i = (addr & 0x1FFFFCu) >> 2;
+    if (!g_sprite_on) {                     /* built without a known anchor: drop an old sprite tag */
+        if (pgxp_mem[i].w < 0.0f)
+            pgxp_mem[i].w = 0.0f;
+        return;
+    }
+    pgxp_mem[i].value = value;
+    pgxp_mem[i].x = sprite_map.dx;
+    pgxp_mem[i].y = sprite_map.dy;
+    pgxp_mem[i].w = -sprite_map.s;
+    pgxp_mem[i].cx = sprite_map.cx;
+    pgxp_mem[i].cy = sprite_map.cy;
+}
 
 /* dither_lut[y&3][x&3][v]: (v + offset) / 8 saturated to 0..31, v = 0..511 */
 static uint8_t dither_lut[4][4][512];
@@ -280,15 +386,82 @@ static inline uint32_t blend_px(uint32_t bk, uint32_t fr, int mode)
 
 /* Write one pixel. rgb = 15-bit colour, bit15 = value of bit 15 for the
  * written pixel (texel bit 15, or 0 for untextured), blend = -1 or mode. */
-static inline void plot(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
+static inline void plot(const Target *t, uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
 {
-    uint16_t *p = &S.vram[((y & 511u) << 10) | (x & 1023u)];
+    uint16_t *p = &t->buf[((y & t->ym) << t->sh) | (x & t->xm)];
     uint32_t bk = *p;
     if (bk & S.mask_check)
         return;
     if (blend >= 0)
         rgb = blend_px(bk, rgb, blend);
     *p = (uint16_t)(rgb | bit15 | S.mask_set);
+}
+
+/* Sprites and lines: the native pixel, and the n x n block it covers in the upscaled copy. */
+static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
+{
+    plot(&TN, x, y, rgb, bit15, blend);
+    if (TH.buf) {
+        uint32_t n = (uint32_t)TH.n, hx = (x & 1023u) * n, hy = (y & 511u) * n, i, j;
+        if (sprite_ox | sprite_oy) {        /* sprite at a projected point: shifted, kept in the draw area */
+            int32_t sx = (int32_t)hx + sprite_ox, sy = (int32_t)hy + sprite_oy, N = (int32_t)n;
+            int32_t cx0 = S.clip_x0 * N, cx1 = S.clip_x1 * N + N - 1, cy0 = S.clip_y0 * N, cy1 = S.clip_y1 * N + N - 1;
+            for (j = 0; j < n; j++)
+                for (i = 0; i < n; i++) {
+                    int32_t px = sx + (int32_t)i, py = sy + (int32_t)j;
+                    if (px >= cx0 && px <= cx1 && py >= cy0 && py <= cy1)
+                        plot(&TH, (uint32_t)px, (uint32_t)py, rgb, bit15, blend);
+                }
+            return;
+        }
+        if (blend < 0 && !S.mask_check) {   /* opaque: plain stores */
+            uint16_t v = (uint16_t)(rgb | bit15 | S.mask_set);
+            for (j = 0; j < n; j++) {
+                uint16_t *p = &TH.buf[((hy + j) << TH.sh) + hx];
+                for (i = 0; i < n; i++)
+                    p[i] = v;
+            }
+            return;
+        }
+        for (j = 0; j < n; j++)
+            for (i = 0; i < n; i++)
+                plot(&TH, hx + i, hy + j, rgb, bit15, blend);
+    }
+}
+
+/* Upscaled-copy coordinate of native coordinate v (drawing offset included) of a tagged sprite
+ * with scale centre c: shifted by the anchor's offset d and, with depth scaling, scaled by s
+ * about c (unscaled sprites move rigidly, so their pixel art stays crisp). */
+static inline int32_t sprite_coord(int32_t v, int32_t c, float d, float s)
+{
+    if (!g_sprite_depth || s == 1.0f)
+        return v * TH.n + (int32_t)lrintf(d * (float)TH.n);
+    return (int32_t)lrintf(((float)c + d + (float)(v - c) * s) * (float)TH.n);
+}
+
+/* CPU->VRAM data: the n x n block for native pixel (x, y), honouring the mask bit. */
+static void up_block(uint32_t x, uint32_t y, uint16_t v)
+{
+    uint32_t n = (uint32_t)TH.n, i, j;
+    for (j = 0; j < n; j++) {
+        uint16_t *p = &TH.buf[(((y & 511u) * n + j) << TH.sh) + (x & 1023u) * n];
+        for (i = 0; i < n; i++)
+            if (!(p[i] & S.mask_check))
+                p[i] = v;
+    }
+}
+
+/* Rebuild the upscaled copy from native VRAM (after enabling it or loading a state). */
+static void up_refresh(void)
+{
+    uint32_t n = (uint32_t)TH.n, x, y, i, j;
+    for (y = 0; y < 512; y++)
+        for (j = 0; j < n; j++) {
+            uint16_t *p = &TH.buf[(y * n + j) << TH.sh];
+            for (x = 0; x < 1024; x++)
+                for (i = 0; i < n; i++)
+                    p[x * n + i] = S.vram[(y << 10) | x];
+        }
 }
 
 /* 480i with drawing to the displayed field disabled: lines of the field
@@ -308,7 +481,15 @@ typedef struct {
     int32_t x, y;
     int32_t r, g, b;
     int32_t u, v;
+    float w;            /* PGXP view depth, 0 = unknown (upscaled pass only) */
 } TriVtx;
+
+/* Perspective-correct texturing (upscaled pass): planes a + b*x + c*y over target pixels of
+ * u/w, v/w and 1/w, and the triangle's UV range (the result is clamped to it). */
+typedef struct {
+    double u[3], v[3], q[3];
+    int32_t umin, umax, vmin, vmax;
+} Persp;
 
 typedef struct {
     uint32_t r, g, b, u, v;
@@ -337,27 +518,28 @@ static inline void interp_add(Interp *ig, const Interp *d, uint32_t count)
     ig->v += d->v * count;
 }
 
-static void draw_span(const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_bound,
-                      Interp ig, const InterpDelta *d)
+static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_bound,
+                      Interp ig, const InterpDelta *d, const Persp *pp)
 {
     int32_t x, w, x_adj;
+    int32_t cx0 = S.clip_x0 * t->n, cx1 = S.clip_x1 * t->n + t->n - 1;
     uint32_t y;
 
-    if (line_skip(yi))
+    if (line_skip(yi / t->n))
         return;
 
     x_adj = x_start;
     w = x_bound - x_start;
-    x = sext11((uint32_t)x_start);
+    x = t->n == 1 ? sext11((uint32_t)x_start) : x_start;
 
-    if (x < S.clip_x0) {
-        int32_t delta = S.clip_x0 - x;
+    if (x < cx0) {
+        int32_t delta = cx0 - x;
         x_adj += delta;
         x += delta;
         w -= delta;
     }
-    if (x + w > S.clip_x1 + 1)
-        w = S.clip_x1 + 1 - x;
+    if (x + w > cx1 + 1)
+        w = cx1 + 1 - x;
     if (w <= 0)
         return;
 
@@ -367,21 +549,39 @@ static void draw_span(const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_b
     y = (uint32_t)yi;
 
     if (c->textured) {
-        const uint8_t (*drow)[512] = dither_lut[y & 3u];
+        const uint8_t (*drow)[512] = dither_lut[(y / (uint32_t)t->n) & 3u];
+        float pu = 0, pv = 0, pq = 0;
+        if (pp) {
+            pu = (float)(pp->u[0] + pp->u[1] * x + pp->u[2] * yi);
+            pv = (float)(pp->v[0] + pp->v[1] * x + pp->v[2] * yi);
+            pq = (float)(pp->q[0] + pp->q[1] * x + pp->q[2] * yi);
+        }
         for (; w > 0; w--, x++) {
-            uint32_t t = tex_fetch(ig.u >> 24, ig.v >> 24);
-            if (t) {
+            uint32_t tx;
+            if (pp) {
+                float r = 1.0f / pq;
+                int32_t tu = (int32_t)(pu * r + (1.0f / 2048)), tv = (int32_t)(pv * r + (1.0f / 2048));
+                tu = tu < pp->umin ? pp->umin : (tu > pp->umax ? pp->umax : tu);
+                tv = tv < pp->vmin ? pp->vmin : (tv > pp->vmax ? pp->vmax : tv);
+                tx = tex_fetch((uint32_t)tu, (uint32_t)tv);
+                pu += (float)pp->u[1];
+                pv += (float)pp->v[1];
+                pq += (float)pp->q[1];
+            } else {
+                tx = tex_fetch(ig.u >> 24, ig.v >> 24);
+            }
+            if (tx) {
                 uint32_t rgb;
                 if (c->raw) {
-                    rgb = t & 0x7FFFu;
+                    rgb = tx & 0x7FFFu;
                 } else if (c->gouraud) {
-                    rgb = modulate(t, ig.r >> 24, ig.g >> 24, ig.b >> 24,
-                                   c->dither ? drow[(uint32_t)x & 3u] : NO_DITHER_LUT);
+                    rgb = modulate(tx, ig.r >> 24, ig.g >> 24, ig.b >> 24,
+                                   c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
                 } else {
-                    rgb = modulate(t, c->flat_r, c->flat_g, c->flat_b,
-                                   c->dither ? drow[(uint32_t)x & 3u] : NO_DITHER_LUT);
+                    rgb = modulate(tx, c->flat_r, c->flat_g, c->flat_b,
+                                   c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
                 }
-                plot((uint32_t)x, y, rgb, t & 0x8000u, (t & 0x8000u) ? c->blend : -1);
+                plot(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1);
             }
             ig.u += d->dx.u;
             ig.v += d->dx.v;
@@ -390,28 +590,28 @@ static void draw_span(const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_b
             ig.b += d->dx.b;
         }
     } else if (c->gouraud) {
-        const uint8_t (*drow)[512] = dither_lut[y & 3u];
+        const uint8_t (*drow)[512] = dither_lut[(y / (uint32_t)t->n) & 3u];
         for (; w > 0; w--, x++) {
             uint32_t r = ig.r >> 24, g = ig.g >> 24, b = ig.b >> 24, rgb;
             if (c->dither) {
-                const uint8_t *l = drow[(uint32_t)x & 3u];
+                const uint8_t *l = drow[t->dcol[(uint32_t)x & 4095u]];
                 rgb = (uint32_t)l[r] | ((uint32_t)l[g] << 5) | ((uint32_t)l[b] << 10);
             } else {
                 rgb = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
             }
-            plot((uint32_t)x, y, rgb, 0, c->blend);
+            plot(t, (uint32_t)x, y, rgb, 0, c->blend);
             ig.r += d->dx.r;
             ig.g += d->dx.g;
             ig.b += d->dx.b;
         }
     } else if (c->blend < 0 && !S.mask_check) {
-        uint16_t *p = &S.vram[(y & 511u) << 10];
+        uint16_t *p = &t->buf[(y & t->ym) << t->sh];
         uint16_t val = (uint16_t)(c->flat_rgb15 | S.mask_set);
         for (; w > 0; w--, x++)
             p[x] = val;
     } else {
         for (; w > 0; w--, x++)
-            plot((uint32_t)x, y, c->flat_rgb15, 0, c->blend);
+            plot(t, (uint32_t)x, y, c->flat_rgb15, 0, c->blend);
     }
 }
 
@@ -437,13 +637,44 @@ static inline int64_t poly_xfp_step(int32_t dx, int32_t dy)
     return n / dy;
 }
 
-static inline uint32_t idelta(int32_t num, int32_t den)
+static inline uint32_t idelta(const Target *t, int32_t num, int32_t den)
 {
+    if (t->n > 1)   /* upscaled: full precision, truncation would drift over the longer spans */
+        return (uint32_t)(((int64_t)num * 16777216) / den);
     return (uint32_t)(((int64_t)num * 4096) / den) << 12;
 }
 
-static void draw_triangle(const PolyCtx *c, const TriVtx *a, const TriVtx *b, const TriVtx *cc)
+/* Planes of u/w, v/w, 1/w through the three vertices; 0 when a depth is unknown. */
+static int persp_setup(Persp *pp, const TriVtx *a, const TriVtx *b, const TriVtx *c)
 {
+    const double x1 = b->x - a->x, y1 = b->y - a->y, x2 = c->x - a->x, y2 = c->y - a->y;
+    const double den = x1 * y2 - x2 * y1;
+    const TriVtx *v[3] = { a, b, c };
+    double *pl[3] = { pp->u, pp->v, pp->q };
+    int k;
+    if (a->w <= 0.0f || b->w <= 0.0f || c->w <= 0.0f || den == 0.0)
+        return 0;
+    for (k = 0; k < 3; k++) {
+        double f[3];
+        int i;
+        for (i = 0; i < 3; i++)
+            f[i] = (k == 0 ? v[i]->u : k == 1 ? v[i]->v : 1) / (double)v[i]->w;
+        pl[k][1] = ((f[1] - f[0]) * y2 - (f[2] - f[0]) * y1) / den;
+        pl[k][2] = (x1 * (f[2] - f[0]) - x2 * (f[1] - f[0])) / den;
+        pl[k][0] = f[0] - pl[k][1] * a->x - pl[k][2] * a->y;
+    }
+    pp->umin = a->u < b->u ? (a->u < c->u ? a->u : c->u) : (b->u < c->u ? b->u : c->u);
+    pp->umax = a->u > b->u ? (a->u > c->u ? a->u : c->u) : (b->u > c->u ? b->u : c->u);
+    pp->vmin = a->v < b->v ? (a->v < c->v ? a->v : c->v) : (b->v < c->v ? b->v : c->v);
+    pp->vmax = a->v > b->v ? (a->v > c->v ? a->v : c->v) : (b->v > c->v ? b->v : c->v);
+    return 1;
+}
+
+static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, const TriVtx *b, const TriVtx *cc)
+{
+    int32_t cy0 = S.clip_y0 * t->n, cy1 = S.clip_y1 * t->n + t->n - 1;
+    Persp ps;
+    const Persp *pp = (t->n > 1 && c->textured && g_pgxp_persp && persp_setup(&ps, a, b, cc)) ? &ps : NULL;
     TriVtx v[3];
     unsigned cv;
     int core;
@@ -486,10 +717,10 @@ static void draw_triangle(const PolyCtx *c, const TriVtx *a, const TriVtx *b, co
 
     if (v[0].y == v[2].y)
         return;
-    if (v[2].y - v[0].y >= 512)
+    if (v[2].y - v[0].y >= 512 * t->n)
         return;
-    if (abs(v[2].x - v[0].x) >= 1024 || abs(v[2].x - v[1].x) >= 1024 ||
-        abs(v[1].x - v[0].x) >= 1024)
+    if (abs(v[2].x - v[0].x) >= 1024 * t->n || abs(v[2].x - v[1].x) >= 1024 * t->n ||
+        abs(v[1].x - v[0].x) >= 1024 * t->n)
         return;
 
     denom = (v[1].x - v[0].x) * (v[2].y - v[1].y) - (v[2].x - v[1].x) * (v[1].y - v[0].y);
@@ -500,30 +731,33 @@ static void draw_triangle(const PolyCtx *c, const TriVtx *a, const TriVtx *b, co
 #define CALC_DY(f) ((v[1].x - v[0].x) * (v[2].f - v[1].f) - (v[2].x - v[1].x) * (v[1].f - v[0].f))
     memset(&d, 0, sizeof(d));
     if (c->gouraud) {
-        d.dx.r = idelta(CALC_DX(r), denom);
-        d.dx.g = idelta(CALC_DX(g), denom);
-        d.dx.b = idelta(CALC_DX(b), denom);
-        d.dy.r = idelta(CALC_DY(r), denom);
-        d.dy.g = idelta(CALC_DY(g), denom);
-        d.dy.b = idelta(CALC_DY(b), denom);
+        d.dx.r = idelta(t, CALC_DX(r), denom);
+        d.dx.g = idelta(t, CALC_DX(g), denom);
+        d.dx.b = idelta(t, CALC_DX(b), denom);
+        d.dy.r = idelta(t, CALC_DY(r), denom);
+        d.dy.g = idelta(t, CALC_DY(g), denom);
+        d.dy.b = idelta(t, CALC_DY(b), denom);
     }
     if (c->textured) {
-        d.dx.u = idelta(CALC_DX(u), denom);
-        d.dx.v = idelta(CALC_DX(v), denom);
-        d.dy.u = idelta(CALC_DY(u), denom);
-        d.dy.v = idelta(CALC_DY(v), denom);
+        d.dx.u = idelta(t, CALC_DX(u), denom);
+        d.dx.v = idelta(t, CALC_DX(v), denom);
+        d.dy.u = idelta(t, CALC_DY(u), denom);
+        d.dy.v = idelta(t, CALC_DY(v), denom);
     }
 #undef CALC_DX
 #undef CALC_DY
 
-    /* Interpolants: core vertex value + 0.5, translated back to (0,0). */
+    /* Interpolants: core vertex value + 0.5, translated back to (0,0). Upscaled, UVs get only
+     * 2^-11 (more than the fixed-point drift over a span): the texel is read where coverage is
+     * decided, inside the triangle, so it never comes from beyond the polygon's UV range. */
     {
         const TriVtx *cvx = &v[core];
+        const uint32_t uv_bias = t->n > 1 ? (1u << 13) : (1u << 23);
         ig.r = ((uint32_t)cvx->r << 24) + (1u << 23);
         ig.g = ((uint32_t)cvx->g << 24) + (1u << 23);
         ig.b = ((uint32_t)cvx->b << 24) + (1u << 23);
-        ig.u = ((uint32_t)cvx->u << 24) + (1u << 23);
-        ig.v = ((uint32_t)cvx->v << 24) + (1u << 23);
+        ig.u = ((uint32_t)cvx->u << 24) + uv_bias;
+        ig.v = ((uint32_t)cvx->v << 24) + uv_bias;
         interp_add(&ig, &d.dx, (uint32_t)(-cvx->x));
         interp_add(&ig, &d.dy, (uint32_t)(-cvx->y));
     }
@@ -577,20 +811,20 @@ static void draw_triangle(const PolyCtx *c, const TriVtx *a, const TriVtx *b, co
                 yi--;
                 lc -= ls;
                 rc -= rs;
-                y = sext11((uint32_t)yi);
-                if (y < S.clip_y0)
+                y = t->n == 1 ? sext11((uint32_t)yi) : yi;
+                if (y < cy0)
                     break;
-                if (y > S.clip_y1)
+                if (y > cy1)
                     continue;
-                draw_span(c, yi, fp_int(lc), fp_int(rc), ig, &d);
+                draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
             }
         } else {
             while (yi < yb) {
-                int32_t y = sext11((uint32_t)yi);
-                if (y > S.clip_y1)
+                int32_t y = t->n == 1 ? sext11((uint32_t)yi) : yi;
+                if (y > cy1)
                     break;
-                if (y >= S.clip_y0)
-                    draw_span(c, yi, fp_int(lc), fp_int(rc), ig, &d);
+                if (y >= cy0)
+                    draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
                 yi++;
                 lc += ls;
                 rc += rs;
@@ -611,7 +845,7 @@ static void cmd_polygon(const uint32_t *p)
     TriVtx v[4];
     PolyCtx c;
     uint32_t clut = 0, tpage = 0;
-    int i, idx = 0;
+    int i, idx = 0, xyi[4];
 
     for (i = 0; i < nv; i++) {
         uint32_t col, xy;
@@ -622,6 +856,8 @@ static void cmd_polygon(const uint32_t *p)
         v[i].r = (int32_t)(col & 0xFFu);
         v[i].g = (int32_t)((col >> 8) & 0xFFu);
         v[i].b = (int32_t)((col >> 16) & 0xFFu);
+        v[i].w = 0.0f;
+        xyi[i] = idx;
         xy = p[idx++];
         v[i].x = sext11(xy) + S.offs_x;
         v[i].y = sext11(xy >> 16) + S.offs_y;
@@ -659,9 +895,40 @@ static void cmd_polygon(const uint32_t *p)
         c.flat_r == 0x80 && c.flat_g == 0x80 && c.flat_b == 0x80)
         c.raw = 1;
 
-    draw_triangle(&c, &v[0], &v[1], &v[2]);
+    draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
     if (quad)
-        draw_triangle(&c, &v[1], &v[2], &v[3]);
+        draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
+    if (TH.buf) {
+        const PgxpWord *st = NULL;
+        if (g_pgxp) {           /* a 2D sprite quad built at a projected point: every corner tagged alike */
+            const PgxpWord *t0 = &pgxp_mem[(cmd_addr[xyi[0]] & 0x1FFFFCu) >> 2];
+            int same = 1;
+            for (i = 0; i < nv && same; i++) {
+                const PgxpWord *t = &pgxp_mem[(cmd_addr[xyi[i]] & 0x1FFFFCu) >> 2];
+                same = cmd_addr[xyi[i]] != 0xFFFFFFFFu && t->w < 0.0f && t->value == p[xyi[i]] && t->x == t0->x &&
+                       t->y == t0->y && t->w == t0->w && t->cx == t0->cx && t->cy == t0->cy;
+            }
+            if (same)
+                st = t0;
+        }
+        for (i = 0; i < nv; i++) {
+            float fx, fy, fw;
+            if (g_pgxp && pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &fx, &fy, &fw)) {
+                v[i].x = (int32_t)lrintf((fx + (float)S.offs_x) * (float)TH.n);
+                v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
+                v[i].w = fw;
+            } else if (st) {
+                v[i].x = sprite_coord(v[i].x, st->cx + S.offs_x, st->x, -st->w);
+                v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, -st->w);
+            } else {
+                v[i].x *= TH.n;
+                v[i].y *= TH.n;
+            }
+        }
+        draw_triangle(&TH, &c, &v[0], &v[1], &v[2]);
+        if (quad)
+            draw_triangle(&TH, &c, &v[1], &v[2], &v[3]);
+    }
 }
 
 /* ======================================================================= */
@@ -738,7 +1005,7 @@ static void draw_line(LinePt p0, LinePt p1, int gouraud, int blend)
             } else {
                 rgb = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
             }
-            plot(x, y, rgb, 0, blend);
+            plot2(x, y, rgb, 0, blend);
         }
 
         cx += sx;
@@ -874,22 +1141,74 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
                     uint32_t t = tex_fetch(ur, v);
                     if (t) {
                         uint32_t rgb = raw ? (t & 0x7FFFu) : modulate(t, r, g, b, NO_DITHER_LUT);
-                        plot((uint32_t)x, (uint32_t)y, rgb, t & 0x8000u,
-                             (t & 0x8000u) ? blend : -1);
+                        plot2((uint32_t)x, (uint32_t)y, rgb, t & 0x8000u,
+                              (t & 0x8000u) ? blend : -1);
                     }
                     ur = (uint8_t)(ur + u_inc);
                 }
-            } else if (blend < 0 && !S.mask_check) {
+            } else if (blend < 0 && !S.mask_check && !TH.buf) {
                 uint16_t *row = &S.vram[((uint32_t)y & 511u) << 10];
                 uint16_t val = (uint16_t)(fill | S.mask_set);
                 for (x = x_start; x < x_bound; x++)
                     row[x] = val;
             } else {
                 for (x = x_start; x < x_bound; x++)
-                    plot((uint32_t)x, (uint32_t)y, fill, 0, blend);
+                    plot2((uint32_t)x, (uint32_t)y, fill, 0, blend);
             }
         }
         v = (uint8_t)(v + v_inc);
+    }
+}
+
+/* The upscaled copy of a tagged sprite rectangle scaled with depth: the target pixels between
+ * its scaled corners, each taking the texel under its centre (nearest, like the native sprite). */
+static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uint32_t u0, uint32_t v0,
+                               uint32_t color, int tex, int raw, int blend, const PgxpWord *t)
+{
+    const int32_t n = TH.n, cx = t->cx + S.offs_x, cy = t->cy + S.offs_y;
+    const float s = -t->w, fn = (float)n;
+    uint32_t r = color & 0xFFu, g = (color >> 8) & 0xFFu, b = (color >> 16) & 0xFFu;
+    uint32_t fill = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
+    int32_t X0 = sprite_coord(x0, cx, t->x, s), X1 = sprite_coord(x0 + w, cx, t->x, s);
+    int32_t Y0 = sprite_coord(y0, cy, t->y, s), Y1 = sprite_coord(y0 + h, cy, t->y, s);
+    uint8_t us = (uint8_t)u0;
+    int u_inc = 1, v_inc = 1;
+    int32_t px, py;
+
+    if (tex) {
+        if (S.flip_x) {
+            u_inc = -1;
+            us |= 1;
+        }
+        if (S.flip_y)
+            v_inc = -1;
+        if (!raw && color == 0x808080u)
+            raw = 1;
+    }
+    if (X0 < S.clip_x0 * n) X0 = S.clip_x0 * n;
+    if (Y0 < S.clip_y0 * n) Y0 = S.clip_y0 * n;
+    if (X1 > (S.clip_x1 + 1) * n) X1 = (S.clip_x1 + 1) * n;
+    if (Y1 > (S.clip_y1 + 1) * n) Y1 = (S.clip_y1 + 1) * n;
+
+    for (py = Y0; py < Y1; py++) {
+        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / s + (float)(cy - y0));
+        uint8_t vr;
+        if (line_skip(py / n))
+            continue;
+        ty = ty < 0 ? 0 : ty >= h ? h - 1 : ty;
+        vr = (uint8_t)(v0 + (uint32_t)(ty * v_inc));
+        for (px = X0; px < X1; px++) {
+            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / s + (float)(cx - x0));
+            tx = tx < 0 ? 0 : tx >= w ? w - 1 : tx;
+            if (tex) {
+                uint32_t tt = tex_fetch((uint8_t)(us + (uint32_t)(tx * u_inc)), vr);
+                if (tt)
+                    plot(&TH, (uint32_t)px, (uint32_t)py, raw ? (tt & 0x7FFFu) : modulate(tt, r, g, b, NO_DITHER_LUT),
+                         tt & 0x8000u, (tt & 0x8000u) ? blend : -1);
+            } else {
+                plot(&TH, (uint32_t)px, (uint32_t)py, fill, 0, blend);
+            }
+        }
     }
 }
 
@@ -931,7 +1250,23 @@ static void cmd_rect(const uint32_t *p)
     x = sext11((uint32_t)(x + S.offs_x));
     y = sext11((uint32_t)(y + S.offs_y));
 
+    if (TH.buf && g_pgxp && cmd_addr[1] != 0xFFFFFFFFu) {   /* sprite built at a projected point */
+        const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
+        if (t->w < 0.0f && t->value == p[1]) {
+            if (g_sprite_depth && t->w != -1.0f) {          /* scaled: native as usual, then the copy */
+                uint16_t *hb = TH.buf;
+                TH.buf = NULL;
+                draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
+                TH.buf = hb;
+                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t);
+                return;
+            }
+            sprite_ox = sprite_coord(0, 0, t->x, 1.0f);
+            sprite_oy = sprite_coord(0, 0, t->y, 1.0f);
+        }
+    }
     draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
+    sprite_ox = sprite_oy = 0;
 }
 
 /* ======================================================================= */
@@ -957,6 +1292,15 @@ static void cmd_fill(const uint32_t *p)
         row = &S.vram[dy << 10];
         for (x = 0; x < w; x++)
             row[(x0 + x) & 1023] = val;
+        if (TH.buf) {
+            int32_t n = TH.n, i, j;
+            for (j = 0; j < n; j++) {
+                uint16_t *hrow = &TH.buf[(uint32_t)(dy * n + j) << TH.sh];
+                for (x = 0; x < w; x++)
+                    for (i = 0; i < n; i++)
+                        hrow[((x0 + x) & 1023) * n + i] = val;
+            }
+        }
     }
 }
 
@@ -991,6 +1335,30 @@ static void cmd_copy(const uint32_t *p)
             }
         }
     }
+
+    /* the upscaled copy: same copy at n x the size, keeping its detail */
+    if (TH.buf) {
+        int32_t n = TH.n, W = 1024 * n, H = 512 * n, k;
+        uint16_t htmp[128 * 4];
+        for (y = 0; y < h * n; y++) {
+            int32_t ys = sy * n + y, yd = dy * n + y;
+            const uint16_t *srow = &TH.buf[(uint32_t)(ys % H) << TH.sh];
+            uint16_t *drow = &TH.buf[(uint32_t)(yd % H) << TH.sh];
+            for (x = 0; x < w * n; x += 128 * n) {
+                k = w * n - x < 128 * n ? w * n - x : 128 * n;
+                for (i = 0; i < k; i++) {
+                    int32_t xs = sx * n + x + i;
+                    htmp[i] = srow[xs >= W ? xs - W : xs];
+                }
+                for (i = 0; i < k; i++) {
+                    int32_t xd = dx * n + x + i;
+                    uint16_t *dp = &drow[xd >= W ? xd - W : xd];
+                    if (!(*dp & S.mask_check))
+                        *dp = (uint16_t)(htmp[i] | S.mask_set);
+                }
+            }
+        }
+    }
 }
 
 static void vram_write_word(uint32_t w)
@@ -1000,6 +1368,8 @@ static void vram_write_word(uint32_t w)
         uint16_t *dp = &S.vram[((uint32_t)(S.wr_cy & 511) << 10) | (uint32_t)(S.wr_cx & 1023)];
         if (!(*dp & S.mask_check))
             *dp = (uint16_t)((w & 0xFFFFu) | S.mask_set);
+        if (TH.buf)
+            up_block((uint32_t)S.wr_cx, (uint32_t)S.wr_cy, (uint16_t)((w & 0xFFFFu) | S.mask_set));
         w >>= 16;
         S.wr_cx++;
         if (S.wr_cx == S.wr_x + S.wr_w) {
@@ -1155,6 +1525,7 @@ void gpu_write_gp0(uint32_t w)
 
     if (S.cmd_count == 0)
         S.cmd_need = gp0_cmd_len(w >> 24);
+    cmd_addr[S.cmd_count] = g_gp0_addr;
     S.cmd[S.cmd_count++] = w;
     if (S.cmd_count < S.cmd_need)
         return;
@@ -1361,6 +1732,7 @@ uint32_t gpu_read_status(void)
 
 void gpu_vblank(void)
 {
+    anchor_gen++;
     if (S.disp_mode & 0x20u)
         S.field ^= 1u;
     else
@@ -1426,15 +1798,34 @@ void gpu_get_display(GpuDisplay *d)
 void gpu_render_display(uint32_t *out, int *w, int *h)
 {
     GpuDisplay d;
-    int x, y;
+    int x, y, n;
 
     gpu_get_display(&d);
-    *w = d.width;
-    *h = d.height;
+    n = (TH.buf && !d.is_24bit) ? TH.n : 1;    /* 24-bit (video) is shown at native size */
+    *w = d.width * n;
+    *h = d.height * n;
 
     if (!d.enabled) {
-        for (y = 0; y < d.width * d.height; y++)
+        for (y = 0; y < *w * *h; y++)
             out[y] = 0xFF000000u;
+        return;
+    }
+
+    if (n > 1) {
+        int W = 1024 * n;
+        for (y = 0; y < *h; y++) {
+            const uint16_t *row = &TH.buf[(uint32_t)((d.vram_y * n + y) % (512 * n)) << TH.sh];
+            uint32_t *o = out + (size_t)y * (size_t)*w;
+            for (x = 0; x < *w; x++) {
+                int hx = d.vram_x * n + x;
+                uint32_t p = row[hx >= W ? hx - W : hx];
+                uint32_t r = p & 31u, g = (p >> 5) & 31u, b = (p >> 10) & 31u;
+                r = (r << 3) | (r >> 2);
+                g = (g << 3) | (g >> 2);
+                b = (b << 3) | (b >> 2);
+                o[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
+            }
+        }
         return;
     }
 
@@ -1476,13 +1867,45 @@ const uint16_t *gpu_vram(void)
 
 void gpu_init(void)
 {
+    int x;
     if (!dither_lut_ready)
         build_dither_lut();
+    for (x = 0; x < 4096; x++)
+        TN.dcol[x] = (uint8_t)(x & 3);
     memset(&S, 0, sizeof(S));
     S.tex_disable_allow = 0;
     S.read_latch = 0;
     S.line_parity = 0;
     soft_reset();
+    if (TH.buf)
+        up_refresh();
+}
+
+void gpu_set_upscale(int n)
+{
+    uint32_t sh, x;
+    free(TH.buf);
+    TH.buf = NULL;
+    if (n < 2)
+        return;
+    if (n > 4)
+        n = 4;
+    sh = n == 2 ? 11u : 12u;   /* power-of-two row stride: 2048 or 4096 halfwords */
+    TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
+    if (!TH.buf)
+        return;
+    TH.sh = sh;
+    TH.xm = (1u << sh) - 1u;
+    TH.ym = (1u << (sh - 1u)) - 1u;
+    TH.n = n;
+    for (x = 0; x < 4096; x++)
+        TH.dcol[x] = (uint8_t)((x / (uint32_t)n) & 3u);
+    up_refresh();
+}
+
+int gpu_upscale(void)
+{
+    return TH.buf ? TH.n : 1;
 }
 
 size_t gpu_state_size(void)
@@ -1500,4 +1923,6 @@ void gpu_load_state(const void *src)
     if (!dither_lut_ready)
         build_dither_lut();
     memcpy(&S, src, sizeof(S));
+    if (TH.buf)
+        up_refresh();
 }

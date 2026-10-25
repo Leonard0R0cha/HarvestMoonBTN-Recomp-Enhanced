@@ -380,6 +380,30 @@ def R(n):
     return '0' if n == 0 else 'R[%d]' % n
 
 
+# Game-specific hooks for PGXP on 2D sprites placed at GTE-projected points (field objects,
+# characters): the object projection (8001DFD4) remembers each anchor's sub-pixel offset right
+# after it stores the whole-pixel x (v1) / y (v0). The sprite builders look the anchor up on
+# entry and tag every word they write: 80016280 (rectangles; anchor x/y in its 7th/8th
+# arguments at sp+24/28), 800165D8 (multi-part quads, e.g. villagers; 6th/7th at sp+20/24) and
+# 80016C08 (single quads, e.g. the player; x in a3, y in the 5th argument at sp+16).
+# The farm's field object loop (800D93C8) draws big objects at anchor (sp+48/52) + a y offset;
+# at its last argument store (800D9590, x/y arguments at sp+16 / v0) the point becomes an alias.
+SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2]);',
+              0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);'}
+ENTRY_HOOKS = {0x80016280: 'SPRITE_BEGIN(MEM_R16(R[29] + 24u), MEM_R16(R[29] + 28u));',
+               0x800165D8: 'SPRITE_BEGIN(MEM_R16(R[29] + 20u), MEM_R16(R[29] + 24u));',
+               0x80016C08: 'SPRITE_BEGIN(R[7], MEM_R16(R[29] + 16u));'}
+TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08}
+
+
+def with_hooks(i, s, fn_start):
+    if i.addr in SITE_HOOKS:
+        s += ' ' + SITE_HOOKS[i.addr]
+    if fn_start in TAG_STORES_IN and i.mn in ('sb', 'sh', 'sw'):
+        s += ' SPRITE_TAG(%s);' % addr_expr(i)
+    return s
+
+
 def addr_expr(i):
     if i.rs == 0:
         return '0x%08Xu' % (i.simm & 0xFFFFFFFF)
@@ -499,6 +523,8 @@ def emit_simple(i, mod):
     if m == 'lwc2':
         return 'gte_write_data(%d, MEM_R32(%s));' % (rt, ae)
     if m == 'swc2':
+        if 12 <= rt <= 15:      # screen XY: also tagged for PGXP
+            return 'PGXP_SWC2(%s, %d);' % (ae, rt)
         return 'MEM_W32(%s, gte_read_data(%d));' % (ae, rt)
     if m == 'mfc0':
         return W(rt, 'cop0_read(c, %d)' % rd) or 'cop0_read(c, %d);' % rd
@@ -571,6 +597,8 @@ class Emitter:
         name = self.fname(mod, fi.start)
         P('void %s(CPU *c) {' % name)
         P('  FUNC_ENTER(0x%08Xu);' % fi.start)
+        if fi.start in ENTRY_HOOKS:
+            P('  ' + ENTRY_HOOKS[fi.start])
         order = sorted(fi.body)
         if order[0] != fi.start:
             P('  goto L_%08X;' % fi.start)
@@ -615,7 +643,7 @@ class Emitter:
                     flush()
                 s = emit_simple(i, mod)
                 if s:
-                    P('  ' + s + '  /* %08x: %s */' % (a, i))
+                    P('  ' + with_hooks(i, s, fi.start) + '  /* %08x: %s */' % (a, i))
                 ft = a + 4
                 if i.kind == 'invalid':
                     continue
@@ -630,6 +658,8 @@ class Emitter:
             d = mod.insn(a + 4) if mod.in_code(a + 4) else None
             cyc += 1 + (insn_cycles(d) if d is not None else 1)
             ds = emit_simple(d, mod) if d is not None and not d.has_delay else ''
+            if ds:
+                ds = with_hooks(d, ds, fi.start)
             if d is not None and d.has_delay:
                 ds = '/* branch in delay slot ignored */'
             dcomment = '  /* %08x: %s */' % (a + 4, d) if d is not None else ''

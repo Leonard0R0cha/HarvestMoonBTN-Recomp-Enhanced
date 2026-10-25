@@ -96,16 +96,17 @@ static void resolve_bindings(void) {
 
 /* ------------------------------------------------------------------ input script (testing) */
 typedef struct { int frame, dur, end, period; uint16_t btn; } ScriptEv;
-static ScriptEv script[1024];
-static int nscript;
+static ScriptEv *script;
+static int nscript, script_cap;
+
+static const struct { const char *n; uint16_t b; } names[] = {
+    { "UP", PAD_UP }, { "DOWN", PAD_DOWN }, { "LEFT", PAD_LEFT }, { "RIGHT", PAD_RIGHT },
+    { "CROSS", PAD_CROSS }, { "X", PAD_CROSS }, { "CIRCLE", PAD_CIRCLE }, { "O", PAD_CIRCLE },
+    { "SQUARE", PAD_SQUARE }, { "TRIANGLE", PAD_TRIANGLE }, { "L1", PAD_L1 }, { "R1", PAD_R1 },
+    { "L2", PAD_L2 }, { "R2", PAD_R2 }, { "START", PAD_START }, { "SELECT", PAD_SELECT },
+};
 
 static uint16_t parse_buttons(const char *s) {
-    static const struct { const char *n; uint16_t b; } names[] = {
-        { "UP", PAD_UP }, { "DOWN", PAD_DOWN }, { "LEFT", PAD_LEFT }, { "RIGHT", PAD_RIGHT },
-        { "CROSS", PAD_CROSS }, { "X", PAD_CROSS }, { "CIRCLE", PAD_CIRCLE }, { "O", PAD_CIRCLE },
-        { "SQUARE", PAD_SQUARE }, { "TRIANGLE", PAD_TRIANGLE }, { "L1", PAD_L1 }, { "R1", PAD_R1 },
-        { "L2", PAD_L2 }, { "R2", PAD_R2 }, { "START", PAD_START }, { "SELECT", PAD_SELECT },
-    };
     uint16_t b = 0;
     char tok[32];
     while (*s) {
@@ -119,12 +120,27 @@ static uint16_t parse_buttons(const char *s) {
 }
 
 static void parse_script(const char *s) {
-    /* "frame:BUTTONS[:dur],..." or repeating "start-end/period:BUTTONS[:dur]" */
-    static char buf[65536];
-    snprintf(buf, sizeof buf, "%s", s);
+    /* "frame:BUTTONS[:dur],..." or repeating "start-end/period:BUTTONS[:dur]";
+     * "@FILE" reads the events from a file, one per line (e.g. made with --record) */
+    char *buf;
+    if (s[0] == '@') {
+        FILE *f = fopen(s + 1, "rb");
+        long n;
+        if (!f) { LOGE("cannot open input script %s", s + 1); return; }
+        fseek(f, 0, SEEK_END);
+        n = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        buf = calloc((size_t)n + 1, 1);
+        if (fread(buf, 1, (size_t)n, f) != (size_t)n) LOGE("short read of %s", s + 1);
+        fclose(f);
+        for (char *p = buf; *p; p++) if (*p == '\n' || *p == '\r') *p = ',';
+    } else {
+        buf = strdup(s);
+    }
     char *save = NULL;
-    for (char *tok = strtok_r(buf, ",", &save); tok && nscript < 1024; tok = strtok_r(NULL, ",", &save)) {
+    for (char *tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
         ScriptEv e = { 0, 6, 0, 0, 0 };
+        if (!strncmp(tok, "fastcd=", 7)) { g_cfg.fast_cd = atoi(tok + 7); continue; }   /* from --record */
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
         *c1 = 0;
@@ -134,8 +150,49 @@ static void parse_script(const char *s) {
         char *c2 = strchr(c1 + 1, ':');
         if (c2) { *c2 = 0; e.dur = atoi(c2 + 1); }
         e.btn = parse_buttons(c1 + 1);
+        if (nscript == script_cap) {
+            script_cap = script_cap ? script_cap * 2 : 256;
+            script = realloc(script, (size_t)script_cap * sizeof *script);
+        }
         script[nscript++] = e;
     }
+    free(buf);
+}
+
+/* testing: --record FILE writes each run of identical pad state as "frame:BUTTONS:frames",
+ * which --input @FILE replays (the emulation is deterministic, so the replay is the session).
+ * The first line is the fast-CD setting, which changes the game's timing. */
+static FILE *rec_file;
+static uint16_t rec_btn;
+static int rec_start, rec_last;
+
+static void rec_write(int end) {
+    uint16_t done = 0;
+    if (!rec_btn) return;
+    fprintf(rec_file, "%d:", rec_start);
+    for (size_t i = 0; i < sizeof names / sizeof *names; i++)
+        if ((rec_btn & names[i].b) && !(done & names[i].b)) {
+            fprintf(rec_file, "%s%s", done ? "+" : "", names[i].n);
+            done |= names[i].b;
+        }
+    fprintf(rec_file, ":%d\n", end - rec_start);
+    fflush(rec_file);
+}
+
+static void record_frame(int frame, uint16_t b) {
+    if (!rec_file) return;
+    rec_last = frame;
+    if (b == rec_btn) return;
+    rec_write(frame);
+    rec_btn = b;
+    rec_start = frame;
+}
+
+static void record_close(void) {
+    if (!rec_file) return;
+    rec_write(rec_last + 1);
+    fclose(rec_file);
+    rec_file = NULL;
 }
 
 static uint16_t script_buttons(int frame);
@@ -191,7 +248,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     hdr[26] = 1; hdr[28] = 24;
     memcpy(hdr + 34, &img, 4);
     fwrite(hdr, 1, 54, f);
-    uint8_t row[1024 * 3 + 4] = { 0 };
+    static uint8_t row[1024 * 4 * 3 + 4];   /* widest frame: 1024 at upscale 4 */
     for (int y = h - 1; y >= 0; y--) {
         for (int x = 0; x < w; x++) {
             uint32_t p = px[y * w + x];
@@ -254,8 +311,17 @@ static void open_audio(void) {
 }
 
 int platform_init(void) {
-    frame_px = calloc(1024 * 512, sizeof(uint32_t));
+    int up = g_cfg.upscale > 1 ? g_cfg.upscale : 1;
+    frame_px = calloc((size_t)1024 * 512 * up * up, sizeof(uint32_t));
     if (g_cfg.input_script[0]) parse_script(g_cfg.input_script);
+    if (g_cfg.record_path[0]) {
+        rec_file = fopen(g_cfg.record_path, "w");
+        if (rec_file) {
+            fprintf(rec_file, "fastcd=%d\n", g_cfg.fast_cd);   /* changes loading timing: the replay needs it */
+            atexit(record_close);
+        }
+        else LOGE("cannot write %s", g_cfg.record_path);
+    }
     if (g_cfg.headless) return 0;
 #ifndef _WIN32
     const char *err = sdl_dyn_load();
@@ -277,8 +343,7 @@ int platform_init(void) {
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
     if (!ren) { fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, g_cfg.smooth ? "1" : "0");
-    tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 1024, 512);
+    tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 1024 * up, 512 * up);
     if (g_cfg.fullscreen) { SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN_DESKTOP); fullscreen = 1; }
 
     open_audio();
@@ -361,21 +426,55 @@ static uint16_t read_controllers(void) {
 static double t_upload, t_present;
 static int t_n;
 
+/* sharp-bilinear: the frame enlarged by whole numbers (render target of exactly that size) */
+static SDL_Texture *pre;
+static int pre_w, pre_h, pre_ok = 1;
+
+static int prescale_target(int w, int h) {
+    if (pre && pre_w == w && pre_h == h) return 1;
+    if (pre) SDL_DestroyTexture(pre);
+    pre = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, w, h);
+    if (!pre) { LOGW("sharp-bilinear: %s - using smooth scaling", SDL_GetError()); pre_ok = 0; return 0; }
+    SDL_SetTextureScaleMode(pre, SDL_ScaleModeLinear);
+    pre_w = w;
+    pre_h = h;
+    return 1;
+}
+
 static void present(int w, int h) {
     uint64_t f = SDL_GetPerformanceFrequency(), t0 = SDL_GetPerformanceCounter();
     int ww, wh;
+    SDL_Rect src = { 0, 0, w, h }, dst = { 0, 0, 0, 0 };
+    SDL_Texture *show = tex;
     SDL_GetRendererOutputSize(ren, &ww, &wh);
-    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-    SDL_RenderClear(ren);
     if (w > 0 && h > 0) {
-        SDL_Rect src = { 0, 0, w, h };
         SDL_UpdateTexture(tex, &src, frame_px, w * 4);
         double aspect = g_cfg.aspect_4_3 ? 4.0 / 3.0 : (double)w / h;
         int dw = ww, dh = (int)(ww / aspect);
         if (dh > wh) { dh = wh; dw = (int)(wh * aspect); }
-        SDL_Rect dst = { (ww - dw) / 2, (wh - dh) / 2, dw, dh };
-        SDL_RenderCopy(ren, tex, &src, &dst);
+        dst = (SDL_Rect){ (ww - dw) / 2, (wh - dh) / 2, dw, dh };
+        SDL_SetTextureScaleMode(tex, g_cfg.scaling == SCALING_SHARP ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
+        if (g_cfg.scaling == SCALING_SHARP_BILINEAR && pre_ok) {
+            /* enlarge by whole numbers with sharp pixels to at least the output size, then let the
+             * smooth copy do the rest: every source pixel gets the same width on screen (no uneven
+             * pixels sliding over sprites when the picture scrolls), with a 1-pixel blend at edges */
+            int kx = (dw + w - 1) / w, ky = (dh + h - 1) / h;
+            while (kx > 1 && kx * w > 8192) kx--;
+            while (ky > 1 && ky * h > 8192) ky--;
+            if ((kx > 1 || ky > 1) && prescale_target(kx * w, ky * h)) {
+                SDL_Rect pr = { 0, 0, kx * w, ky * h };
+                SDL_SetTextureScaleMode(tex, SDL_ScaleModeNearest);
+                SDL_SetRenderTarget(ren, pre);
+                SDL_RenderCopy(ren, tex, &src, &pr);
+                SDL_SetRenderTarget(ren, NULL);
+                src = pr;
+                show = pre;
+            }
+        }
     }
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_RenderClear(ren);
+    if (w > 0 && h > 0) SDL_RenderCopy(ren, show, &src, &dst);
     uint64_t t1 = SDL_GetPerformanceCounter();
     SDL_RenderPresent(ren);
     uint64_t t2 = SDL_GetPerformanceCounter();
@@ -452,12 +551,15 @@ void platform_frame(void) {
     uint64_t frame = frame_count();
     dump_ram(frame);
     int w = 0, h = 0;
-    bool need_pixels = !g_cfg.headless || (g_cfg.screenshot_every && frame % (uint64_t)g_cfg.screenshot_every == 0) || shot_request;
+    bool shot = g_cfg.screenshot_every && frame >= (uint64_t)g_cfg.screenshot_start &&
+                frame % (uint64_t)g_cfg.screenshot_every == 0;
+    bool need_pixels = !g_cfg.headless || shot || shot_request;
     if (need_pixels) gpu_render_display(frame_px, &w, &h);
-    if (g_cfg.screenshot_every && frame % (uint64_t)g_cfg.screenshot_every == 0) save_screenshot(frame_px, w, h, frame);
+    if (shot) save_screenshot(frame_px, w, h, frame);
 
     if (g_cfg.headless) {
         g_pad_buttons[0] = script_buttons((int)frame);
+        record_frame((int)frame, g_pad_buttons[0]);
         if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
         return;
     }
@@ -496,6 +598,7 @@ void platform_frame(void) {
     }
     uint16_t b = read_controllers();
     if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
+    record_frame((int)frame, g_pad_buttons[0]);
     if (shot_request) { save_screenshot(frame_px, w, h, frame); shot_request = 0; }
     present(w, h);
     throttle();

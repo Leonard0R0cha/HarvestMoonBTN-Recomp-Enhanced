@@ -158,13 +158,25 @@ static void trim(char *s) {
     if (b != s) memmove(s, b, strlen(b) + 1);
 }
 
+static void set_scaling(const char *val) {
+    if (!strcmp(val, "sharp-bilinear")) g_cfg.scaling = SCALING_SHARP_BILINEAR;
+    else if (!strcmp(val, "sharp")) g_cfg.scaling = SCALING_SHARP;
+    else if (!strcmp(val, "smooth")) g_cfg.scaling = SCALING_SMOOTH;
+    else LOGW("unknown scaling '%s' (sharp-bilinear, sharp or smooth)", val);
+}
+
 static void set_option(const char *key, const char *val) {
     if (!strcmp(key, "disc")) snprintf(g_cfg.disc_path, sizeof g_cfg.disc_path, "%s", val);
     else if (!strcmp(key, "savedir")) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", val);
     else if (!strcmp(key, "scale")) g_cfg.scale = atoi(val);
+    else if (!strcmp(key, "upscale")) g_cfg.upscale = atoi(val);
+    else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
+    else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
+    else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
-    else if (!strcmp(key, "smooth")) g_cfg.smooth = atoi(val);
+    else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
+    else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
     else if (!strcmp(key, "fastforward")) g_cfg.allow_fast_forward = atoi(val);
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
@@ -194,13 +206,18 @@ static void usage(void) {
            "usage: hmbtn [options] [HarvestMoonBTN.pak|disc.cue|disc.bin]\n"
            "  --fullscreen          start in fullscreen (F11 toggles)\n"
            "  --scale N             initial window scale (default 3)\n"
+           "  --upscale N           internal resolution 1..4 (default 1 = original 320x240)\n"
+           "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
+           "  --perspective         perspective-correct textures (needs --pgxp)\n"
+           "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
-           "  --smooth              bilinear filtering when scaling\n"
+           "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
            "  --log N               log level 0..4\n"
            "  --verify-data         check the game data pack against its checksums and exit\n"
            "testing options:\n"
-           "  --headless --frames N --unthrottled --shots N --shotdir DIR --input SCRIPT --trace\n");
+           "  --headless --frames N --unthrottled --shots N --shotstart F --shotdir DIR --input SCRIPT|@FILE\n"
+           "  --record FILE (pad input, replays with --input @FILE) --trace\n");
 }
 
 /* ------------------------------------------------------------------ boot */
@@ -274,17 +291,24 @@ int main(int argc, char **argv) {
         if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(); return 0; }
         else if (!strcmp(a, "--fullscreen")) g_cfg.fullscreen = 1;
         else if (!strcmp(a, "--scale")) { g_cfg.scale = atoi(nx); i++; }
+        else if (!strcmp(a, "--upscale")) { g_cfg.upscale = atoi(nx); i++; }
+        else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
+        else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
+        else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
-        else if (!strcmp(a, "--smooth")) g_cfg.smooth = 1;
+        else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
+        else if (!strcmp(a, "--scaling")) { set_scaling(nx); i++; }
         else if (!strcmp(a, "--log")) { g_log_level = atoi(nx); i++; }
         else if (!strcmp(a, "--headless")) g_cfg.headless = 1;
         else if (!strcmp(a, "--verify-data")) { verify_data = 1; g_cfg.headless = 1; }
         else if (!strcmp(a, "--frames")) { g_cfg.max_frames = atoi(nx); i++; }
         else if (!strcmp(a, "--unthrottled")) g_cfg.unthrottled = 1;
         else if (!strcmp(a, "--shots")) { g_cfg.screenshot_every = atoi(nx); i++; }
+        else if (!strcmp(a, "--shotstart")) { g_cfg.screenshot_start = atoi(nx); i++; }
         else if (!strcmp(a, "--shotdir")) { snprintf(g_cfg.screenshot_dir, sizeof g_cfg.screenshot_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--input")) { snprintf(g_cfg.input_script, sizeof g_cfg.input_script, "%s", nx); i++; }
+        else if (!strcmp(a, "--record")) { snprintf(g_cfg.record_path, sizeof g_cfg.record_path, "%s", nx); i++; }
         else if (!strcmp(a, "--dumpram")) {
             for (int k = 0; k < 8; k++) if (!g_cfg.dump_frame[k]) { g_cfg.dump_frame[k] = atoi(nx); break; }
             i++;
@@ -312,6 +336,8 @@ int main(int argc, char **argv) {
         else if (a[0] != '-') snprintf(g_cfg.disc_path, sizeof g_cfg.disc_path, "%s", a);
         else { usage(); return 1; }
     }
+    if (g_cfg.upscale < 1) g_cfg.upscale = 1;
+    if (g_cfg.upscale > 4) g_cfg.upscale = 4;
     if (!g_cfg.save_dir[0]) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%ssaves", exe_dir);
     if (!log_file && !g_cfg.headless) {
         char lp[1200];
@@ -366,6 +392,12 @@ int main(int argc, char **argv) {
     mem_reset();
     gte_reset();
     gpu_init();
+    gpu_set_upscale(g_cfg.upscale);
+    if (gpu_upscale() != g_cfg.upscale) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
+    g_pgxp = g_cfg.pgxp && gpu_upscale() > 1;
+    g_pgxp_persp = g_pgxp && g_cfg.perspective;
+    g_sprite_depth = g_pgxp && g_cfg.sprite_depth;
+    if (g_cfg.pgxp && !g_pgxp) LOGW("pgxp has no effect without upscale 2 or more");
     spu_init();
     dma_init();
     cdrom_init();

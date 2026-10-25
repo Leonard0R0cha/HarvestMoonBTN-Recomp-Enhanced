@@ -732,6 +732,314 @@ static void test_state(void)
     free(buf);
 }
 
+/* ---------------------------------------------------------------------- */
+/* upscaling: native VRAM must not change; sprites/fills/copies/lines are exact n x n blocks */
+
+static uint32_t argb15(uint16_t p)
+{
+    uint32_t r = p & 31u, g = (p >> 5) & 31u, b = (p >> 10) & 31u;
+    return 0xFF000000u | (((r << 3) | (r >> 2)) << 16) | (((g << 3) | (g >> 2)) << 8) | ((b << 3) | (b >> 2));
+}
+
+static void screen_320(void)
+{
+    clear_vram();
+    env_default();
+    gp0(0xE4000000 | (239u << 10) | 319u);           /* draw area 320x240 */
+    gp1(0x08000001);                                 /* display 320x240 at (0,0) */
+    gp1(0x06000000 | (0xC60u << 12) | 0x260u);
+    gp1(0x07000000 | (0x100u << 10) | 0x10u);
+    gp1(0x05000000);
+    gp1(0x03000000);
+}
+
+static void upscale_scene(void)
+{
+    uint16_t tex[256];
+    int i;
+    for (i = 0; i < 256; i++)
+        tex[i] = (uint16_t)(rgb15(i & 31, (i >> 3) & 31, 31 - (i & 31)) | (i % 7 == 0 ? 0x8000 : 0));
+    screen_320();
+    upload(640, 0, 16, 16, tex);
+    gp0(0xE100032A);                                 /* dither, B+F, 15-bit page at x=640 */
+    gp0(0x300000FF); gp0(xy(10, 10)); gp0(0x0000FF00); gp0(xy(200, 30)); gp0(0x00FF0000); gp0(xy(60, 200));
+    gp0(0x2C906050);                                 /* textured quad, modulated */
+    gp0(xy(150, 100)); gp0(0);
+    gp0(xy(300, 90)); gp0(0x012A0000u | 15u);
+    gp0(xy(160, 180)); gp0(15u << 8);
+    gp0(xy(310, 170)); gp0((15u << 8) | 15u);
+    gp0(0x2A303030); gp0(xy(40, 60)); gp0(xy(250, 50)); gp0(xy(30, 160)); gp0(xy(240, 150));
+    gp0(0x40FFFF00); gp0(xy(10, 5)); gp0(xy(300, 8));
+    gp0(0x65000000); gp0(xy(100, 215)); gp0(0); gp0(xy(16, 16));
+    fill(288, 0, 16, 64, 0x2080F0);
+    gp0(0x80000000); gp0(xy(100, 215)); gp0(xy(250, 215)); gp0(xy(16, 16));
+}
+
+/* 1:1 textured quad, marker colour just outside its UV range: at every scale the upscaled
+ * copy must be the native picture enlarged, never showing the marker */
+static void test_upscale_texels(void)
+{
+    static uint16_t tex[32 * 32];
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    int n, w, h, x, y, i;
+
+    for (i = 0; i < 32 * 32; i++)
+        tex[i] = (i % 32 < 16 && i / 32 < 16) ? rgb15(i % 32 + 8, i / 32 + 8, 5) : rgb15(0, 0, 31);
+    for (n = 2; n <= 4; n++) {
+        long bad = 0, marker = 0;
+        gpu_set_upscale(n);
+        screen_320();
+        upload(640, 0, 32, 32, tex);
+        gp0(0x2D000000);
+        gp0(xy(100, 100)); gp0(0);
+        gp0(xy(116, 100)); gp0((0x10Au << 16) | 16u);
+        gp0(xy(100, 116)); gp0(16u << 8);
+        gp0(xy(116, 116)); gp0((16u << 8) | 16u);
+        gpu_render_display(out, &w, &h);
+        for (y = 100 * n; y < 116 * n; y++)
+            for (x = 100 * n; x < 116 * n; x++) {
+                bad += out[y * w + x] != argb15(px(x / n, y / n));
+                marker += out[y * w + x] == argb15(rgb15(0, 0, 31));
+            }
+        CHECK(bad == 0 && marker == 0, "upscale %d: 1:1 texels off by %ld pixels, %ld outside the UV range", n, bad, marker);
+
+        /* the same quad with the texture magnified 4x (u, v = 12..16, marker beyond): still nothing outside */
+        marker = 0;
+        fill(100, 100, 16, 16, 0);
+        gp0(0x2D000000);
+        gp0(xy(100, 100)); gp0((12u << 8) | 12u);
+        gp0(xy(116, 100)); gp0((0x10Au << 16) | (12u << 8) | 16u);
+        gp0(xy(100, 116)); gp0((16u << 8) | 12u);
+        gp0(xy(116, 116)); gp0((16u << 8) | 16u);
+        gpu_render_display(out, &w, &h);
+        for (y = 100 * n; y < 116 * n; y++)
+            for (x = 100 * n; x < 116 * n; x++)
+                marker += out[y * w + x] == argb15(rgb15(0, 0, 31));
+        CHECK(marker == 0, "upscale %d: magnified texture shows %ld pixels outside the UV range", n, marker);
+    }
+    gpu_set_upscale(1);
+    free(out);
+}
+
+static void test_upscale(void)
+{
+    static uint16_t ref[1024 * 512];
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    long native = 0;
+    int n, w, h, x, y;
+
+    gpu_set_upscale(1);
+    upscale_scene();
+    memcpy(ref, gpu_vram(), sizeof ref);
+    for (y = 0; y < 240; y++)
+        for (x = 0; x < 320; x++)
+            native += (ref[y * 1024 + x] & 0x7FFF) != 0;
+
+    for (n = 2; n <= 4; n++) {
+        long hi = 0, blk_bad = 0, want = native * n * n;
+        gpu_set_upscale(n);
+        CHECK(gpu_upscale() == n, "upscale %d enabled", n);
+        upscale_scene();
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "upscale %d: native VRAM changed", n);
+        gpu_render_display(out, &w, &h);
+        CHECK(w == 320 * n && h == 240 * n, "upscale %d: display %dx%d", n, w, h);
+        if (w != 320 * n || h != 240 * n)
+            continue;
+        for (y = 0; y < h; y++)
+            for (x = 0; x < w; x++) {
+                int nx = x / n, ny = y / n;
+                hi += (out[y * w + x] & 0xFFFFFFu) != 0;
+                if ((ny >= 215 && ny < 231 && ((nx >= 100 && nx < 116) || (nx >= 250 && nx < 266))) ||
+                    (nx >= 288 && nx < 304 && ny < 64))
+                    blk_bad += out[y * w + x] != argb15(ref[ny * 1024 + nx]);
+            }
+        CHECK(blk_bad == 0, "upscale %d: %ld sprite/copy/fill/line pixels not block-scaled", n, blk_bad);
+        CHECK(labs(hi - want) * 33 < want, "upscale %d: coverage %ld, expected about %ld", n, hi, want);
+    }
+    gpu_set_upscale(1);
+    free(out);
+}
+
+/* ---------------------------------------------------------------------- */
+/* PGXP: tagged vertex words use their precise position (and depth) in the upscaled copy only */
+
+static void gp0_at(uint32_t w, uint32_t addr)
+{
+    g_gp0_addr = addr;
+    gp0(w);
+    g_gp0_addr = 0xFFFFFFFFu;
+}
+
+/* flat triangle whose vertex words are tagged at integer + d; bad != 0 tags vertex 0 with a stale value */
+static void pgxp_triangle(float d, uint32_t bad)
+{
+    static const int P[3][2] = { { 20, 20 }, { 60, 20 }, { 20, 60 } };
+    int i;
+    screen_320();
+    for (i = 0; i < 3; i++)
+        gpu_pgxp_store(0x1000u + 4u * (uint32_t)i, (bad && !i) ? bad : xy(P[i][0], P[i][1]), 1,
+                       (float)P[i][0] + d, (float)P[i][1] + d, 100.0f);
+    gp0(0x20FFFFFF);
+    for (i = 0; i < 3; i++)
+        gp0_at(xy(P[i][0], P[i][1]), 0x1000u + 4u * (uint32_t)i);
+}
+
+/* textured triangle A(10,100) w=1, B(210,100) w=4, C(10,160) w=1, u = 0 / 63 / 0;
+ * returns the texel u seen at native (110, 101) in the 4x copy (texel red = u / 2) */
+static int persp_u_at_middle(uint32_t *out)
+{
+    uint16_t tex[64];
+    int i, w, h;
+    for (i = 0; i < 64; i++)
+        tex[i] = rgb15(i >> 1, 0, 0);
+    screen_320();
+    upload(640, 0, 64, 1, tex);
+    gpu_pgxp_store(0x2000, xy(10, 100), 1, 10, 100, 1.0f);
+    gpu_pgxp_store(0x2004, xy(210, 100), 1, 210, 100, 4.0f);
+    gpu_pgxp_store(0x2008, xy(10, 160), 1, 10, 160, 1.0f);
+    gp0(0x25000000);
+    gp0_at(xy(10, 100), 0x2000); gp0(0);
+    gp0_at(xy(210, 100), 0x2004); gp0((0x10Au << 16) | 63u);
+    gp0_at(xy(10, 160), 0x2008); gp0(0);
+    gpu_render_display(out, &w, &h);
+    return (int)(((out[404 * w + 440] >> 16) & 0xFFu) >> 3) * 2;
+}
+
+static void test_pgxp(void)
+{
+    static uint16_t ref[1024 * 512];
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    int w, h, u;
+#define HI(x, y) ((out[(y) * w + (x)] & 0xFFFFFFu) != 0)
+
+    gpu_set_upscale(4);
+    g_pgxp = 0;
+    pgxp_triangle(0.5f, 0);
+    memcpy(ref, gpu_vram(), sizeof ref);
+    gpu_render_display(out, &w, &h);
+    CHECK(HI(81, 81), "pgxp off: corner at the integer position");
+
+    g_pgxp = 1;
+    pgxp_triangle(0.5f, 0);
+    CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "pgxp: native VRAM unchanged");
+    gpu_render_display(out, &w, &h);
+    CHECK(!HI(81, 81) && HI(82, 82), "pgxp: corner moved by half a native pixel");
+
+    pgxp_triangle(0.5f, xy(21, 20));
+    gpu_render_display(out, &w, &h);
+    CHECK(HI(81, 81), "pgxp: stale tag ignored");
+
+    u = persp_u_at_middle(out);
+    CHECK(u >= 30 && u <= 32, "affine u at the middle of the edge = %d (expected ~31)", u);
+    g_pgxp_persp = 1;
+    u = persp_u_at_middle(out);
+    CHECK(u >= 10 && u <= 14, "perspective-correct u = %d (expected ~12.6)", u);
+#undef HI
+    g_pgxp = g_pgxp_persp = 0;
+    gpu_set_upscale(1);
+    free(out);
+}
+
+/* Sprites at projected points: a tagged rectangle moves rigidly by its sub-pixel offset in the
+ * upscaled copy (texels stay n x n blocks); untagged or stale ones stay put; native VRAM unchanged */
+static void sprite_scene(int anchored, uint32_t tag_value, float scale)
+{
+    uint16_t tex[16 * 16];
+    int i;
+    for (i = 0; i < 256; i++)
+        tex[i] = rgb15(i % 16 + 4, i / 16 + 4, (i * 7) % 31 + 1);
+    screen_320();
+    upload(640, 0, 16, 16, tex);
+    gp0(0xE100010A);                                  /* 15-bit page at x=640 */
+    gpu_sprite_anchor(100, 100, 0.5f, -0.25f, scale);
+    gpu_sprite_begin(anchored ? 100 : 99, 100);      /* the builder starts at a known anchor or not */
+    gpu_sprite_tag(0x3000, tag_value);               /* ... and writes the position word */
+    gp0(0x65000000); gp0_at(xy(110, 120), 0x3000); gp0(0); gp0(xy(16, 16));
+}
+
+static void test_pgxp_sprite(void)
+{
+    static uint16_t ref[1024 * 512];
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    const int n = 4;
+    int w, h, x, y, i, j;
+    long bad = 0;
+
+    gpu_set_upscale(n);
+    g_pgxp = 0;
+    sprite_scene(1, xy(110, 120), 1.0f);
+    memcpy(ref, gpu_vram(), sizeof ref);
+    g_pgxp = 1;
+    sprite_scene(1, xy(110, 120), 1.0f);
+    CHECK(g_sprite_on, "anchor found");
+    CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "sprite shift: native VRAM unchanged");
+    gpu_render_display(out, &w, &h);
+    for (y = 120; y < 136; y++)
+        for (x = 110; x < 126; x++)
+            for (j = 0; j < n; j++)
+                for (i = 0; i < n; i++)
+                    bad += out[(y * n + j - 1) * w + (x * n + i + 2)] != argb15(px(x, y));
+    CHECK(bad == 0, "tagged sprite: %ld pixels not shifted by (+2,-1) as exact 4x4 texel blocks", bad);
+
+    sprite_scene(0, xy(110, 120), 1.0f);                     /* rebuilt without a known anchor */
+    gpu_render_display(out, &w, &h);
+    CHECK(out[120 * n * w + 110 * n] == argb15(px(110, 120)), "sprite without anchor not shifted");
+    sprite_scene(1, xy(111, 120), 1.0f);                     /* tag no longer matches the word */
+    gpu_render_display(out, &w, &h);
+    CHECK(out[120 * n * w + 110 * n] == argb15(px(110, 120)), "stale sprite tag ignored");
+    gpu_sprite_begin(99, 100);
+    CHECK(!g_sprite_on, "unknown anchor not found");
+
+    /* a 2D sprite quad (multi-part sprites): moves when all four corners carry the same tag */
+    {
+        static const int Q[4][2] = { { 150, 150 }, { 166, 150 }, { 150, 166 }, { 166, 166 } };
+        static const uint32_t UV[4] = { 0, 0x010A0000u | 16u, 16u << 8, (16u << 8) | 16u };
+        int k, tagged;
+        for (tagged = 4; tagged >= 3; tagged--) {
+            long badq = 0;
+            sprite_scene(1, xy(110, 120), 1.0f);
+            for (k = 0; k < 4; k++)
+                gpu_sprite_tag(0x5000u + 8u * (uint32_t)k, k < tagged ? xy(Q[k][0], Q[k][1]) : 0);
+            gp0(0x2D000000);
+            for (k = 0; k < 4; k++) {
+                gp0_at(xy(Q[k][0], Q[k][1]), 0x5000u + 8u * (uint32_t)k);
+                gp0(UV[k]);
+            }
+            gpu_render_display(out, &w, &h);
+            for (y = 150; y < 166; y++)
+                for (x = 150; x < 166; x++)
+                    for (j = 0; j < n; j++)
+                        for (i = 0; i < n; i++)
+                            badq += out[(y * n + j - (tagged == 4)) * w + (x * n + i + 2 * (tagged == 4))] != argb15(px(x, y));
+            CHECK(badq == 0, "sprite quad with %d tagged corners: %ld pixels not where expected", tagged, badq);
+        }
+    }
+
+    /* depth scaling, scale 0.5 about the anchor (100,100) + offset (0.5,-0.25): the 16x16 rect at
+     * (110,120) covers target pixels 422..453 x 439..470, 2x2 per texel; native VRAM unchanged */
+    {
+        long bads = 0;
+        g_sprite_depth = 1;
+        sprite_scene(1, xy(110, 120), 0.5f);
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "depth-scaled sprite: native VRAM unchanged");
+        gpu_render_display(out, &w, &h);
+        for (y = 439; y < 471; y++)
+            for (x = 422; x < 454; x++)
+                bads += out[y * w + x] != argb15(px(110 + (x - 422) / 2, 120 + (y - 439) / 2));
+        CHECK(bads == 0, "depth-scaled sprite: %ld pixels not the half-size sprite", bads);
+        CHECK(out[439 * w + 421] != out[439 * w + 422] && out[471 * w + 422] != out[470 * w + 422] &&
+              out[135 * n * w + 125 * n] != argb15(px(125, 135)), "depth-scaled sprite: nothing drawn outside");
+        sprite_scene(1, xy(110, 120), 1.0f);              /* scale 1 stays a rigid shift */
+        gpu_render_display(out, &w, &h);
+        CHECK(out[(120 * n - 1) * w + 110 * n + 2] == argb15(px(110, 120)), "depth scaling at scale 1: rigid shift");
+        g_sprite_depth = 0;
+    }
+
+    g_pgxp = 0;
+    gpu_set_upscale(1);
+    free(out);
+}
+
 static void write_bmp(const char *path, const uint32_t *argb, int w, int h)
 {
     FILE *f = fopen(path, "wb");
@@ -815,6 +1123,11 @@ int main(int argc, char **argv)
     test_display(img);
     gpu_render_display(img, &w, &h);
     write_bmp(disp_path, img, w, h);
+
+    test_upscale();
+    test_upscale_texels();
+    test_pgxp();
+    test_pgxp_sprite();
 
     printf("%d passed, %d failed\n", g_pass, g_fail);
     free(img);

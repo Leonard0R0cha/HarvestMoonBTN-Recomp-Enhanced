@@ -29,9 +29,37 @@ typedef struct {
     int hres_mode;        /* raw GPUSTAT bits 16-18 */
 } GpuDisplay;
 void     gpu_get_display(GpuDisplay *d);
-/* Convert the visible display area to 0xAARRGGBB pixels; out must hold 1024*512 entries.
- * Returns width/height actually written (row stride = *w). */
+/* Convert the visible display area to 0xAARRGGBB pixels; out must hold 1024*512*n*n
+ * entries (n = gpu_upscale()). Returns width/height actually written (row stride = *w). */
 void     gpu_render_display(uint32_t *out, int *w, int *h);
+
+/* Internal resolution: n = 2..4 also draws into an n-times larger copy of VRAM that
+ * gpu_render_display shows; 1 = off (default). The native VRAM is unaffected either way. */
+void     gpu_set_upscale(int n);
+int      gpu_upscale(void);
+
+/* PGXP (upscaled display only): sub-pixel positions of GTE-projected vertices. The recompiled
+ * SWC2 of a screen XY register tags that RAM word with gpu_pgxp_store(); the GPU DMA sets
+ * g_gp0_addr to the RAM address of each word it sends, and a polygon vertex whose word still
+ * holds the tagged value is drawn at the precise position (and depth, for g_pgxp_persp). */
+extern int      g_pgxp;           /* precise vertices (needs upscaling) */
+extern int      g_pgxp_persp;     /* perspective-correct textures (needs g_pgxp) */
+extern uint32_t g_gp0_addr;       /* RAM address of the GP0 word being written, ~0 = none */
+void     gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w);
+
+/* PGXP for 2D sprites placed at projected points: gpu_sprite_anchor records the sub-pixel
+ * offset (precise - whole) of a projected anchor; gpu_sprite_begin(x, y) selects the offset of
+ * that anchor (g_sprite_on = found) for the following gpu_sprite_tag calls, which tag RAM words
+ * of the sprite being built (or drop an old sprite tag when no anchor was found). A sprite
+ * rectangle whose position word carries a matching tag (or a quad whose corners all do) is
+ * drawn shifted by the offset in the upscaled copy (rigidly, so the pixel art stays crisp).
+ * With g_sprite_depth it is also scaled by the anchor's depth scale s about the anchor. */
+extern int g_sprite_on;
+extern int g_sprite_depth;        /* scale tagged sprites with depth (needs g_pgxp) */
+void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s);
+void     gpu_sprite_begin(int x, int y);
+void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anchor a (offset, scale, centre) */
+void     gpu_sprite_tag(uint32_t addr, uint32_t value);
 
 const uint16_t *gpu_vram(void);           /* 1024x512 16-bit VRAM (debug / screenshots) */
 

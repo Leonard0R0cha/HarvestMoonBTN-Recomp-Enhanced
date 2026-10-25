@@ -10,6 +10,12 @@ uint32_t gte_read_ctrl(int reg);              /* CFC2         (reg 0..31) */
 void     gte_write_ctrl(int reg, uint32_t v); /* CTC2         (reg 0..31) */
 void     gte_command(uint32_t op);            /* COP2 imm25 command word (instruction & 0x1FFFFFF) */
 
+/* PGXP: unrounded screen x/y and view depth of SXY register reg (12..15) when the last
+ * perspective transform produced it; 0 when unknown. Display only, not part of the state. */
+int      gte_sxy_precise(int reg, float *x, float *y, float *w);
+/* Depth scale for a sprite standing at screen point (sx, sy), 1 at the projection centre. */
+float    gte_ground_scale(float sx, float sy);
+
 size_t   gte_state_size(void);
 void     gte_save_state(void *dst);
 void     gte_load_state(const void *src);

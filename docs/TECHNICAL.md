@@ -53,6 +53,19 @@ holds a hash of the game files and the recompiler sources).
   the dispatcher resolves an address in an overlay region, it checks which overlay is
   actually loaded in RAM and picks the matching translation. The same check at boot rejects
   disc images that don't match the recompiled code.
+* **PGXP.** Every `swc2` of a screen-XY register becomes `PGXP_SWC2`, which also tags that
+  RAM word with the unrounded position for the upscaled display. Game-specific hooks
+  (`SITE_HOOKS`, `ENTRY_HOOKS`, `TAG_STORES_IN`) do the same for 2D sprites placed at
+  projected points (field objects, characters): the object projection (8001DFD4) records each
+  anchor's sub-pixel offset, the sprite builders (80016280 rectangles, 800165D8 multi-part
+  quads, 80016C08 single quads) look their anchor up and tag the words they write, and the
+  farm's field loop registers big objects drawn at anchor + offset as aliases (800D9590).
+  The GPU then shifts those sprites rigidly. With `sprite_depth` it also scales them about
+  their anchor by `gte_ground_scale`: the depth where the projection centre's ray meets the
+  horizontal plane through the anchor, over the anchor's depth (the plane normal comes from
+  the rotation matrix, row 1 of its inverse). Sprites at the centre keep their size and
+  everything else follows the 3D ground, which the game itself can't do (the PS1 can't scale
+  rectangles). None of this changes what the game sees. More in [GRAPHICS.md](GRAPHICS.md).
 
 A synthetic example of what the translation looks like (not code from the game):
 
@@ -150,6 +163,8 @@ same options produce identical output):
 | `--dumpram F` | write RAM + VRAM at frame F (repeatable) |
 | `--wav FILE` | record the audio output |
 | `--input "frame:BTN[:dur],start-end/period:BTN[:dur]"` | scripted button presses |
+| `--record FILE`, `--input @FILE` | record a play session's pad input / replay it |
+| `--shotstart F` | first frame for `--shots` |
 | `--fuzz SEED --fuzzstart F` | random button presses from frame F |
 | `--calltest frame:addr:a0`, `--poke frame:addr:val` | call a game function / write memory at a frame |
 | `--trace`, `--tracecalls` | log dispatcher activity / every call |

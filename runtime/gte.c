@@ -22,6 +22,7 @@
 #include "gte.h"
 
 #include <string.h>
+#include <math.h>
 
 /* ------------------------------------------------------------------------- */
 /* State                                                                      */
@@ -210,12 +211,46 @@ static void push_sz(uint16_t z)
     g.sz[3] = z;
 }
 
+/* PGXP: the unrounded screen position (and view depth) of each SXY FIFO entry, for the
+ * upscaled display only. Not part of the GTE state; ok = 0 when unknown. */
+static struct { float x, y, w; int ok; } pg[3];
+
 static void push_sxy(int16_t x, int16_t y)
 {
     memcpy(g.sxy[0], g.sxy[1], sizeof g.sxy[0]);
     memcpy(g.sxy[1], g.sxy[2], sizeof g.sxy[1]);
     g.sxy[2][0] = x;
     g.sxy[2][1] = y;
+    pg[0] = pg[1];
+    pg[1] = pg[2];
+    pg[2].ok = 0;
+}
+
+/* Size of a 2D sprite standing at screen point (sx, sy) on a horizontal plane (world Y = const),
+ * relative to the same sprite at the projection centre on that plane: the depth where the centre
+ * ray meets the plane over the depth of the point. The plane normal in view space is row 1 of
+ * RT^-1 (column 2 x column 0), so scaling in the matrix doesn't matter. Display only. */
+float gte_ground_scale(float sx, float sy)
+{
+    const int16_t (*m)[3] = g.rt.m;
+    const double nx = (double)m[1][2] * m[2][0] - (double)m[2][2] * m[1][0];
+    const double ny = (double)m[2][2] * m[0][0] - (double)m[0][2] * m[2][0];
+    const double nz = (double)m[0][2] * m[1][0] - (double)m[1][2] * m[0][0];
+    if (!g.h || fabs(nz) < 1e-3 * (fabs(nx) + fabs(ny) + fabs(nz)))
+        return 1.0f;                    /* looking along the plane */
+    const double s = 1.0 + (nx * (sx - g.ofx / 65536.0) + ny * (sy - g.ofy / 65536.0)) / (nz * g.h);
+    return s < 0.5 ? 0.5f : s > 2.0 ? 2.0f : (float)s;
+}
+
+int gte_sxy_precise(int reg, float *x, float *y, float *w)
+{
+    int i = reg == 15 ? 2 : reg - 12;
+    if (i < 0 || i > 2 || !pg[i].ok)
+        return 0;
+    *x = pg[i].x;
+    *y = pg[i].y;
+    *w = pg[i].w;
+    return 1;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -342,6 +377,21 @@ static void rtp_vertex(const int16_t vec[3], int shift, int lm, int depth_cue)
     const int64_t sx = mac0_check((int64_t)g.ofx + (int64_t)g.ir[1] * q);
     const int64_t sy = mac0_check((int64_t)g.ofy + (int64_t)g.ir[2] * q);
     push_sxy(sat_screen(sx >> 16, FLAG_SX), sat_screen(sy >> 16, FLAG_SY));
+
+    /* PGXP: the same projection in floating point, kept when it agrees with the result */
+    {
+        const double z = (double)acc[2] / 4096.0;
+        if (z > 0.0 && g.h < 2.0 * z) {
+            const double px = g.ofx / 65536.0 + (double)acc[0] / (double)(1 << shift) * g.h / z;
+            const double py = g.ofy / 65536.0 + (double)acc[1] / (double)(1 << shift) * g.h / z;
+            if (fabs(px - g.sxy[2][0]) < 2.0 && fabs(py - g.sxy[2][1]) < 2.0) {
+                pg[2].x = (float)px;
+                pg[2].y = (float)py;
+                pg[2].w = (float)z;
+                pg[2].ok = 1;
+            }
+        }
+    }
 
     if (depth_cue) {
         const int64_t dq = mac0_check((int64_t)g.dqb + (int64_t)g.dqa * q);
@@ -796,6 +846,7 @@ void gte_write_data(int reg, uint32_t v)
     case 12: case 13: case 14:
         g.sxy[reg - 12][0] = lo16(v);
         g.sxy[reg - 12][1] = hi16(v);
+        pg[reg - 12].ok = 0;
         break;
     case 15:                                    /* SXYP: move-on-write */
         push_sxy(lo16(v), hi16(v));
@@ -917,6 +968,7 @@ void gte_write_ctrl(int reg, uint32_t v)
 void gte_reset(void)
 {
     memset(&g, 0, sizeof g);
+    memset(pg, 0, sizeof pg);
 }
 
 size_t gte_state_size(void)
@@ -932,4 +984,5 @@ void gte_save_state(void *dst)
 void gte_load_state(const void *src)
 {
     memcpy(&g, src, sizeof g);
+    memset(pg, 0, sizeof pg);
 }

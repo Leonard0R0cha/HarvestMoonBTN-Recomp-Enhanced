@@ -665,6 +665,31 @@ static void test_state_and_misc(void)
     check("NCLIP with odd fake bits", D(24), 100);
 }
 
+/* Depth scale of sprites standing on a horizontal plane, with the farm camera's matrix:
+ * points on one plane all give depth * scale = the depth at the projection centre. */
+static void test_ground_scale(void)
+{
+    float lo = 1e9f, hi = 0, x, y, w;
+    int i, j;
+    WC(0, XY(2901, 0)); WC(1, XY(2902, 1300)); WC(2, XY(3680, -1301)); WC(3, XY(-2598, 1836)); WC(4, 2597);
+    WC(5, 0); WC(6, 300); WC(7, 10000);
+    WC(24, 160 << 16); WC(25, 120 << 16); WC(26, 1000);
+    for (i = -1; i <= 1; i++)
+        for (j = -1; j <= 1; j++) {
+            WD(0, XY(i * 1000, 0)); WD(1, j * 1000);
+            gte_command(OP_RTPS);
+            if (gte_sxy_precise(14, &x, &y, &w)) {
+                float zc = w * gte_ground_scale(x, y);
+                lo = zc < lo ? zc : lo;
+                hi = zc > hi ? zc : hi;
+            }
+        }
+    check("ground scale: depth * scale constant on a plane", hi > 0 && hi - lo < 1e-3f * hi, 1);
+    check("ground scale: 1 at the projection centre", gte_ground_scale(160, 120) == 1.0f, 1);
+    set_identity(0);
+    check("ground scale: 1 looking along the plane", gte_ground_scale(160, 20) == 1.0f, 1);
+}
+
 int main(void)
 {
     test_registers();
@@ -679,6 +704,7 @@ int main(void)
     test_color();
     test_division();
     test_state_and_misc();
+    test_ground_scale();
 
     printf("%d checks, %d failures\n", g_checks, g_fails);
     return g_fails ? 1 : 0;

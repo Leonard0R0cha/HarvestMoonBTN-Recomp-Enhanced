@@ -47,13 +47,14 @@ static void run_channel(int n) {
             uint32_t hdr = ram_r32(addr);
             uint32_t cnt = hdr >> 24;
             for (uint32_t k = 0; k < cnt; k++) {
-                uint32_t w = ram_r32((addr + 4 + k * 4) & 0x1FFFFC);
-                gpu_write_gp0(w);
+                g_gp0_addr = (addr + 4 + k * 4) & 0x1FFFFC;   /* for PGXP */
+                gpu_write_gp0(ram_r32(g_gp0_addr));
             }
             if (hdr & 0x800000) break;
             addr = hdr & 0x1FFFFC;
             if (++guard > 0x100000) { LOGE("GPU DMA linked list loop"); break; }
         }
+        g_gp0_addr = 0xFFFFFFFFu;
         d->madr = 0x00FFFFFF;
         finish(n);
         return;
