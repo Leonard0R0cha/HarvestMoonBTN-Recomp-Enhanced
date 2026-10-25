@@ -168,15 +168,30 @@ static int pgxp_lookup(uint32_t addr, uint32_t value, float *x, float *y, float 
  * differs from x, y for an alias), the anchor selected for the sprite being built, and its
  * shift in the upscaled copy while drawing (target pixels). Sprite tags live in pgxp_mem:
  * x, y = offset, w = -scale, cx, cy = scale centre. */
-typedef struct { float dx, dy, s; int16_t cx, cy; } SpriteMap;
+typedef struct { float dx, dy, s, z; int16_t cx, cy; } SpriteMap;   /* z: the anchor's depth */
 static struct { int16_t x, y; SpriteMap m; uint32_t gen; } anchors[1024];
 static uint32_t anchor_gen = 1;
 static SpriteMap sprite_map;
+/* Depth scaling reference: the camera's distance to the player's level (the depth where the
+ * projection centre's ray meets it), measured while the camera follows the player (the player's
+ * anchor at the projection centre), smoothed, and kept as it is otherwise: in cutscenes, at the
+ * edges of a map, while changing areas, and for the player's shadow below it while it jumps.
+ * 0: not measured yet (each anchor's own level is used). */
+static float ref_z;
+static SpriteMap player_map;        /* the player's anchor (its own level), for what it holds */
+static float player_zc;             /* ... the depth of its level, and when it was projected */
+static uint32_t player_gen;
 static int32_t sprite_ox, sprite_oy;
 static float line_sq = 1.0f;        /* HUD line in widescreen: squeezed by line_sq about line_c */
 static int32_t line_c;
-int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call;
+/* Widescreen: a frame draws the world first and the HUD last, so once a HUD-tagged primitive was
+ * drawn this frame, untagged rectangles and lines are HUD too (the dialogue arrow and the bag's
+ * item slots come from shared sprite routines), except ones covering the whole width (the menus'
+ * full-screen dimming). Reset at every VBlank. */
+static int hud_after;
+int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call;
 #define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
+static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0 };   /* a HUD tag */
 float g_sprite_ws = 1.0f;
 
 static uint32_t anchor_slot(int x, int y)
@@ -193,22 +208,52 @@ static void anchor_set(int x, int y, const SpriteMap *m)
     anchors[i].gen = anchor_gen;
 }
 
-void gpu_sprite_anchor(int x, int y, float dx, float dy, float s)
+void gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player)
 {
-    SpriteMap m = { dx, dy, s, (int16_t)x, (int16_t)y };
+    SpriteMap m = { dx, dy, s, z, (int16_t)x, (int16_t)y };
+    if (player) {
+        if (player_gen != anchor_gen || z * s < player_zc) {    /* the player, not its shadow */
+            player_map = m;
+            player_zc = z * s;
+            player_gen = anchor_gen;
+        }
+        if (player == 2)
+            ref_z = ref_z > 0.0f ? ref_z + (z * s - ref_z) * 0.125f : z * s;
+    }
     anchor_set(x, y, &m);
+}
+
+/* The depth scale is the reference over the anchor's depth: the camera follows the player at a
+ * fixed distance, so an object only changes size when its distance does, also when the player
+ * climbs above it, and in cutscenes objects scale with the camera like the 3D world. Before the
+ * reference is measured, the scale for the anchor's own ground level. */
+static void begin_map(const SpriteMap *m)
+{
+    sprite_map = *m;
+    if (ref_z > 0.0f && sprite_map.z > 0.0f) {
+        float s = ref_z / sprite_map.z;
+        sprite_map.s = s < 0.5f ? 0.5f : s > 2.0f ? 2.0f : s;
+    }
 }
 
 void gpu_sprite_begin(int x, int y)
 {
     uint32_t i = anchor_slot(x, y);
     g_sprite_on = anchors[i].gen + 1 >= anchor_gen && anchors[i].x == x && anchors[i].y == y;
-    sprite_map = anchors[i].m;
+    begin_map(&anchors[i].m);
+}
+
+/* What the player holds above its head is drawn at the player's position plus an offset: it is
+ * placed, scaled and squeezed with the player's anchor, like the player (on = 0: drop old tags). */
+void gpu_held_begin(int on)
+{
+    g_sprite_on = on && player_gen + 1 >= anchor_gen;
+    begin_map(&player_map);
 }
 
 void gpu_hud_begin(int on)
 {
-    static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, HUD_CX, 0 };
+    static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, 0.0f, HUD_CX, 0 };
     g_sprite_on = on;
     sprite_map = hud;
 }
@@ -460,8 +505,19 @@ static inline int32_t sprite_coord(int32_t v, int32_t c, float d, float s)
 
 /* Scale of the sprite tagged t: its depth scale (with depth scaling), and horizontally the
  * widescreen squeeze. */
+/* The squeeze of the HUD: the world's while the picture is a 3D scene (shown wide), asked when the
+ * HUD is drawn. When it is built is too early: the game builds the HUD before it projects the 3D
+ * scene, so the first frame after a black screen isn't known to be 3D yet. */
+int (*g_scene_3d)(void);
+static inline float hud_sx(void)
+{
+    return !g_scene_3d || g_scene_3d() ? g_sprite_ws : 1.0f;
+}
+
 static inline float sprite_sx(const PgxpWord *t)
 {
+    if (t->cx == HUD_CX)
+        return hud_sx();
     return (g_sprite_depth ? -t->w : 1.0f) * g_sprite_ws;
 }
 
@@ -948,6 +1004,8 @@ static void cmd_polygon(const uint32_t *p)
             }
             if (same)
                 st = t0;
+            if (st && st->cx == HUD_CX && hud_sx() != 1.0f)
+                hud_after = 1;
         }
         for (i = 0; i < nv; i++) {
             float fx, fy, fw;
@@ -1087,11 +1145,14 @@ static void cmd_line(const uint32_t *p)
         line_xy(&b, p[2]);
     }
 
-    if (TH.buf && g_sprite_ws != 1.0f && cmd_addr[1] != 0xFFFFFFFFu) {   /* a HUD line (window border) */
-        const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
-        if (t->w < 0.0f && t->value == p[1] && t->cx == HUD_CX) {
+    if (TH.buf && g_sprite_ws != 1.0f) {   /* a HUD line (window border), or a line after the HUD */
+        const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
+        int tagged = t && t->w < 0.0f && t->value == p[1];
+        if (tagged && t->cx == HUD_CX && hud_sx() != 1.0f)
+            hud_after = 1;
+        if (hud_after && (!tagged || t->cx == HUD_CX)) {
             line_sq = g_sprite_ws;
-            line_c = sprite_cx(t);
+            line_c = sprite_cx(&hud_word);
         }
     }
     draw_line(a, b, gouraud, abe ? (int)S.abr : -1);
@@ -1298,9 +1359,16 @@ static void cmd_rect(const uint32_t *p)
     x = sext11((uint32_t)(x + S.offs_x));
     y = sext11((uint32_t)(y + S.offs_y));
 
-    if (TH.buf && g_sprite_tags && cmd_addr[1] != 0xFFFFFFFFu) {   /* sprite built at a projected point */
-        const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
-        if (t->w < 0.0f && t->value == p[1]) {
+    if (TH.buf && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
+        const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
+        if (t && !(t->w < 0.0f && t->value == p[1]))
+            t = NULL;
+        if (t && t->cx == HUD_CX) {
+            if (hud_sx() != 1.0f)
+                hud_after = 1;
+        } else if (!t && hud_after && !(x <= S.clip_x0 && x + w > S.clip_x1))
+            t = &hud_word;
+        if (t) {
             const float sx = sprite_sx(t), sy = sprite_sy(t);
             if (sx != 1.0f || sy != 1.0f) {                 /* scaled: native as usual, then the copy */
                 uint16_t *hb = TH.buf;
@@ -1781,6 +1849,7 @@ uint32_t gpu_read_status(void)
 
 void gpu_vblank(void)
 {
+    hud_after = 0;
     anchor_gen++;
     if (S.disp_mode & 0x20u)
         S.field ^= 1u;

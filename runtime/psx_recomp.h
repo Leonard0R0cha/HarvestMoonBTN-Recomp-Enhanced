@@ -81,27 +81,52 @@ static inline void MEM_W32(uint32_t a, uint32_t v) {
 /* PGXP for 2D sprites placed at GTE-projected points (hooks emitted by tools/recomp.py for the
  * object projection and the sprite builders): remember the anchor's sub-pixel offset, look it
  * up when a sprite is built at that anchor, and tag the words the builder writes. */
-static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y) {
+static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y, int player) {
     float px, py, w;
     if (g_sprite_tags && gte_sxy_precise(14, &px, &py, &w)) {
         float s = gte_ground_scale(px, py);
+        float cx = px - (float)(int32_t)gte_read_ctrl(24) / 65536.0f, cy = py - (float)(int32_t)gte_read_ctrl(25) / 65536.0f;
+        if (player && cx > -2.0f && cx < 2.0f && cy > -2.0f && cy < 2.0f)
+            player = 2;                 /* at the projection centre: the camera follows the player */
         if (!g_pgxp) {                  /* widescreen without PGXP: squeezed, but not shifted */
             px = (float)(int16_t)x;
             py = (float)(int16_t)y;
         }
-        gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y, s);
+        gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y, s, w, player);
     }
 }
+/* Widescreen: the farm draws the field objects (weeds, rocks, branches, ...) of the tiles within
+ * 3600 units of the view's centre, a square made for 4:3 (800D92FC writes the tile range x0, z0,
+ * x1, z1 to a; x 0..45, z 0..25): widen it like the view. */
+static inline void FIELD_RANGE(uint32_t a) {
+    int32_t e = (gte_widescreen_widen(3600) - 3600 + 399) / 400;
+    int32_t x0 = (int32_t)MEM_R32(a) - e, z0 = (int32_t)MEM_R32(a + 4) - e;
+    int32_t x1 = (int32_t)MEM_R32(a + 8) + e, z1 = (int32_t)MEM_R32(a + 12) + e;
+    if (!e) return;
+    MEM_W32(a, (uint32_t)(x0 < 0 ? 0 : x0));
+    MEM_W32(a + 4, (uint32_t)(z0 < 0 ? 0 : z0));
+    MEM_W32(a + 8, (uint32_t)(x1 > 45 ? 45 : x1));
+    MEM_W32(a + 12, (uint32_t)(z1 > 25 ? 25 : z1));
+}
+
 /* Widescreen: the HUD (windows, text, portraits, HUD icons) is tagged to keep its 4:3 shape,
  * centred, while the picture is shown wide; g_hud_call is set while the HUD icon routine calls
- * the sprite builder. platform_3d_scene (frontend): the game is showing a 3D scene. */
-int platform_3d_scene(void);
+ * the sprite builder. */
 static inline void HUD_BEGIN(void) {
-    if (g_sprite_tags) gpu_hud_begin(g_sprite_ws != 1.0f && platform_3d_scene());
+    if (g_sprite_tags) gpu_hud_begin(g_sprite_ws != 1.0f);
 }
 static inline void SPRITE_BEGIN(uint32_t x, uint32_t y) {
     if (g_hud_call && g_sprite_ws != 1.0f) HUD_BEGIN();
     else if (g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
+}
+/* The field's item drawing: an item lying on or thrown to the ground (g_item_call) is drawn at its
+ * projected point, so it takes that anchor; what the player holds (g_held_call) follows the
+ * player's anchor; other items (menu icons) aren't tagged. */
+static inline void ITEM_BEGIN(uint32_t x, uint32_t y) {
+    if (g_item_call && g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
+}
+static inline void HELD_BEGIN(void) {
+    if (g_sprite_tags && !g_item_call) gpu_held_begin(g_held_call);
 }
 static inline void SPRITE_ALIAS(uint32_t ax, uint32_t ay, uint32_t bx, uint32_t by) {
     if (g_sprite_tags) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);

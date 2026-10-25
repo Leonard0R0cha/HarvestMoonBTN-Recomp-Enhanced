@@ -18,6 +18,7 @@ OPTIONS = [
     ('Game', 'general', 'savedir', 'dir', 'Memory card folder'),
     ('Game', 'behaviour', 'fastforward', 'bool', 'Allow holding Tab to fast-forward'),
     ('Game', 'behaviour', 'fastcd', 'bool', 'Shorter loading pauses'),
+    ('Game', 'behaviour', 'record', 'bool', 'Record sessions for bug reports (recordings folder)'),
     ('Video', 'video', 'scale', 'spin8', 'Window size (multiple of 320x240)'),
     ('Video', 'video', 'upscale', 'spin4', 'Internal resolution (1 = original, 2-4 = smoother 3D)'),
     ('Video', 'video', 'pgxp', 'bool', 'PGXP: precise 3D vertices, no wobble (needs resolution 2+)'),

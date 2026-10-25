@@ -145,6 +145,7 @@ typedef struct {
     char screenshot_dir[1024];
     char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." or "@FILE" */
     char record_path[1024];      /* testing: write the pad input of the session here */
+    int  record;                /* record every session to recordings/ (bug reports) */
     int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
     int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;

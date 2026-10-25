@@ -6,6 +6,7 @@
 #include "spu.h"
 #include "gte.h"
 #include <stdarg.h>
+#include <time.h>
 #include <ctype.h>
 #include <sys/stat.h>
 #ifdef _WIN32
@@ -40,6 +41,7 @@ volatile int g_quit;
 static FILE *log_file;
 
 int platform_init(void);
+int platform_3d_scene(void);
 void platform_shutdown(void);
 void platform_error_box(const char *title, const char *msg);
 bool platform_set_binding(const char *key, const char *val);
@@ -185,6 +187,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
+    else if (!strcmp(key, "record")) g_cfg.record = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
@@ -357,6 +360,15 @@ int main(int argc, char **argv) {
         log_file = fopen(lp, "w");
     }
     if (!g_cfg.screenshot_dir[0]) snprintf(g_cfg.screenshot_dir, sizeof g_cfg.screenshot_dir, "%sscreenshots", exe_dir);
+    if (g_cfg.record && !g_cfg.record_path[0] && !g_cfg.headless) {   /* recordings/session_<date>_<time>.txt */
+        char d[1100];
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        snprintf(d, sizeof d, "%srecordings", exe_dir);
+        mkdir_p(d);
+        snprintf(g_cfg.record_path, sizeof g_cfg.record_path, "%s/session_%04d%02d%02d_%02d%02d%02d.txt", d,
+                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+    }
 
     if (platform_init() != 0) return 1;
 
@@ -399,6 +411,21 @@ int main(int argc, char **argv) {
     }
     char card1[1200];
     snprintf(card1, sizeof card1, "%s/card1.mcd", g_cfg.save_dir);
+    if (g_cfg.record_path[0]) {         /* the replay starts from the same memory card: <recording>_card1.mcd */
+        char copy[1200];
+        size_t k = strlen(g_cfg.record_path);
+        FILE *in = fopen(card1, "rb"), *out;
+        snprintf(copy, sizeof copy, "%.*s_card1.mcd", (int)(k > 4 && !strcmp(g_cfg.record_path + k - 4, ".txt") ? k - 4 : k), g_cfg.record_path);
+        if (in && (out = fopen(copy, "wb")) != NULL) {
+            char buf[8192];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof buf, in)) > 0)
+                fwrite(buf, 1, n, out);
+            fclose(out);
+        }
+        if (in) fclose(in);
+        LOGI("recording the session to %s", g_cfg.record_path);
+    }
     memcard_load(0, card1);
 
     mem_reset();
@@ -416,6 +443,7 @@ int main(int argc, char **argv) {
         gte_set_widescreen(num, den);
         if (gpu_upscale() > 1) g_sprite_ws = (float)num / (float)den;
         else LOGW("widescreen: 2D objects and people look wider without upscale 2 or more");
+        g_scene_3d = platform_3d_scene;
         LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
     }
     g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w);

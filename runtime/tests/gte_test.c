@@ -735,8 +735,12 @@ static void test_widescreen(void)
     check("widescreen frustum angle 108", gte_widescreen_angle(108), 143);
     check("widescreen frustum angle -108", gte_widescreen_angle(-108), (uint32_t)-143);
     check("widescreen frustum angle 2156", gte_widescreen_angle(2156), 2191);
+    check("widescreen widen 3600 (16:9)", (uint32_t)gte_widescreen_widen(3600), 4800);
+    gte_set_widescreen(36, 63);                        /* 21:9 */
+    check("widescreen widen 3600 (21:9)", (uint32_t)gte_widescreen_widen(3600), 6300);
     gte_set_widescreen(1, 1);
     check("frustum angle unchanged when off", gte_widescreen_angle(2156), 2156);
+    check("widen unchanged when off", (uint32_t)gte_widescreen_widen(3600), 3600);
 }
 
 int main(void)

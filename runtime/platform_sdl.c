@@ -143,6 +143,10 @@ static void parse_script(const char *s) {
     for (char *tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
         ScriptEv e = { 0, 6, 0, 0, 0 };
         if (!strncmp(tok, "fastcd=", 7)) { g_cfg.fast_cd = atoi(tok + 7); continue; }   /* from --record */
+        if (!strncmp(tok, "widescreen=", 11)) {     /* from --record: widescreen changes what the game does */
+            if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
+            continue;
+        }
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
         *c1 = 0;
@@ -343,7 +347,8 @@ int platform_init(void) {
     if (g_cfg.record_path[0]) {
         rec_file = fopen(g_cfg.record_path, "w");
         if (rec_file) {
-            fprintf(rec_file, "fastcd=%d\n", g_cfg.fast_cd);   /* changes loading timing: the replay needs it */
+            /* both change what the game does: the replay needs them */
+            fprintf(rec_file, "fastcd=%d\nwidescreen=%d:%d\n", g_cfg.fast_cd, g_cfg.ws_w, g_cfg.ws_h);
             atexit(record_close);
         }
         else LOGE("cannot write %s", g_cfg.record_path);
@@ -490,7 +495,7 @@ static int display_dark(const GpuDisplay *d) {
 }
 
 /* The game is showing a 3D scene: it projected 32 or more vertices since the last frame, or in
- * one of the 10 frames before. Also asked while the game builds its HUD, which is kept at 4:3
+ * one of the 10 frames before. Also asked when the GPU draws the HUD, which is kept at 4:3
  * (squeezed back) only in 3D scenes, the pictures shown wide. */
 static uint32_t proj_mark;          /* projections counted up to the last frame */
 static int hold_3d;                 /* frames left in which the last 3D scene still counts */

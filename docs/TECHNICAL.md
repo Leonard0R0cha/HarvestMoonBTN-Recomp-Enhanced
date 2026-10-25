@@ -66,9 +66,11 @@ holds a hash of the game files and the recompiler sources).
   the rotation matrix, row 1 of its inverse). Sprites at the centre keep their size and
   everything else follows the 3D ground, which the game itself can't do (the PS1 can't scale
   rectangles). None of this changes what the game sees. More in [GRAPHICS.md](GRAPHICS.md).
-  Widescreen adds hooks that widen the game's frustum side planes (8001D45C, 8001D4A4) and
-  tag the HUD builders (`HUD_BUILDERS`, and the sprite builder while 80024A4C calls it), whose
-  output is squeezed back to 4:3 about the middle of the picture.
+  Widescreen adds hooks that widen the game's frustum side planes (8001D45C, 8001D4A4) and the
+  farm's field object range (800D9414), and tag the HUD builders (`HUD_BUILDERS`, and the
+  sprite builder while 80024A4C calls it), whose output is squeezed back to 4:3 about the
+  middle of the picture. Depth scaling takes its reference from the player's anchor (a0 =
+  80128B88 at the projection hook).
 
 A synthetic example of what the translation looks like (not code from the game):
 
@@ -166,7 +168,7 @@ same options produce identical output):
 | `--dumpram F` | write RAM + VRAM at frame F (repeatable) |
 | `--wav FILE` | record the audio output |
 | `--input "frame:BTN[:dur],start-end/period:BTN[:dur]"` | scripted button presses |
-| `--record FILE`, `--input @FILE` | record a play session's pad input / replay it |
+| `--record FILE`, `--input @FILE` | record a play session's pad input / replay it (`record = 1` in `hmbtn.ini` records every session to `recordings/`, with `<name>_card1.mcd`, the memory card at the start, to put in `--savedir` for the replay; the header carries `fastcd` and `widescreen`, which change what the game does) |
 | `--shotstart F` | first frame for `--shots` |
 | `--fuzz SEED --fuzzstart F` | random button presses from frame F |
 | `--calltest frame:addr:a0`, `--poke frame:addr:val` | call a game function / write memory at a frame |

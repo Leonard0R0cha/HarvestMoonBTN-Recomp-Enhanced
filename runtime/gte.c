@@ -232,6 +232,12 @@ uint32_t gte_projections(void)
     return rtp_count;
 }
 
+/* A horizontal distance v of the 4:3 view, widened like the view (rounded up). */
+int32_t gte_widescreen_widen(int32_t v)
+{
+    return (int32_t)(((int64_t)v * ws_den + ws_num - 1) / ws_num);
+}
+
 /* An angle a (4096 = full turn) a little off the view axis or its opposite, made wider so that
  * its tangent grows by ws_den/ws_num: a side plane of the game's view frustum, opened up to the
  * widescreen view. */
