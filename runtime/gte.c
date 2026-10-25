@@ -21,6 +21,7 @@
  */
 #include "gte.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -215,6 +216,37 @@ static void push_sz(uint16_t z)
  * upscaled display only. Not part of the GTE state; ok = 0 when unknown. */
 static struct { float x, y, w; int ok; } pg[3];
 
+/* Widescreen: screen X of the perspective transforms is scaled by ws_num/ws_den about OFX, so a
+ * wider view fits the picture (the frontend shows it stretched). Settings, not GTE state. */
+static int32_t ws_num = 1, ws_den = 1;
+static uint32_t rtp_count;          /* vertices projected so far */
+
+void gte_set_widescreen(int num, int den)
+{
+    ws_num = num > 0 && den > 0 ? num : 1;
+    ws_den = num > 0 && den > 0 ? den : 1;
+}
+
+uint32_t gte_projections(void)
+{
+    return rtp_count;
+}
+
+/* An angle a (4096 = full turn) a little off the view axis or its opposite, made wider so that
+ * its tangent grows by ws_den/ws_num: a side plane of the game's view frustum, opened up to the
+ * widescreen view. */
+int32_t gte_widescreen_angle(int32_t a)
+{
+    const double pi = 3.14159265358979323846;
+    int32_t base, d, w;
+    if (ws_num == ws_den)
+        return a;
+    base = (int32_t)lrint(a / 2048.0) * 2048;
+    d = a - base;
+    w = (int32_t)lrint(atan(tan(abs(d) * pi / 2048.0) * ws_den / ws_num) * 2048.0 / pi);
+    return base + (d < 0 ? -w : w);
+}
+
 static void push_sxy(int16_t x, int16_t y)
 {
     memcpy(g.sxy[0], g.sxy[1], sizeof g.sxy[0]);
@@ -238,7 +270,8 @@ float gte_ground_scale(float sx, float sy)
     const double nz = (double)m[0][2] * m[1][0] - (double)m[1][2] * m[0][0];
     if (!g.h || fabs(nz) < 1e-3 * (fabs(nx) + fabs(ny) + fabs(nz)))
         return 1.0f;                    /* looking along the plane */
-    const double s = 1.0 + (nx * (sx - g.ofx / 65536.0) + ny * (sy - g.ofy / 65536.0)) / (nz * g.h);
+    const double dx = (sx - g.ofx / 65536.0) * ws_den / ws_num;    /* undo the widescreen squeeze */
+    const double s = 1.0 + (nx * dx + ny * (sy - g.ofy / 65536.0)) / (nz * g.h);
     return s < 0.5 ? 0.5f : s > 2.0 ? 2.0f : (float)s;
 }
 
@@ -374,15 +407,19 @@ static void rtp_vertex(const int16_t vec[3], int shift, int lm, int depth_cue)
     push_sz(sat_z(acc[2] >> 12));
 
     const int64_t q = unr_divide(g.h, g.sz[3]);
-    const int64_t sx = mac0_check((int64_t)g.ofx + (int64_t)g.ir[1] * q);
+    int64_t ix = (int64_t)g.ir[1] * q;
+    if (ws_num != ws_den)
+        ix = ix * ws_num / ws_den;
+    const int64_t sx = mac0_check((int64_t)g.ofx + ix);
     const int64_t sy = mac0_check((int64_t)g.ofy + (int64_t)g.ir[2] * q);
     push_sxy(sat_screen(sx >> 16, FLAG_SX), sat_screen(sy >> 16, FLAG_SY));
+    rtp_count++;
 
     /* PGXP: the same projection in floating point, kept when it agrees with the result */
     {
         const double z = (double)acc[2] / 4096.0;
         if (z > 0.0 && g.h < 2.0 * z) {
-            const double px = g.ofx / 65536.0 + (double)acc[0] / (double)(1 << shift) * g.h / z;
+            const double px = g.ofx / 65536.0 + (double)acc[0] / (double)(1 << shift) * g.h / z * ws_num / ws_den;
             const double py = g.ofy / 65536.0 + (double)acc[1] / (double)(1 << shift) * g.h / z;
             if (fabs(px - g.sxy[2][0]) < 2.0 && fabs(py - g.sxy[2][1]) < 2.0) {
                 pg[2].x = (float)px;

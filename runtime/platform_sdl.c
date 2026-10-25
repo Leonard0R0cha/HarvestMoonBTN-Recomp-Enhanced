@@ -3,11 +3,13 @@
  * test mode (scripted input + screenshots) used for automated verification. */
 #include "psx.h"
 #include "gpu.h"
+#include "gte.h"
 #include <SDL.h>
 #ifndef _WIN32
 #include "sdl_dyn.h"
 #endif
 #include <ctype.h>
+#include <math.h>
 #include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
@@ -248,7 +250,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     hdr[26] = 1; hdr[28] = 24;
     memcpy(hdr + 34, &img, 4);
     fwrite(hdr, 1, 54, f);
-    static uint8_t row[1024 * 4 * 3 + 4];   /* widest frame: 1024 at upscale 4 */
+    static uint8_t row[8192 * 3 + 4];   /* widest frame: 1024 at upscale 4, widened for widescreen */
     for (int y = h - 1; y >= 0; y--) {
         for (int x = 0; x < w; x++) {
             uint32_t p = px[y * w + x];
@@ -261,15 +263,39 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     fclose(f);
 }
 
-static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame) {
+/* A widescreen picture as it is shown: widened by 1 / squeeze, linear between columns. */
+static uint32_t *widen(const uint32_t *px, int w, int h, int *ow) {
+    int W = (int)lrint((double)w * 3.0 * g_cfg.ws_w / (4.0 * g_cfg.ws_h));
+    uint32_t *out;
+    if (W > 8192) W = 8192;
+    out = malloc((size_t)W * (size_t)h * 4);
+    if (!out) return NULL;
+    for (int y = 0; y < h; y++) {
+        const uint32_t *row = px + (size_t)y * w;
+        for (int x = 0; x < W; x++) {
+            double sx = ((double)x + 0.5) * w / W - 0.5;
+            int x0 = sx < 0 ? 0 : (int)sx, x1 = x0 + 1 < w ? x0 + 1 : w - 1;
+            uint32_t f = (uint32_t)((sx < 0 ? 0 : sx - x0) * 256.0), a = row[x0], b = row[x1], c = 0xFF000000u;
+            for (int k = 0; k < 24; k += 8)
+                c |= ((((a >> k) & 255u) * (256u - f) + ((b >> k) & 255u) * f) >> 8) << k;
+            out[(size_t)y * W + x] = c;
+        }
+    }
+    *ow = W;
+    return out;
+}
+
+static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, int wide) {
     char path[1400];
+    uint32_t *wpx = wide ? widen(px, w, h, &w) : NULL;
 #ifdef _WIN32
     _mkdir(g_cfg.screenshot_dir);
 #else
     mkdir(g_cfg.screenshot_dir, 0755);
 #endif
     snprintf(path, sizeof path, "%s/frame_%06llu.bmp", g_cfg.screenshot_dir, (unsigned long long)frame);
-    write_bmp(path, px, w, h);
+    write_bmp(path, wpx ? wpx : px, w, h);
+    free(wpx);
     LOGI("screenshot %s (%dx%d)", path, w, h);
 }
 
@@ -337,8 +363,9 @@ int platform_init(void) {
         return 1;
     }
     int sc = g_cfg.scale > 0 ? g_cfg.scale : 3;
+    int win_w = g_cfg.ws_w ? 240 * sc * g_cfg.ws_w / g_cfg.ws_h : 320 * sc;
     win = SDL_CreateWindow("Harvest Moon: Back to Nature", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                           320 * sc, 240 * sc, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+                           win_w, 240 * sc, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
@@ -441,7 +468,55 @@ static int prescale_target(int w, int h) {
     return 1;
 }
 
-static void present(int w, int h) {
+/* Widescreen: the GTE squeezes the 3D world into the picture, which is shown stretched to the
+ * wider aspect. Screens the game draws without 3D (title, menus, videos) are shown as they are,
+ * at 4:3: the picture is wide while the game projected a 3D scene's worth of vertices in one of
+ * the last few frames (it may draw only every other frame; with a full-screen menu open it still
+ * projects a vertex or two, against thousands for a room) and the display isn't 24-bit video.
+ * Leaving an area, the game stops drawing 3D and fades out the last picture, then shows black or
+ * "Now Loading": all of that stays wide, so going from one area to the next never flashes to 4:3.
+ * Only a picture that is mostly not black, without 3D, after a black one (a menu fading in from
+ * black, from its first frame) switches to 4:3. */
+static int display_dark(const GpuDisplay *d) {
+    const uint16_t *vram = gpu_vram();
+    int dark = 0;
+    if (!d->enabled) return 1;
+    for (int y = 0; y < d->height; y++) {
+        const uint16_t *row = vram + (((d->vram_y + y) & 511) << 10);
+        for (int x = 0; x < d->width; x++)
+            dark += (row[(d->vram_x + x) & 1023] & 0x7BDE) == 0;    /* red, green and blue 0 or 1 */
+    }
+    return dark * 10 >= d->width * d->height * 9;
+}
+
+static int display_wide(void) {
+    static uint32_t last;
+    static int wide_hold, was_wide, blank;      /* blank: black was shown since the 3D stopped */
+    uint32_t n = gte_projections();
+    GpuDisplay d;
+    int wide;
+    if (!g_cfg.ws_w) return 0;
+    if (n - last >= 32) wide_hold = 10;
+    else if (wide_hold > 0) wide_hold--;
+    last = n;
+    gpu_get_display(&d);
+    if (d.is_24bit) wide = 0;
+    else if (wide_hold > 0) { wide = 1; blank = 0; }
+    else if (!was_wide) wide = 0;
+    else if (display_dark(&d)) { wide = 1; blank = 1; }
+    else wide = !blank;
+    if (wide != was_wide) LOGD("display: %s", wide ? "widescreen" : "4:3 (no 3D)");
+    was_wide = wide;
+    return wide;
+}
+
+/* width:height of the picture on screen */
+static double display_aspect(int w, int h, int wide) {
+    double aspect = g_cfg.aspect_4_3 ? 4.0 / 3.0 : (double)w / h;
+    return wide ? aspect * (3.0 * g_cfg.ws_w) / (4.0 * g_cfg.ws_h) : aspect;
+}
+
+static void present(int w, int h, int wide) {
     uint64_t f = SDL_GetPerformanceFrequency(), t0 = SDL_GetPerformanceCounter();
     int ww, wh;
     SDL_Rect src = { 0, 0, w, h }, dst = { 0, 0, 0, 0 };
@@ -449,7 +524,7 @@ static void present(int w, int h) {
     SDL_GetRendererOutputSize(ren, &ww, &wh);
     if (w > 0 && h > 0) {
         SDL_UpdateTexture(tex, &src, frame_px, w * 4);
-        double aspect = g_cfg.aspect_4_3 ? 4.0 / 3.0 : (double)w / h;
+        double aspect = display_aspect(w, h, wide);
         int dw = ww, dh = (int)(ww / aspect);
         if (dh > wh) { dh = wh; dw = (int)(wh * aspect); }
         dst = (SDL_Rect){ (ww - dw) / 2, (wh - dh) / 2, dw, dh };
@@ -554,8 +629,9 @@ void platform_frame(void) {
     bool shot = g_cfg.screenshot_every && frame >= (uint64_t)g_cfg.screenshot_start &&
                 frame % (uint64_t)g_cfg.screenshot_every == 0;
     bool need_pixels = !g_cfg.headless || shot || shot_request;
+    int wide = display_wide();
     if (need_pixels) gpu_render_display(frame_px, &w, &h);
-    if (shot) save_screenshot(frame_px, w, h, frame);
+    if (shot) save_screenshot(frame_px, w, h, frame, wide);
 
     if (g_cfg.headless) {
         g_pad_buttons[0] = script_buttons((int)frame);
@@ -599,8 +675,8 @@ void platform_frame(void) {
     uint16_t b = read_controllers();
     if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
     record_frame((int)frame, g_pad_buttons[0]);
-    if (shot_request) { save_screenshot(frame_px, w, h, frame); shot_request = 0; }
-    present(w, h);
+    if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
+    present(w, h, wide);
     throttle();
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

@@ -83,18 +83,23 @@ static inline void MEM_W32(uint32_t a, uint32_t v) {
  * up when a sprite is built at that anchor, and tag the words the builder writes. */
 static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y) {
     float px, py, w;
-    if (g_pgxp && gte_sxy_precise(14, &px, &py, &w))
-        gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y,
-                          gte_ground_scale(px, py));
+    if (g_sprite_tags && gte_sxy_precise(14, &px, &py, &w)) {
+        float s = gte_ground_scale(px, py);
+        if (!g_pgxp) {                  /* widescreen without PGXP: squeezed, but not shifted */
+            px = (float)(int16_t)x;
+            py = (float)(int16_t)y;
+        }
+        gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y, s);
+    }
 }
 static inline void SPRITE_BEGIN(uint32_t x, uint32_t y) {
-    if (g_pgxp) gpu_sprite_begin((int16_t)x, (int16_t)y);
+    if (g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
 }
 static inline void SPRITE_ALIAS(uint32_t ax, uint32_t ay, uint32_t bx, uint32_t by) {
-    if (g_pgxp) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);
+    if (g_sprite_tags) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);
 }
 static inline void SPRITE_TAG(uint32_t a) {
-    if (g_pgxp && RAM_HIT(a)) gpu_sprite_tag(a, MEM_R32(a & ~3u));
+    if (g_sprite_tags && RAM_HIT(a)) gpu_sprite_tag(a, MEM_R32(a & ~3u));
 }
 
 /* SWC2 of a screen XY register (SXY0-2/SXYP): the store, plus tagging the word with the

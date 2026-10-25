@@ -17,8 +17,8 @@ launcher. See [docs/GRAPHICS.md](docs/GRAPHICS.md).
 - Plays like the original: same game logic, same graphics, music and timing (NTSC, 59.29 fps)
 - Keyboard and game controller support (Xbox / XInput and other SDL-supported controllers), fully remappable
 - Window or fullscreen, scaled from the original 320×240 (sharp-bilinear, sharp or smooth, 4:3 or square pixels)
-- Optional higher internal resolution (2×–4×), precise 3D vertices (PGXP), perspective-correct textures
-  and 2D objects that scale with depth
+- Optional higher internal resolution (2×–4×), precise 3D vertices (PGXP), perspective-correct textures,
+  2D objects that scale with depth, and a widescreen view (16:9, 16:10, 21:9)
 - Saving works as on the PlayStation, on a standard memory card file usable in emulators too
 - Optional hold-to-fast-forward, screenshots
 
@@ -199,6 +199,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `pgxp` | `0` | `1` = precise 3D vertex positions, no wobble (needs `upscale` 2+) |
 |  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
 |  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
+|  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects keep their shape with `upscale` 2+ |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
 |  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |
@@ -206,7 +207,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
 
-Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--fastcd`,
+Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--widescreen W:H`, `--fastcd`,
 `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
 options are described in [docs/TECHNICAL.md](docs/TECHNICAL.md#testing-and-debugging).
 

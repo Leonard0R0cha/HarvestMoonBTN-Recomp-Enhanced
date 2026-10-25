@@ -173,7 +173,8 @@ static struct { int16_t x, y; SpriteMap m; uint32_t gen; } anchors[1024];
 static uint32_t anchor_gen = 1;
 static SpriteMap sprite_map;
 static int32_t sprite_ox, sprite_oy;
-int g_sprite_on, g_sprite_depth;
+int g_sprite_tags, g_sprite_on, g_sprite_depth;
+float g_sprite_ws = 1.0f;
 
 static uint32_t anchor_slot(int x, int y)
 {
@@ -430,13 +431,25 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
 }
 
 /* Upscaled-copy coordinate of native coordinate v (drawing offset included) of a tagged sprite
- * with scale centre c: shifted by the anchor's offset d and, with depth scaling, scaled by s
- * about c (unscaled sprites move rigidly, so their pixel art stays crisp). */
+ * with scale centre c: shifted by the anchor's offset d and scaled by s about c (unscaled sprites
+ * move rigidly, so their pixel art stays crisp). */
 static inline int32_t sprite_coord(int32_t v, int32_t c, float d, float s)
 {
-    if (!g_sprite_depth || s == 1.0f)
+    if (s == 1.0f)
         return v * TH.n + (int32_t)lrintf(d * (float)TH.n);
     return (int32_t)lrintf(((float)c + d + (float)(v - c) * s) * (float)TH.n);
+}
+
+/* Scale of the sprite tagged t: its depth scale (with depth scaling), and horizontally the
+ * widescreen squeeze. */
+static inline float sprite_sx(const PgxpWord *t)
+{
+    return (g_sprite_depth ? -t->w : 1.0f) * g_sprite_ws;
+}
+
+static inline float sprite_sy(const PgxpWord *t)
+{
+    return g_sprite_depth ? -t->w : 1.0f;
 }
 
 /* CPU->VRAM data: the n x n block for native pixel (x, y), honouring the mask bit. */
@@ -900,7 +913,7 @@ static void cmd_polygon(const uint32_t *p)
         draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
     if (TH.buf) {
         const PgxpWord *st = NULL;
-        if (g_pgxp) {           /* a 2D sprite quad built at a projected point: every corner tagged alike */
+        if (g_sprite_tags) {    /* a 2D sprite quad built at a projected point: every corner tagged alike */
             const PgxpWord *t0 = &pgxp_mem[(cmd_addr[xyi[0]] & 0x1FFFFCu) >> 2];
             int same = 1;
             for (i = 0; i < nv && same; i++) {
@@ -918,8 +931,8 @@ static void cmd_polygon(const uint32_t *p)
                 v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
                 v[i].w = fw;
             } else if (st) {
-                v[i].x = sprite_coord(v[i].x, st->cx + S.offs_x, st->x, -st->w);
-                v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, -st->w);
+                v[i].x = sprite_coord(v[i].x, st->cx + S.offs_x, st->x, sprite_sx(st));
+                v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, sprite_sy(st));
             } else {
                 v[i].x *= TH.n;
                 v[i].y *= TH.n;
@@ -1160,17 +1173,19 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
     }
 }
 
-/* The upscaled copy of a tagged sprite rectangle scaled with depth: the target pixels between
- * its scaled corners, each taking the texel under its centre (nearest, like the native sprite). */
+/* The upscaled copy of a tagged sprite rectangle scaled by sx, sy (depth, widescreen): the target
+ * pixels between its scaled corners, each taking the texel under its centre (nearest, like the
+ * native sprite). */
 static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uint32_t u0, uint32_t v0,
-                               uint32_t color, int tex, int raw, int blend, const PgxpWord *t)
+                               uint32_t color, int tex, int raw, int blend, const PgxpWord *t,
+                               float sx, float sy)
 {
     const int32_t n = TH.n, cx = t->cx + S.offs_x, cy = t->cy + S.offs_y;
-    const float s = -t->w, fn = (float)n;
+    const float fn = (float)n;
     uint32_t r = color & 0xFFu, g = (color >> 8) & 0xFFu, b = (color >> 16) & 0xFFu;
     uint32_t fill = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
-    int32_t X0 = sprite_coord(x0, cx, t->x, s), X1 = sprite_coord(x0 + w, cx, t->x, s);
-    int32_t Y0 = sprite_coord(y0, cy, t->y, s), Y1 = sprite_coord(y0 + h, cy, t->y, s);
+    int32_t X0 = sprite_coord(x0, cx, t->x, sx), X1 = sprite_coord(x0 + w, cx, t->x, sx);
+    int32_t Y0 = sprite_coord(y0, cy, t->y, sy), Y1 = sprite_coord(y0 + h, cy, t->y, sy);
     uint8_t us = (uint8_t)u0;
     int u_inc = 1, v_inc = 1;
     int32_t px, py;
@@ -1191,14 +1206,14 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
     if (Y1 > (S.clip_y1 + 1) * n) Y1 = (S.clip_y1 + 1) * n;
 
     for (py = Y0; py < Y1; py++) {
-        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / s + (float)(cy - y0));
+        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / sy + (float)(cy - y0));
         uint8_t vr;
         if (line_skip(py / n))
             continue;
         ty = ty < 0 ? 0 : ty >= h ? h - 1 : ty;
         vr = (uint8_t)(v0 + (uint32_t)(ty * v_inc));
         for (px = X0; px < X1; px++) {
-            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / s + (float)(cx - x0));
+            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / sx + (float)(cx - x0));
             tx = tx < 0 ? 0 : tx >= w ? w - 1 : tx;
             if (tex) {
                 uint32_t tt = tex_fetch((uint8_t)(us + (uint32_t)(tx * u_inc)), vr);
@@ -1250,15 +1265,16 @@ static void cmd_rect(const uint32_t *p)
     x = sext11((uint32_t)(x + S.offs_x));
     y = sext11((uint32_t)(y + S.offs_y));
 
-    if (TH.buf && g_pgxp && cmd_addr[1] != 0xFFFFFFFFu) {   /* sprite built at a projected point */
+    if (TH.buf && g_sprite_tags && cmd_addr[1] != 0xFFFFFFFFu) {   /* sprite built at a projected point */
         const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
         if (t->w < 0.0f && t->value == p[1]) {
-            if (g_sprite_depth && t->w != -1.0f) {          /* scaled: native as usual, then the copy */
+            const float sx = sprite_sx(t), sy = sprite_sy(t);
+            if (sx != 1.0f || sy != 1.0f) {                 /* scaled: native as usual, then the copy */
                 uint16_t *hb = TH.buf;
                 TH.buf = NULL;
                 draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
                 TH.buf = hb;
-                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t);
+                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t, sx, sy);
                 return;
             }
             sprite_ox = sprite_coord(0, 0, t->x, 1.0f);

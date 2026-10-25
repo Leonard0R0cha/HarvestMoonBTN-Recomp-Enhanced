@@ -388,8 +388,14 @@ def R(n):
 # 80016C08 (single quads, e.g. the player; x in a3, y in the 5th argument at sp+16).
 # The farm's field object loop (800D93C8) draws big objects at anchor (sp+48/52) + a y offset;
 # at its last argument store (800D9590, x/y arguments at sp+16 / v0) the point becomes an alias.
+# Widescreen: the model renderer (8001C0D4) skips every part (e.g. a piece of the ground) whose
+# centre lies outside four planes; their setup (8001D348) turns the camera by the angles at
+# 800491E0. The first two (read at 8001D45C / 8001D4A4) are the side planes, a little wider than
+# the 4:3 view, and are opened up to the wider view.
 SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2]);',
-              0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);'}
+              0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
+              0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
+              0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);'}
 ENTRY_HOOKS = {0x80016280: 'SPRITE_BEGIN(MEM_R16(R[29] + 24u), MEM_R16(R[29] + 28u));',
                0x800165D8: 'SPRITE_BEGIN(MEM_R16(R[29] + 20u), MEM_R16(R[29] + 24u));',
                0x80016C08: 'SPRITE_BEGIN(R[7], MEM_R16(R[29] + 16u));'}

@@ -2,9 +2,9 @@
 
 What was added on top of the original-accurate renderer, how it works, and what was learned
 about the game along the way. All of it is optional (see the `[video]` settings in the
-[README](../README.md#configuration) or the launcher), and none of it changes what the game
-itself sees: with every option on, RAM and VRAM stay bit-identical to a plain run (checked
-at several frames of a recorded play session).
+[README](../README.md#configuration) or the launcher), and apart from widescreen none of it
+changes what the game itself sees: with every other option on, RAM and VRAM stay
+bit-identical to a plain run (checked at several frames of a recorded play session).
 
 | Setting | What it does | Needs |
 |---|---|---|
@@ -12,6 +12,7 @@ at several frames of a recorded play session).
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly | upscale 2+ |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `sprite_depth = 1` | 2D objects get smaller further away, like the 3D ground | pgxp |
+| `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
 
 The launcher (`launcher.pyw` in the build folder, needs Python) edits all of these.
@@ -103,6 +104,53 @@ nearest-texel, so they stay sharp; their pixels become slightly uneven. Objects 
 ground (something held overhead) are scaled for their own height, so they can come out a
 few percent smaller than the player.
 
+## Widescreen
+
+Unlike the other options, widescreen changes what the game sees, because the game has to draw
+more of the world. The GTE scales the screen X of every perspective transform by
+(4/3) / (W/H) about the projection centre (3/4 for 16:9), so a wider view fits the 320 pixels
+the game draws, and the frontend shows the picture stretched to W:H. The game culls and sorts
+with the squeezed coordinates, so it draws what a wider screen would show.
+
+- **2D objects keep their shape.** People, stumps and rocks are flat sprites of a fixed size
+  at a projected point (see above): the squeeze moves their anchor but not their width, so
+  stretched to 16:9 they would look a third too wide. In the upscaled copy every tagged
+  sprite is squeezed by the same factor about its anchor (nearest texel, like depth scaling;
+  at upscale 4 and 16:9 a texel is exactly 3 pixels wide). This needs upscale 2 or more but
+  not PGXP: without PGXP the anchors are recorded with no sub-pixel offset.
+- **Screens without 3D stay 4:3.** The title screen, menus and videos are 2D pictures. The
+  picture is shown wide while the game projected at least 32 vertices in one of the last 10
+  frames, and never for 24-bit video. "Any projection" is not enough: with the full-screen
+  Start menu open the game still projects one vertex every other frame (against ~2,600 for
+  the house), and the menu came out stretched.
+- **Area changes stay wide.** Leaving an area, the game stops drawing 3D and fades out the
+  last picture, then shows black or "Now Loading" (97% black). Switching to 4:3 as soon as the
+  3D stopped squeezed the fading room for a moment. Once wide, the picture now stays wide
+  until a picture without 3D that is mostly not black follows a black one (at least 90% of
+  the pixels with red, green and blue at 0 or 1): the Start menu is less than 13% black from
+  its first frame after the fade. In the new-game intro and the village tour the only
+  switches left are for the Start menu, on its first frame and on the black frame after it.
+- Text, menus and the HUD drawn over the 3D view are stretched.
+- The PGXP positions and the depth scale use the squeezed coordinates (the ground scale
+  undoes the squeeze to get the view ray).
+
+**Finding: saw-tooth gaps at the sides.** With only the squeeze, black wedges appeared at the
+left and right edges of the farm (small at 16:9, a saw-tooth down both sides at 21:9). The
+model renderer (8001C0D4) skips each part of a model, such as a piece of the ground, unless
+its centre (a single point) passes the test at 8001C1C0: the direction from the camera, against
+four planes at 80061EA8. Those planes are rebuilt every frame (8001D348) by turning the camera
+matrix by four angles at 800491E0. On the farm they are 2156 and −108 (180° + 9.5° and −9.5°,
+a little wider than the 4:3 view's 9.1°) for the sides, and 93 and 1962 for top and bottom.
+A hook on the two loads of the side angles (8001D45C, 8001D4A4) widens them so that their
+tangent grows like the view (−108 → −143 for 16:9). The polygons' own screen test (8001D21C)
+is loose (x −20…398) and works on squeezed coordinates, so it needs nothing.
+
+What remains black at the sides is the edge of the map (past the town wall, beyond the
+ground at the farm exit), which a 4:3 camera never shows; the black areas stay the same with
+the side planes opened all the way. The game draws more, but it doesn't slow down: it flips
+the same number of frames (30 per second) at 4:3, 16:9 and 21:9 on the farm and through the
+village tour.
+
 ## Testing method
 
 - `--record FILE` saves the pad input of a play session; `--input @FILE` replays it
@@ -112,4 +160,6 @@ few percent smaller than the player.
   with `fastcd = 1` without it, so the replay went somewhere else entirely.
 - Every option was checked for game-state identity (RAM + VRAM dumps compared with a plain
   run) and with unit tests in `runtime/tests/` (upscaled texel sampling, PGXP vertices,
-  perspective, sprite shifting and depth scaling, the ground-scale formula).
+  perspective, sprite shifting and depth scaling, the ground-scale formula, the widescreen
+  projection, sprite squeeze and frustum angles). Widescreen changes the game state on
+  purpose; with it off the game state is unchanged.

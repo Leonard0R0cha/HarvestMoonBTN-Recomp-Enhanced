@@ -165,6 +165,15 @@ static void set_scaling(const char *val) {
     else LOGW("unknown scaling '%s' (sharp-bilinear, sharp or smooth)", val);
 }
 
+/* "off" / "0", "1" (= 16:9) or an aspect ratio W:H wider than 4:3 */
+static void set_widescreen(const char *val) {
+    int w = 0, h = 0;
+    if (sscanf(val, "%d:%d", &w, &h) == 2 && w > 0 && h > 0 && w * 3 > h * 4) { g_cfg.ws_w = w; g_cfg.ws_h = h; }
+    else if (!strcmp(val, "1")) { g_cfg.ws_w = 16; g_cfg.ws_h = 9; }
+    else if (!strcmp(val, "0") || !strcmp(val, "off")) g_cfg.ws_w = g_cfg.ws_h = 0;
+    else LOGW("unknown widescreen '%s' (off, 16:9, 16:10, 21:9, ...)", val);
+}
+
 static void set_option(const char *key, const char *val) {
     if (!strcmp(key, "disc")) snprintf(g_cfg.disc_path, sizeof g_cfg.disc_path, "%s", val);
     else if (!strcmp(key, "savedir")) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", val);
@@ -173,6 +182,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
+    else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
@@ -210,6 +220,7 @@ static void usage(void) {
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
+           "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
@@ -295,6 +306,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
+        else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
@@ -398,6 +410,15 @@ int main(int argc, char **argv) {
     g_pgxp_persp = g_pgxp && g_cfg.perspective;
     g_sprite_depth = g_pgxp && g_cfg.sprite_depth;
     if (g_cfg.pgxp && !g_pgxp) LOGW("pgxp has no effect without upscale 2 or more");
+    if (g_cfg.ws_w) {
+        /* the game's projection is made for a 4:3 TV: squeeze x by (4/3) / (W/H) */
+        int num = 4 * g_cfg.ws_h, den = 3 * g_cfg.ws_w;
+        gte_set_widescreen(num, den);
+        if (gpu_upscale() > 1) g_sprite_ws = (float)num / (float)den;
+        else LOGW("widescreen: 2D objects and people look wider without upscale 2 or more");
+        LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
+    }
+    g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w);
     spu_init();
     dma_init();
     cdrom_init();

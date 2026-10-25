@@ -53,9 +53,12 @@ void     gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y,
  * of the sprite being built (or drop an old sprite tag when no anchor was found). A sprite
  * rectangle whose position word carries a matching tag (or a quad whose corners all do) is
  * drawn shifted by the offset in the upscaled copy (rigidly, so the pixel art stays crisp).
- * With g_sprite_depth it is also scaled by the anchor's depth scale s about the anchor. */
+ * With g_sprite_depth it is also scaled by the anchor's depth scale s about the anchor, and with
+ * g_sprite_ws != 1 (widescreen) squeezed horizontally about it, like the GTE squeezes the world. */
+extern int g_sprite_tags;         /* anchors and sprite tags are recorded (pgxp or widescreen; upscaled) */
 extern int g_sprite_on;
 extern int g_sprite_depth;        /* scale tagged sprites with depth (needs g_pgxp) */
+extern float g_sprite_ws;         /* horizontal squeeze of tagged sprites, 1 = none */
 void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s);
 void     gpu_sprite_begin(int x, int y);
 void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anchor a (offset, scale, centre) */

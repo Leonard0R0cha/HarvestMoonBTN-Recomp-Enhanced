@@ -966,10 +966,10 @@ static void test_pgxp_sprite(void)
     long bad = 0;
 
     gpu_set_upscale(n);
-    g_pgxp = 0;
+    g_pgxp = g_sprite_tags = 0;
     sprite_scene(1, xy(110, 120), 1.0f);
     memcpy(ref, gpu_vram(), sizeof ref);
-    g_pgxp = 1;
+    g_pgxp = g_sprite_tags = 1;
     sprite_scene(1, xy(110, 120), 1.0f);
     CHECK(g_sprite_on, "anchor found");
     CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "sprite shift: native VRAM unchanged");
@@ -1035,7 +1035,24 @@ static void test_pgxp_sprite(void)
         g_sprite_depth = 0;
     }
 
-    g_pgxp = 0;
+    /* widescreen 16:9: squeezed by 3/4 horizontally about the anchor: the rect covers target pixels
+     * 432..479 x 479..542, 3x4 per texel; native VRAM unchanged */
+    {
+        long badw = 0;
+        g_sprite_ws = 0.75f;
+        sprite_scene(1, xy(110, 120), 1.0f);
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "widescreen sprite: native VRAM unchanged");
+        gpu_render_display(out, &w, &h);
+        for (y = 479; y < 543; y++)
+            for (x = 432; x < 480; x++)
+                badw += out[y * w + x] != argb15(px(110 + (x - 432) / 3, 120 + (y - 479) / 4));
+        CHECK(badw == 0, "widescreen sprite: %ld pixels not the squeezed sprite", badw);
+        CHECK(out[479 * w + 431] != out[479 * w + 432] && out[479 * w + 480] != out[479 * w + 479],
+              "widescreen sprite: nothing drawn beside it");
+        g_sprite_ws = 1.0f;
+    }
+
+    g_pgxp = g_sprite_tags = 0;
     gpu_set_upscale(1);
     free(out);
 }
