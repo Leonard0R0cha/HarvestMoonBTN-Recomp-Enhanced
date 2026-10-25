@@ -218,6 +218,7 @@ void memcard_text(uint32_t text);
 /* quickui.c: skip the waits of menus and windows */
 void quick_window(uint32_t counter, uint32_t steps);
 uint32_t quick_fade(uint32_t ticks);
+void quick_text(uint32_t text);
 void trace_func(CPU *c, uint32_t addr);
 
 #define EVCHK() do { if (UNLIKELY(c->cycles >= c->next_event)) events_run(c); } while (0)

@@ -435,11 +435,15 @@ TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # (runtime/quickui.c) can move the counter to the end so it opens or closes at once.
 ENTRY_HOOKS[0x80022794] = 'quick_window(MEM_R32(R[29] + 24u), MEM_R32(R[29] + 28u));'
 # The screen fades start with their length in game ticks in a0: 800132B8 from black,
-# 800132F0 to black (gp+32 = kind, gp+344/346 = tick/length). The music fades in/out with
-# them (8001FE00/8001FE34, same length in a0) and the game waits for both, so they are
-# shortened alike. The third kind (80013328) is left alone: its end is an exact tick.
-for _a in (0x800132B8, 0x800132F0, 0x8001FE00, 0x8001FE34):
+# 800132F0 to black, 80013328 to black for doors (gp+32 = kind, gp+344/346 = tick/length).
+# The music fades in/out with them (8001FE00/8001FE34, same length in a0) and the game waits
+# for both, so they are shortened alike.
+for _a in (0x800132B8, 0x800132F0, 0x80013328, 0x8001FE00, 0x8001FE34):
     ENTRY_HOOKS[_a] = 'R[4] = quick_fade(R[4]);'
+# The text printer (80018B98) shows one more character each time its timer runs out and
+# stores the count at gp+464 (80018C94); s0 is the text. quick_text types a few more plain
+# characters at once (textspeed).
+SITE_HOOKS[0x80018C94] = 'quick_text(R[16]);'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =

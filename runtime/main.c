@@ -192,6 +192,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "fastcard")) g_cfg.fastcard = atoi(val);
     else if (!strcmp(key, "quickui")) g_cfg.quickui = atoi(val);
     else if (!strcmp(key, "fastload")) g_cfg.fastload = atoi(val);
+    else if (!strcmp(key, "skipscenes")) g_cfg.skipscenes = atoi(val);
+    else if (!strcmp(key, "textspeed")) g_cfg.textspeed = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
@@ -305,6 +307,8 @@ int main(int argc, char **argv) {
     g_cfg.fastcard = 1;
     g_cfg.quickui = 1;
     g_cfg.fastload = 1;
+    g_cfg.skipscenes = 1;
+    g_cfg.textspeed = 3;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);

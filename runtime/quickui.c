@@ -1,4 +1,5 @@
-/* Shorter waits in menus and windows (quickui). Hooks emitted by tools/recomp.py. */
+/* Shorter waits: windows and fades (quickui), loading (fastload), typing (textspeed) and
+ * cutscenes (skipscenes). Hooks emitted by tools/recomp.py. */
 #include "psx.h"
 
 /* The message/help window (the box at the bottom of the rucksack, the toolbox, the bookshelf,
@@ -23,7 +24,60 @@ uint32_t quick_fade(uint32_t ticks) {
 /* "Now Loading" (the dog in the middle of a black screen while an area is read from the disc):
  * the game sets gp+88 (8005E2CC) while it is up, and its draw callback (8001B118) only draws
  * it then. The wait is the disc and the data setup, so fastload runs those frames at full
- * speed, like holding Tab. */
-bool quick_loading(void) {
-    return g_cfg.fastload && ram_r32(0x8005E2CCu) != 0;
+ * speed, like holding Tab; so are the black pauses between places. */
+bool quick_loading(bool black) {
+    if (!g_cfg.fastload) return false;
+    if (ram_r32(0x8005E2CCu) != 0) return true;
+    /* After a fade to black (doors, going to bed, between the intro screens) the fade kind at
+     * gp+32 (8005E294) is 0 until the next fade from black starts, while the game loads the
+     * next place. Only frames that really are black count, in case something is drawn then. */
+    return black && (int16_t)MEM_R16(0x8005E294u) == 0;
+}
+
+/* Typed text (dialogue, the TV, signs, ...): gp+464 (8005E444) counts the characters of the
+ * text shown so far; the printer adds one each time its timer runs out and handles every
+ * control code itself as the count reaches it (line ends, waits for the button, names,
+ * choices, ...). textspeed adds more characters at that moment, but only plain letters and
+ * spaces: the count never passes a control code, so the printer still meets each one as in
+ * the original and only the typing is faster. */
+#define TEXT_SHOWN 0x8005E444u
+
+static bool plain_char(uint16_t ch) {
+    return ch < 0x0E00u || ch == 0x0FFDu;   /* letters, digits, punctuation; 0FFD = space */
+}
+
+void quick_text(uint32_t text) {
+    if (g_cfg.textspeed <= 1) return;
+    uint32_t n = MEM_R16(TEXT_SHOWN);
+    if (n == 0 || !plain_char((uint16_t)MEM_R16(text + (n - 1) * 2u))) return;
+    for (int k = 1; k < g_cfg.textspeed && n < 4096; k++, n++)
+        if (!plain_char((uint16_t)MEM_R16(text + n * 2u))) break;
+    MEM_W16(TEXT_SHOWN, n);
+}
+
+/* Cutscenes: the event scripts lock the player (bit 23 of the player state word, 80071A6C,
+ * set and cleared by the script command at 800E63C8) for as long as they run. Holding START
+ * then runs the game at full speed; the game never sees that START (it opens the farm summary
+ * in normal play), not even if the scene ends while it is still held. Whenever a message
+ * window is up (8006C904, set while the dialogue box is open) the scene runs at normal speed
+ * and waits for the player, since some dialogue asks for a choice: once the box closes,
+ * holding START goes on skipping. */
+#define PLAYER_STATE   0x80071A6Cu
+#define PLAYER_LOCKED  0x00800000u
+#define DIALOGUE_OPEN  0x8006C904u
+
+static bool skipping, start_swallowed;
+
+uint16_t quick_skip(uint16_t pad) {
+    bool start = (pad & PAD_START) != 0;
+    bool scene = g_cfg.skipscenes && (MEM_R32(PLAYER_STATE) & PLAYER_LOCKED) != 0;
+    if (!start) start_swallowed = false;
+    else if (scene) start_swallowed = true;
+    if (start_swallowed) pad &= (uint16_t)~PAD_START;
+    skipping = scene && start && MEM_R8(DIALOGUE_OPEN) == 0;
+    return pad;
+}
+
+bool quick_skipping(void) {
+    return skipping;
 }

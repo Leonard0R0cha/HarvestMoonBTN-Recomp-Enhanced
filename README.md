@@ -176,6 +176,7 @@ ways:
 | F11 or Alt+Enter | toggle fullscreen (Esc leaves fullscreen) |
 | F12 | screenshot (saved in `screenshots/`) |
 | Tab (hold) | fast-forward (can be disabled) |
+| START (hold, during a cutscene) | fast-forward the cutscene (`skipscenes`) |
 
 Controllers can be plugged in or out at any time. Any controller that SDL2 recognises as a
 game controller works (Xbox, PlayStation, Switch Pro and many others) with the Xbox-style
@@ -206,8 +207,10 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
 |  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
 |  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |
-|  | `quickui` | `1` | menu and message windows open and close at once, fades to and from black are 4× shorter; `0` = original |
-|  | `fastload` | `1` | the game runs at full speed while "Now Loading" is shown; `0` = original wait |
+|  | `quickui` | `1` | menu and message windows open and close at once, fades to and from black (doors too) are 4× shorter; `0` = original |
+|  | `fastload` | `1` | the game runs at full speed while "Now Loading" or the black screen between places is shown; `0` = original wait |
+|  | `textspeed` | `3` | characters the dialogue types at a time: `1` = original speed, `2`–`4` = faster |
+|  | `skipscenes` | `1` | hold START during a cutscene to run it at full speed; it pauses while a dialogue box is open, so choices are never made for you; `0` = off |
 | `[keyboard]` | `key_up` … `key_select` |  | comma-separated SDL key names, e.g. `key_cross = X,Space,K` |
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
