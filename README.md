@@ -199,7 +199,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `pgxp` | `0` | `1` = precise 3D vertex positions, no wobble (needs `upscale` 2+) |
 |  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
 |  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
-|  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects keep their shape with `upscale` 2+ |
+|  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects and the HUD keep their shape with `upscale` 2+ |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
 |  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |

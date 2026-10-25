@@ -395,11 +395,19 @@ def R(n):
 SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2]);',
               0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
               0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
-              0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);'}
+              0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
+              0x80024ABC: 'g_hud_call = 1;',
+              0x80024AC0: 'g_hud_call = 0;'}
 ENTRY_HOOKS = {0x80016280: 'SPRITE_BEGIN(MEM_R16(R[29] + 24u), MEM_R16(R[29] + 28u));',
                0x800165D8: 'SPRITE_BEGIN(MEM_R16(R[29] + 20u), MEM_R16(R[29] + 24u));',
                0x80016C08: 'SPRITE_BEGIN(R[7], MEM_R16(R[29] + 16u));'}
-TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08}
+# Widescreen HUD: the routines that build the windows (800153BC background, 8001530C border
+# lines, 8001526C corner pixels), text (80019070, one glyph) and portraits (80019E80) tag what they
+# write as HUD, and so does the sprite builder when the HUD icon routine (80024A4C) calls it (jal
+# at 80024AB8).
+HUD_BUILDERS = (0x800153BC, 0x8001530C, 0x8001526C, 0x80019070, 0x80019E80)
+ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
+TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, *HUD_BUILDERS}
 
 
 def with_hooks(i, s, fn_start):

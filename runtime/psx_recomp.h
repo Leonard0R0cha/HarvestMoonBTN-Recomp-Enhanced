@@ -92,8 +92,16 @@ static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y) {
         gpu_sprite_anchor((int16_t)x, (int16_t)y, px - (float)(int16_t)x, py - (float)(int16_t)y, s);
     }
 }
+/* Widescreen: the HUD (windows, text, portraits, HUD icons) is tagged to keep its 4:3 shape,
+ * centred, while the picture is shown wide; g_hud_call is set while the HUD icon routine calls
+ * the sprite builder. platform_3d_scene (frontend): the game is showing a 3D scene. */
+int platform_3d_scene(void);
+static inline void HUD_BEGIN(void) {
+    if (g_sprite_tags) gpu_hud_begin(g_sprite_ws != 1.0f && platform_3d_scene());
+}
 static inline void SPRITE_BEGIN(uint32_t x, uint32_t y) {
-    if (g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
+    if (g_hud_call && g_sprite_ws != 1.0f) HUD_BEGIN();
+    else if (g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
 }
 static inline void SPRITE_ALIAS(uint32_t ax, uint32_t ay, uint32_t bx, uint32_t by) {
     if (g_sprite_tags) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);

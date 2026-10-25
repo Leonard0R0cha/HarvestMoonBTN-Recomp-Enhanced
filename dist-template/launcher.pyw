@@ -23,7 +23,7 @@ OPTIONS = [
     ('Video', 'video', 'pgxp', 'bool', 'PGXP: precise 3D vertices, no wobble (needs resolution 2+)'),
     ('Video', 'video', 'perspective', 'bool', 'Perspective-correct textures (needs PGXP)'),
     ('Video', 'video', 'sprite_depth', 'bool', 'Scale 2D objects with depth, like the 3D ground (needs PGXP)'),
-    ('Video', 'video', 'widescreen', 'choice:off|16:9|16:10|21:9', 'Widescreen 3D view (resolution 2+ keeps 2D objects in shape)'),
+    ('Video', 'video', 'widescreen', 'choice:off|16:9|16:10|21:9', 'Widescreen 3D view (resolution 2+ keeps 2D objects and the HUD in shape)'),
     ('Video', 'video', 'fullscreen', 'bool', 'Start in fullscreen (F11 toggles)'),
     ('Video', 'video', 'scaling', 'choice:sharp-bilinear|sharp|smooth', 'Scaling to the screen'),
     ('Video', 'video', 'aspect43', 'bool', '4:3 picture like a CRT TV'),

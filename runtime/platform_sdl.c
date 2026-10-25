@@ -489,19 +489,28 @@ static int display_dark(const GpuDisplay *d) {
     return dark * 10 >= d->width * d->height * 9;
 }
 
+/* The game is showing a 3D scene: it projected 32 or more vertices since the last frame, or in
+ * one of the 10 frames before. Also asked while the game builds its HUD, which is kept at 4:3
+ * (squeezed back) only in 3D scenes, the pictures shown wide. */
+static uint32_t proj_mark;          /* projections counted up to the last frame */
+static int hold_3d;                 /* frames left in which the last 3D scene still counts */
+
+int platform_3d_scene(void) {
+    return gte_projections() - proj_mark >= 32 || hold_3d > 0;
+}
+
 static int display_wide(void) {
-    static uint32_t last;
-    static int wide_hold, was_wide, blank;      /* blank: black was shown since the 3D stopped */
+    static int was_wide, blank;      /* blank: black was shown since the 3D stopped */
     uint32_t n = gte_projections();
     GpuDisplay d;
     int wide;
     if (!g_cfg.ws_w) return 0;
-    if (n - last >= 32) wide_hold = 10;
-    else if (wide_hold > 0) wide_hold--;
-    last = n;
+    if (n - proj_mark >= 32) hold_3d = 10;
+    else if (hold_3d > 0) hold_3d--;
+    proj_mark = n;
     gpu_get_display(&d);
     if (d.is_24bit) wide = 0;
-    else if (wide_hold > 0) { wide = 1; blank = 0; }
+    else if (hold_3d > 0) { wide = 1; blank = 0; }
     else if (!was_wide) wide = 0;
     else if (display_dark(&d)) { wide = 1; blank = 1; }
     else wide = !blank;

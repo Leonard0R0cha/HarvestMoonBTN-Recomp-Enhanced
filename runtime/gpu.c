@@ -173,7 +173,10 @@ static struct { int16_t x, y; SpriteMap m; uint32_t gen; } anchors[1024];
 static uint32_t anchor_gen = 1;
 static SpriteMap sprite_map;
 static int32_t sprite_ox, sprite_oy;
-int g_sprite_tags, g_sprite_on, g_sprite_depth;
+static float line_sq = 1.0f;        /* HUD line in widescreen: squeezed by line_sq about line_c */
+static int32_t line_c;
+int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call;
+#define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
 float g_sprite_ws = 1.0f;
 
 static uint32_t anchor_slot(int x, int y)
@@ -201,6 +204,13 @@ void gpu_sprite_begin(int x, int y)
     uint32_t i = anchor_slot(x, y);
     g_sprite_on = anchors[i].gen + 1 >= anchor_gen && anchors[i].x == x && anchors[i].y == y;
     sprite_map = anchors[i].m;
+}
+
+void gpu_hud_begin(int on)
+{
+    static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, HUD_CX, 0 };
+    g_sprite_on = on;
+    sprite_map = hud;
 }
 
 void gpu_sprite_alias(int ax, int ay, int bx, int by)
@@ -404,6 +414,14 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
     plot(&TN, x, y, rgb, bit15, blend);
     if (TH.buf) {
         uint32_t n = (uint32_t)TH.n, hx = (x & 1023u) * n, hy = (y & 511u) * n, i, j;
+        if (line_sq != 1.0f) {              /* HUD line: the pixel's squeezed span */
+            int32_t px, x0 = (int32_t)lrintf(((float)line_c + (float)((int32_t)(x & 1023u) - line_c) * line_sq) * (float)n);
+            int32_t x1 = (int32_t)lrintf(((float)line_c + (float)((int32_t)(x & 1023u) + 1 - line_c) * line_sq) * (float)n);
+            for (j = 0; j < n; j++)
+                for (px = x0; px < x1; px++)
+                    plot(&TH, (uint32_t)px, hy + j, rgb, bit15, blend);
+            return;
+        }
         if (sprite_ox | sprite_oy) {        /* sprite at a projected point: shifted, kept in the draw area */
             int32_t sx = (int32_t)hx + sprite_ox, sy = (int32_t)hy + sprite_oy, N = (int32_t)n;
             int32_t cx0 = S.clip_x0 * N, cx1 = S.clip_x1 * N + N - 1, cy0 = S.clip_y0 * N, cy1 = S.clip_y1 * N + N - 1;
@@ -450,6 +468,13 @@ static inline float sprite_sx(const PgxpWord *t)
 static inline float sprite_sy(const PgxpWord *t)
 {
     return g_sprite_depth ? -t->w : 1.0f;
+}
+
+/* Horizontal scale centre of the sprite tagged t (drawing offset included): its anchor, or for
+ * the HUD the middle of the drawing area. */
+static inline int32_t sprite_cx(const PgxpWord *t)
+{
+    return t->cx == HUD_CX ? (S.clip_x0 + S.clip_x1 + 1) / 2 : t->cx + S.offs_x;
 }
 
 /* CPU->VRAM data: the n x n block for native pixel (x, y), honouring the mask bit. */
@@ -931,7 +956,7 @@ static void cmd_polygon(const uint32_t *p)
                 v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
                 v[i].w = fw;
             } else if (st) {
-                v[i].x = sprite_coord(v[i].x, st->cx + S.offs_x, st->x, sprite_sx(st));
+                v[i].x = sprite_coord(v[i].x, sprite_cx(st), st->x, sprite_sx(st));
                 v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, sprite_sy(st));
             } else {
                 v[i].x *= TH.n;
@@ -1062,7 +1087,15 @@ static void cmd_line(const uint32_t *p)
         line_xy(&b, p[2]);
     }
 
+    if (TH.buf && g_sprite_ws != 1.0f && cmd_addr[1] != 0xFFFFFFFFu) {   /* a HUD line (window border) */
+        const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
+        if (t->w < 0.0f && t->value == p[1] && t->cx == HUD_CX) {
+            line_sq = g_sprite_ws;
+            line_c = sprite_cx(t);
+        }
+    }
     draw_line(a, b, gouraud, abe ? (int)S.abr : -1);
+    line_sq = 1.0f;
 
     if (poly) {
         S.gp0_state = GP0_STATE_POLYLINE;
@@ -1180,7 +1213,7 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
                                uint32_t color, int tex, int raw, int blend, const PgxpWord *t,
                                float sx, float sy)
 {
-    const int32_t n = TH.n, cx = t->cx + S.offs_x, cy = t->cy + S.offs_y;
+    const int32_t n = TH.n, cx = sprite_cx(t), cy = t->cy + S.offs_y;
     const float fn = (float)n;
     uint32_t r = color & 0xFFu, g = (color >> 8) & 0xFFu, b = (color >> 16) & 0xFFu;
     uint32_t fill = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);

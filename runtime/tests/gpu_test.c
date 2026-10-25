@@ -957,6 +957,24 @@ static void sprite_scene(int anchored, uint32_t tag_value, float scale)
     gp0(0x65000000); gp0_at(xy(110, 120), 0x3000); gp0(0); gp0(xy(16, 16));
 }
 
+/* Widescreen HUD: an 8x12 glyph at (232,19) and a white window border line from (232,50) to
+ * (303,50), tagged as HUD (on) or with the tags dropped */
+static void hud_scene(int on)
+{
+    uint16_t tex[16 * 16];
+    int i;
+    for (i = 0; i < 256; i++)
+        tex[i] = rgb15(i % 16 + 4, i / 16 + 4, (i * 7) % 31 + 1);
+    screen_320();
+    upload(640, 0, 16, 16, tex);
+    gp0(0xE100010A);
+    gpu_hud_begin(on);
+    gpu_sprite_tag(0x3000, xy(232, 19));
+    gp0(0x65000000); gp0_at(xy(232, 19), 0x3000); gp0(0); gp0(xy(8, 12));
+    gpu_sprite_tag(0x3100, xy(232, 50));
+    gp0(0x40FFFFFF); gp0_at(xy(232, 50), 0x3100); gp0(xy(303, 50));
+}
+
 static void test_pgxp_sprite(void)
 {
     static uint16_t ref[1024 * 512];
@@ -1050,6 +1068,31 @@ static void test_pgxp_sprite(void)
         CHECK(out[479 * w + 431] != out[479 * w + 432] && out[479 * w + 480] != out[479 * w + 479],
               "widescreen sprite: nothing drawn beside it");
         g_sprite_ws = 1.0f;
+    }
+
+    /* widescreen HUD: squeezed by 3/4 about the middle of the drawing area (x 160) so it keeps its
+     * 4:3 shape: the glyph covers target pixels 856..879 x 76..123, 3x4 per texel */
+    {
+        long badh = 0;
+        g_sprite_ws = 0.75f;
+        g_sprite_depth = 1;                            /* HUD tags have no depth scale */
+        hud_scene(1);
+        gpu_render_display(out, &w, &h);
+        for (y = 76; y < 124; y++)
+            for (x = 856; x < 880; x++)
+                badh += out[y * w + x] != argb15(px(232 + (x - 856) / 3, 19 + (y - 76) / 4));
+        CHECK(badh == 0, "widescreen HUD: %ld pixels not the glyph squeezed about the centre", badh);
+        CHECK(out[76 * w + 855] != out[76 * w + 856] && out[76 * w + 880] != out[76 * w + 879],
+              "widescreen HUD: nothing drawn beside it");
+        CHECK(out[200 * w + 856] == 0xFFFFFFFFu && out[203 * w + 1071] == 0xFFFFFFFFu &&
+              out[200 * w + 855] != 0xFFFFFFFFu && out[200 * w + 1072] != 0xFFFFFFFFu &&
+              out[200 * w + 1215] != 0xFFFFFFFFu, "widescreen HUD line: target pixels 856..1071, squeezed");
+        hud_scene(0);
+        gpu_render_display(out, &w, &h);
+        CHECK(out[76 * w + 928] == argb15(px(232, 19)) && out[123 * w + 959] == argb15(px(239, 30)) &&
+              out[203 * w + 1215] == 0xFFFFFFFFu, "HUD outside 3D scenes: not squeezed");
+        g_sprite_ws = 1.0f;
+        g_sprite_depth = 0;
     }
 
     g_pgxp = g_sprite_tags = 0;

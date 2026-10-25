@@ -130,7 +130,21 @@ with the squeezed coordinates, so it draws what a wider screen would show.
   the pixels with red, green and blue at 0 or 1): the Start menu is less than 13% black from
   its first frame after the fade. In the new-game intro and the village tour the only
   switches left are for the Start menu, on its first frame and on the black frame after it.
-- Text, menus and the HUD drawn over the 3D view are stretched.
+- **The HUD keeps its 4:3 shape, centred.** The clock, dialogue boxes, portraits and text over
+  the 3D view are squeezed back by the same factor about the middle of the picture, in the
+  upscaled copy (upscale 2+), so they keep their size and sit in the middle 4:3 area of the
+  wide picture. They are found by the routines that build them, traced by recording which
+  function wrote each GPU command in a frame with the clock and one with a dialogue: window
+  background (800153BC, a gouraud quad), border lines (8001530C, `LINE_F2`), corner pixels
+  (8001526C), one text glyph (80019070) and portraits (80019E80) tag everything they write;
+  the clock's icon comes from the shared sprite builder, which is tagged while the HUD icon
+  routine (80024A4C) calls it (jal at 80024AB8). The full-screen colour tint of the time of
+  day (8001316C) is not HUD and stays full width. The same routines draw the full-screen
+  menus, which are shown at 4:3, so the HUD is tagged only while the game is in a 3D scene,
+  by the same test that shows the picture wide (32 projections since the last frame, or in
+  one of the 10 before), asked when the HUD is built. Menus, the Start menu's fade in and
+  out and the way back into 3D were checked frame by frame. Without upscaling the HUD stays
+  stretched.
 - The PGXP positions and the depth scale use the squeezed coordinates (the ground scale
   undoes the squeeze to get the view ray).
 

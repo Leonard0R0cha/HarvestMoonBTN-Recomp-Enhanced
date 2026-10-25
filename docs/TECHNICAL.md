@@ -66,6 +66,9 @@ holds a hash of the game files and the recompiler sources).
   the rotation matrix, row 1 of its inverse). Sprites at the centre keep their size and
   everything else follows the 3D ground, which the game itself can't do (the PS1 can't scale
   rectangles). None of this changes what the game sees. More in [GRAPHICS.md](GRAPHICS.md).
+  Widescreen adds hooks that widen the game's frustum side planes (8001D45C, 8001D4A4) and
+  tag the HUD builders (`HUD_BUILDERS`, and the sprite builder while 80024A4C calls it), whose
+  output is squeezed back to 4:3 about the middle of the picture.
 
 A synthetic example of what the translation looks like (not code from the game):
 

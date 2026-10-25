@@ -63,6 +63,10 @@ void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s);
 void     gpu_sprite_begin(int x, int y);
 void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anchor a (offset, scale, centre) */
 void     gpu_sprite_tag(uint32_t addr, uint32_t value);
+/* Widescreen HUD: the following gpu_sprite_tag calls (on = 1) tag the HUD, which is squeezed by
+ * g_sprite_ws about the middle of the drawing area, or (on = 0) drop old tags. */
+void     gpu_hud_begin(int on);
+extern int g_hud_call;            /* the HUD icon routine is calling the sprite builder */
 
 const uint16_t *gpu_vram(void);           /* 1024x512 16-bit VRAM (debug / screenshots) */
 
