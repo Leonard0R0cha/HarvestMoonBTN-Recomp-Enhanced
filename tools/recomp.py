@@ -430,11 +430,40 @@ ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
 ENTRY_HOOKS[0x800D6F78] = 'ITEM_BEGIN(R[7], MEM_R16(R[29] + 16u));'
 ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
+# 80022794 animates the message/help window (6 steps of width, then N of height, one per
+# game tick; counter pointer and N in its 6th/7th arguments at sp+24/28): quick_window
+# (runtime/quickui.c) can move the counter to the end so it opens or closes at once.
+ENTRY_HOOKS[0x80022794] = 'quick_window(MEM_R32(R[29] + 24u), MEM_R32(R[29] + 28u));'
+# The screen fades start with their length in game ticks in a0: 800132B8 from black,
+# 800132F0 to black (gp+32 = kind, gp+344/346 = tick/length). The music fades in/out with
+# them (8001FE00/8001FE34, same length in a0) and the game waits for both, so they are
+# shortened alike. The third kind (80013328) is left alone: its end is an exact tick.
+for _a in (0x800132B8, 0x800132F0, 0x8001FE00, 0x8001FE34):
+    ENTRY_HOOKS[_a] = 'R[4] = quick_fade(R[4]);'
+
+# Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
+# screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
+# cancel, anything else = still choosing); the hook right after each call can answer for the
+# player (runtime/memcard.c). Each screen's opening (the delay slot of its jal 801372A0, state
+# byte 80137584 = 0) starts a new visit.
+MODULE_SITE_HOOKS = {
+    'saveload': {0x8012EF28: 'R[3] = memcard_slot_menu(R[3]);',
+                 0x80130678: 'R[3] = memcard_slot_menu(R[3]);',
+                 0x80131654: 'R[3] = memcard_slot_menu(R[3]);',
+                 0x8012E350: 'memcard_slot_visit();',
+                 0x8012E5A4: 'memcard_slot_visit();',
+                 0x8012E84C: 'memcard_slot_visit();'},
+}
+# ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
+MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'memcard_text(R[6]);')}
 
 
-def with_hooks(i, s, fn_start):
+def with_hooks(i, s, fn_start, mod):
     if i.addr in SITE_HOOKS:
         s += ' ' + SITE_HOOKS[i.addr]
+    hook = MODULE_SITE_HOOKS.get(mod.name, {}).get(i.addr)
+    if hook:
+        s += ' ' + hook
     if fn_start in TAG_STORES_IN and i.mn in ('sb', 'sh', 'sw'):
         s += ' SPRITE_TAG(%s);' % addr_expr(i)
     return s
@@ -679,7 +708,7 @@ class Emitter:
                     flush()
                 s = emit_simple(i, mod)
                 if s:
-                    P('  ' + with_hooks(i, s, fi.start) + '  /* %08x: %s */' % (a, i))
+                    P('  ' + with_hooks(i, s, fi.start, mod) + '  /* %08x: %s */' % (a, i))
                 ft = a + 4
                 if i.kind == 'invalid':
                     continue
@@ -695,7 +724,10 @@ class Emitter:
             cyc += 1 + (insn_cycles(d) if d is not None else 1)
             ds = emit_simple(d, mod) if d is not None and not d.has_delay else ''
             if ds:
-                ds = with_hooks(d, ds, fi.start)
+                ds = with_hooks(d, ds, fi.start, mod)
+                th = MODULE_TEXT_HOOKS.get(mod.name)
+                if th and i.mn == 'jal' and i.target == th[0]:
+                    ds += ' ' + th[1]
             if d is not None and d.has_delay:
                 ds = '/* branch in delay slot ignored */'
             dcomment = '  /* %08x: %s */' % (a + 4, d) if d is not None else ''

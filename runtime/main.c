@@ -188,6 +188,10 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
     else if (!strcmp(key, "record")) g_cfg.record = atoi(val);
+    else if (!strcmp(key, "autoslot")) g_cfg.autoslot = atoi(val);
+    else if (!strcmp(key, "fastcard")) g_cfg.fastcard = atoi(val);
+    else if (!strcmp(key, "quickui")) g_cfg.quickui = atoi(val);
+    else if (!strcmp(key, "fastload")) g_cfg.fastload = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
@@ -226,6 +230,7 @@ static void usage(void) {
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
+           "  --no-autoslot         ask for the MEMORY CARD slot when saving/loading\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
            "  --log N               log level 0..4\n"
            "  --verify-data         check the game data pack against its checksums and exit\n"
@@ -296,6 +301,10 @@ int main(int argc, char **argv) {
     g_cfg.scale = 3;
     g_cfg.aspect_4_3 = 1;
     g_cfg.allow_fast_forward = 1;
+    g_cfg.autoslot = 1;
+    g_cfg.fastcard = 1;
+    g_cfg.quickui = 1;
+    g_cfg.fastload = 1;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);
@@ -312,6 +321,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
+        else if (!strcmp(a, "--no-autoslot")) g_cfg.autoslot = 0;
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
         else if (!strcmp(a, "--scaling")) { set_scaling(nx); i++; }
         else if (!strcmp(a, "--log")) { g_log_level = atoi(nx); i++; }

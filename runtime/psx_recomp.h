@@ -211,6 +211,13 @@ void cop0_rfe(CPU *c);
 void events_run(CPU *c);
 
 extern int g_trace_calls;
+/* saveload overlay hooks (memcard.c): answer the memory card slot menu for the player */
+uint32_t memcard_slot_menu(uint32_t result);
+void memcard_slot_visit(void);
+void memcard_text(uint32_t text);
+/* quickui.c: skip the waits of menus and windows */
+void quick_window(uint32_t counter, uint32_t steps);
+uint32_t quick_fade(uint32_t ticks);
 void trace_func(CPU *c, uint32_t addr);
 
 #define EVCHK() do { if (UNLIKELY(c->cycles >= c->next_event)) events_run(c); } while (0)

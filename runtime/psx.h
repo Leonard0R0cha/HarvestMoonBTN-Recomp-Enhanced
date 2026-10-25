@@ -114,6 +114,8 @@ bool memcard_load(int slot, const char *path);
 void memcard_flush(void);
 uint8_t *memcard_data(int slot);  /* 128KB raw image */
 void memcard_mark_dirty(int slot);
+bool memcard_busy(void);           /* a save/load screen is waiting for the card (fastcard) */
+bool quick_loading(void);          /* "Now Loading" is on screen (fastload) */
 
 /* ---- dispatcher ---- */
 void dispatch_init(void);
@@ -147,6 +149,10 @@ typedef struct {
     char record_path[1024];      /* testing: write the pad input of the session here */
     int  record;                /* record every session to recordings/ (bug reports) */
     int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
+    int  autoslot;              /* save/load screens use MEMORY CARD slot 1 without asking */
+    int  fastcard;              /* full speed while a save/load screen waits for the card */
+    int  quickui;               /* windows open and close at once, shorter fades */
+    int  fastload;              /* full speed while "Now Loading" is shown */
     int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;
     int  allow_fast_forward;     /* hold Tab to run unthrottled */

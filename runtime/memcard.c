@@ -54,7 +54,12 @@ bool memcard_load(int slot, const char *path) {
     return true;
 }
 
-uint8_t *memcard_data(int slot) { return card_present[slot] ? card[slot] : NULL; }
+static uint64_t last_access = UINT64_MAX;   /* frame of the last card access (BIOS or SIO) */
+
+uint8_t *memcard_data(int slot) {
+    last_access = frame_count();
+    return card_present[slot] ? card[slot] : NULL;
+}
 void memcard_mark_dirty(int slot) { card_dirty[slot] = true; }
 
 void memcard_flush(void) {
@@ -70,4 +75,45 @@ void memcard_flush(void) {
         if (rename(tmp, card_path[s]) != 0) LOGE("cannot replace memory card %s", card_path[s]);
         card_dirty[s] = false;
     }
+}
+
+/* The save/load screens (saveload overlay, hooks from tools/recomp.py) ask "Select a MEMORY
+ * CARD slot" with a menu that returns 0/1 for a slot, -1 for cancel and anything else while
+ * the player is still choosing. With autoslot the first question of a visit is answered with
+ * slot 1. Asked again in the same visit (the player backed out of the file list, or an error
+ * sent the screen back) it answers cancel, which asks "Aborting ... Is that OK?": Yes leaves
+ * the screen, No comes back here and gets slot 1 again. */
+static bool slot_answered;
+
+void memcard_slot_visit(void) {
+    slot_answered = false;
+}
+
+uint32_t memcard_slot_menu(uint32_t result) {
+    if (!g_cfg.autoslot) return result;
+    slot_answered = !slot_answered;
+    return slot_answered ? 0 : (uint32_t)-1;
+}
+
+/* Every text the save/load screens show goes through the hook after their calls of the
+ * message box (8001AC10, a2 = text). While one of the "busy" texts is up and the card is
+ * being accessed, fastcard runs the game at full speed, like holding Tab: the card itself
+ * takes its time (one sector per frame, as on the console), so this shortens the wait. */
+static bool busy_text;
+
+void memcard_text(uint32_t text) {
+    switch (text - ram_r32(0x80054BBCu)) {   /* the game adds a text bank offset */
+    case 0x80052FC4u:   /* Searching the MEMORY CARD. */
+    case 0x8005316Cu:   /* Formatting the MEMORY CARD ... */
+    case 0x80053350u:   /* Loading from memory card slot ... */
+    case 0x8005346Au:   /* Saving to memory card slot ... */
+        busy_text = true;
+        break;
+    default:
+        busy_text = false;
+    }
+}
+
+bool memcard_busy(void) {
+    return g_cfg.fastcard && busy_text && last_access != UINT64_MAX && frame_count() - last_access <= 8;
 }

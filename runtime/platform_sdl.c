@@ -147,6 +147,8 @@ static void parse_script(const char *s) {
             if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
             continue;
         }
+        if (!strncmp(tok, "autoslot=", 9)) { g_cfg.autoslot = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "quickui=", 8)) { g_cfg.quickui = atoi(tok + 8); continue; }
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
         *c1 = 0;
@@ -347,8 +349,10 @@ int platform_init(void) {
     if (g_cfg.record_path[0]) {
         rec_file = fopen(g_cfg.record_path, "w");
         if (rec_file) {
-            /* both change what the game does: the replay needs them */
-            fprintf(rec_file, "fastcd=%d\nwidescreen=%d:%d\n", g_cfg.fast_cd, g_cfg.ws_w, g_cfg.ws_h);
+            fprintf(rec_file, "fastcd=%d\n", g_cfg.fast_cd);   /* changes loading timing: the replay needs it */
+            fprintf(rec_file, "autoslot=%d\n", g_cfg.autoslot);   /* skips a menu: the replay needs it too */
+            fprintf(rec_file, "quickui=%d\n", g_cfg.quickui);     /* shortens animations: so does this */
+            fprintf(rec_file, "widescreen=%d:%d\n", g_cfg.ws_w, g_cfg.ws_h);   /* changes what the game does too */
             atexit(record_close);
         }
         else LOGE("cannot write %s", g_cfg.record_path);
@@ -615,7 +619,7 @@ static int fast_forward;
 
 static void throttle(void) {
     if (g_cfg.unthrottled) return;
-    if (fast_forward) { perf_next = SDL_GetPerformanceCounter(); if (audio_ok) SDL_ClearQueuedAudio(audio); return; }
+    if (fast_forward || memcard_busy() || quick_loading()) { perf_next = SDL_GetPerformanceCounter(); if (audio_ok) SDL_ClearQueuedAudio(audio); return; }
     uint64_t freq = SDL_GetPerformanceFrequency();
     double period = (double)freq / 59.2898;          /* NTSC PS1 frame rate */
     if (audio_ok) {
