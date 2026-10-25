@@ -5,6 +5,11 @@ An unofficial, native **Windows and Linux** version of *Harvest Moon: Back to Na
 PlayStation program is translated ahead of time into C and compiled into a normal x86-64
 executable. No emulator runs the game, and no PlayStation BIOS is needed.
 
+This is a fork of [GabrielBigardi/HarvestMoonBTN-Recomp](https://github.com/GabrielBigardi/HarvestMoonBTN-Recomp)
+that adds optional graphics enhancements: 2–4× internal resolution, PGXP, perspective-correct
+textures, smoothly placed and depth-scaled 2D objects, sharp-bilinear scaling and a settings
+launcher. See [docs/GRAPHICS.md](docs/GRAPHICS.md).
+
 > **No game files are included in this repository.** This is a "bring your own copy"
 > project: the build reads the game from **your own disc image** and creates the native
 > version on your computer. See [Why you need your own copy](#why-you-need-your-own-copy).
