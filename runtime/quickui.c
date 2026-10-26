@@ -34,6 +34,21 @@ bool quick_loading(bool black) {
     return black && (int16_t)MEM_R16(0x8005E294u) == 0;
 }
 
+/* The music goes on through those pauses (the next place's music often starts in them), and
+ * at full speed it would run on unheard: once the picture is back it would be well ahead. So
+ * while fastload runs a pause at full speed the music sequencer (8002A6E4, libsnd's
+ * SsSeqCalledTbyT, called each tick) is not run: the music waits and goes on from where it
+ * was. The platform says per frame whether the frame being run is such a pause. */
+static bool music_held;
+
+void quick_hold_music(bool hold) {
+    music_held = hold;
+}
+
+int quick_music_held(void) {
+    return music_held;
+}
+
 /* Typed text (dialogue, the TV, signs, ...): gp+464 (8005E444) counts the characters of the
  * text shown so far; the printer adds one each time its timer runs out and handles every
  * control code itself as the count reaches it (line ends, waits for the button, names,

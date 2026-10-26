@@ -685,6 +685,7 @@ void platform_frame(void) {
         gpu_render_display(frame_px, &w, &h);
         frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
     }
+    quick_hold_music(quick_loading(frame_black));   /* for the frame run next */
     int wide = display_wide();
     if (shot) save_screenshot(frame_px, w, h, frame, wide);
 

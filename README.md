@@ -211,10 +211,10 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
 |  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |
 |  | `quickui` | `1` | menu and message windows open and close at once, fades to and from black (doors too) are 4× shorter; `0` = original |
-|  | `fastload` | `1` | the game runs at full speed while "Now Loading" or the black screen between places is shown; `0` = original wait |
+|  | `fastload` | `1` | the game runs at full speed while "Now Loading" or the black screen between places is shown; the music waits meanwhile, so it does not jump ahead; `0` = original wait |
 |  | `overclock` | `200` | CPU speed in percent (`100` = the console, up to `400`): the game no longer drops frames when a lot is going on, e.g. running around the farm while switching tools; video, sound and timing stay the same |
 |  | `emptybag` | `1` | R1 / R2 do nothing when there is no tool / item to switch to, so they no longer stop the player for a moment while running; `0` = original |
-|  | `textspeed` | `3` | characters the dialogue types at a time: `1` = original speed, `2`–`4` = faster |
+|  | `textspeed` | `3` | characters the dialogue types at a time: `1` = original speed, `2`–`16` = faster |
 |  | `skipscenes` | `1` | hold START during a cutscene to run it at full speed; it pauses while a dialogue box is open, so choices are never made for you; `0` = off |
 | `[keyboard]` | `key_up` … `key_select` |  | comma-separated SDL key names, e.g. `key_cross = X,Space,K` |
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |

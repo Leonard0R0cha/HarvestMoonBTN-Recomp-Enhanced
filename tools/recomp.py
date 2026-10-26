@@ -448,6 +448,9 @@ for _a in (0x800132B8, 0x800132F0, 0x80013328, 0x8001FE00, 0x8001FE34):
 # stores the count at gp+464 (80018C94); s0 is the text. quick_text types a few more plain
 # characters at once (textspeed).
 SITE_HOOKS[0x80018C94] = 'quick_text(R[16]);'
+# libsnd's sequencer tick (8002A6E4, SsSeqCalledTbyT) is not run while fastload runs a loading
+# pause at full speed, so the music does not run on unheard (quick_music_held).
+ENTRY_HOOKS[0x8002A6E4] = 'if (quick_music_held()) return;'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =

@@ -126,6 +126,7 @@ bool bios_card_files_open(void);    /* a file on a memory card is open */
 extern uint16_t g_port_text[128];  /* text made by the port, read by the game at 9F000400 */
 bool memcard_busy(void);           /* a save/load screen is waiting for the card (fastcard) */
 bool quick_loading(bool black);    /* "Now Loading" or a black loading pause (fastload) */
+void quick_hold_music(bool hold);  /* the music sequencer waits (a loading pause run at full speed) */
 uint16_t quick_skip(uint16_t pad);  /* START held in a cutscene: the pad the game sees (skipscenes) */
 bool quick_skipping(void);         /* ... and whether it is skipping now */
 

@@ -225,6 +225,7 @@ uint32_t memcard_text(uint32_t text);
 void quick_window(uint32_t counter, uint32_t steps);
 uint32_t quick_fade(uint32_t ticks);
 void quick_text(uint32_t text);
+int quick_music_held(void);
 void quick_bag_filter(void);
 void trace_func(CPU *c, uint32_t addr);
 

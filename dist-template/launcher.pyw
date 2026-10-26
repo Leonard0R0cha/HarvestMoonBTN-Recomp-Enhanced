@@ -24,7 +24,7 @@ OPTIONS = [
     ('Game', 'behaviour', 'quickui', 'bool', 'Windows open at once, shorter fades'),
     ('Game', 'behaviour', 'fastload', 'bool', 'Full speed while loading ("Now Loading", doors)'),
     ('Game', 'behaviour', 'skipscenes', 'bool', 'Hold START to fast-forward cutscenes'),
-    ('Game', 'behaviour', 'textspeed', 'spin4', 'Dialogue typing speed (1 = original)'),
+    ('Game', 'behaviour', 'textspeed', 'spin16', 'Dialogue typing speed (1 = original, up to 16)'),
     ('Game', 'behaviour', 'overclock', 'text', 'CPU speed in percent (100 = original; 200 = no slowdowns)'),
     ('Game', 'behaviour', 'emptybag', 'bool', 'R1 / R2 do nothing with an empty rucksack (no stop while running)'),
     ('Video', 'video', 'scale', 'spin8', 'Window size (multiple of 320x240)'),
