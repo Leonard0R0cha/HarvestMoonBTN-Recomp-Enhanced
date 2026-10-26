@@ -222,7 +222,7 @@ int memcard_slot_auto(void);
 uint32_t memcard_diary_menu(uint32_t result, int loading);
 uint32_t memcard_text(uint32_t text);
 /* quickui.c: skip the waits of menus and windows */
-void quick_window(uint32_t counter, uint32_t steps);
+void quick_window(uint32_t ra, uint32_t counter, uint32_t steps);
 uint32_t quick_fade(uint32_t ticks);
 void quick_text(void);
 void quick_text_walked(uint32_t next, uint32_t inserted);
