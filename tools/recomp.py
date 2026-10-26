@@ -445,9 +445,14 @@ ENTRY_HOOKS[0x80022794] = 'quick_window(MEM_R32(R[29] + 24u), MEM_R32(R[29] + 28
 for _a in (0x800132B8, 0x800132F0, 0x80013328, 0x8001FE00, 0x8001FE34):
     ENTRY_HOOKS[_a] = 'R[4] = quick_fade(R[4]);'
 # The text printer (80018B98) shows one more character each time its timer runs out and
-# stores the count at gp+464 (80018C94); s0 is the text. quick_text types a few more plain
-# characters at once (textspeed).
-SITE_HOOKS[0x80018C94] = 'quick_text(R[16]);'
+# stores the count at gp+464 (80018C94), then walks the text shown; where the walk ends
+# (80018FF4) s0 is the next character and sp+112 is set in the call that walks an inserted
+# name. quick_text_walked types a few more plain characters at once (textspeed).
+SITE_HOOKS[0x80018C94] = 'quick_text();'
+SITE_HOOKS[0x80018FF4] = 'quick_text_walked(R[16], MEM_R32(R[29] + 112u));'
+# 80017AE8 ends the printer's wait for the button; besides the button, the end of a scroll of
+# the box calls it, and that must not end a wait (quick_text_wait_kept).
+ENTRY_HOOKS[0x80017AE8] = 'if (quick_text_wait_kept(R[31])) return;'
 # libsnd's sequencer tick (8002A6E4, SsSeqCalledTbyT) is not run while fastload runs a loading
 # pause at full speed, so the music does not run on unheard (quick_music_held).
 ENTRY_HOOKS[0x8002A6E4] = 'if (quick_music_held()) return;'

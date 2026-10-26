@@ -54,20 +54,52 @@ int quick_music_held(void) {
  * control code itself as the count reaches it (line ends, waits for the button, names,
  * choices, ...). textspeed adds more characters at that moment, but only plain letters and
  * spaces: the count never passes a control code, so the printer still meets each one as in
- * the original and only the typing is faster. */
+ * the original and only the typing is faster.
+ * The count is not an index into the text: an inserted name (a 4xxx code: the farm's, the
+ * player's, an animal's) counts as all of its letters. So the characters are looked at where
+ * the printer's walk through the text ends (80018FF4, s0 = the next character), once per
+ * character it added (quick_text, at 80018C94). Inserted names are walked by a call of the
+ * printer of its own (the flag at sp+112 set) and are typed faster too: the walk then ends
+ * right after the name's code, and the characters checked are the ones after the name, of
+ * which no more are shown than are added. */
 #define TEXT_SHOWN 0x8005E444u
+#define TEXT_STATE 0x8005E446u
+#define TEXT_TYPING 0
+#define INSERTED_NAME 0x4000u   /* its letters are plain too */
 
 static bool plain_char(uint16_t ch) {
     return ch < 0x0E00u || ch == 0x0FFDu;   /* letters, digits, punctuation; 0FFD = space */
 }
 
-void quick_text(uint32_t text) {
-    if (g_cfg.textspeed <= 1) return;
+static bool text_added;
+
+void quick_text(void) {
+    text_added = true;
+}
+
+void quick_text_walked(uint32_t next, uint32_t inserted) {
+    if (inserted || !text_added) return;
+    text_added = false;
+    if (g_cfg.textspeed <= 1 || MEM_R16(TEXT_STATE) != TEXT_TYPING) return;
+    uint16_t last = (uint16_t)MEM_R16(next - 2u);
+    if (!plain_char(last) && (last & 0xF000u) != INSERTED_NAME) return;
     uint32_t n = MEM_R16(TEXT_SHOWN);
-    if (n == 0 || !plain_char((uint16_t)MEM_R16(text + (n - 1) * 2u))) return;
-    for (int k = 1; k < g_cfg.textspeed && n < 4096; k++, n++)
-        if (!plain_char((uint16_t)MEM_R16(text + n * 2u))) break;
+    for (int k = 1; k < g_cfg.textspeed && n < 4096; k++, n++, next += 2u)
+        if (!plain_char((uint16_t)MEM_R16(next))) break;
     MEM_W16(TEXT_SHOWN, n);
+}
+
+/* The printer's state at gp+466 (8005E446) is 3 while it waits for the button (the count
+ * stops at the wait code). 80017AE8 ends the wait (and shows the next character); it is
+ * called when the button is pressed (return address 80018604) and when the box has scrolled
+ * up a line (80018798). If the wait was reached while the box was about to scroll, the end
+ * of the scroll ended it too and the text went on without the player: more likely with
+ * fast text, as the wait is reached before the scroll starts. Only the button ends a wait. */
+#define TEXT_WAITING    3
+#define WAIT_PRESSED    0x80018604u
+
+int quick_text_wait_kept(uint32_t ra) {
+    return ra != WAIT_PRESSED && MEM_R16(TEXT_STATE) == TEXT_WAITING;
 }
 
 /* Cutscenes: the event scripts lock the player (bit 23 of the player state word, 80071A6C,

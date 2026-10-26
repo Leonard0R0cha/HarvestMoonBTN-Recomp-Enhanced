@@ -224,7 +224,9 @@ uint32_t memcard_text(uint32_t text);
 /* quickui.c: skip the waits of menus and windows */
 void quick_window(uint32_t counter, uint32_t steps);
 uint32_t quick_fade(uint32_t ticks);
-void quick_text(uint32_t text);
+void quick_text(void);
+void quick_text_walked(uint32_t next, uint32_t inserted);
+int quick_text_wait_kept(uint32_t ra);
 int quick_music_held(void);
 void quick_bag_filter(void);
 void trace_func(CPU *c, uint32_t addr);
