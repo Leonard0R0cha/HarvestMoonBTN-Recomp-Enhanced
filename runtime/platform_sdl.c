@@ -19,6 +19,7 @@ uint16_t g_pad_buttons[2];
 bool g_pad_connected[2];
 
 static SDL_Window *win;
+static void update_title(void);
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
 static SDL_AudioDeviceID audio;
@@ -151,6 +152,8 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "quickui=", 8)) { g_cfg.quickui = atoi(tok + 8); continue; }
         if (!strncmp(tok, "skipscenes=", 11)) { g_cfg.skipscenes = atoi(tok + 11); continue; }
         if (!strncmp(tok, "textspeed=", 10)) { g_cfg.textspeed = atoi(tok + 10); continue; }
+        if (!strncmp(tok, "emptybag=", 9)) { g_cfg.emptybag = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "overclock=", 10)) { g_cfg.overclock = atoi(tok + 10); g_cycle_scale = 256u * 100u / (uint32_t)(g_cfg.overclock < 100 ? 100 : g_cfg.overclock); continue; }
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
         *c1 = 0;
@@ -357,6 +360,8 @@ int platform_init(void) {
             fprintf(rec_file, "widescreen=%d:%d\n", g_cfg.ws_w, g_cfg.ws_h);   /* changes what the game does too */
             fprintf(rec_file, "skipscenes=%d\n", g_cfg.skipscenes);
             fprintf(rec_file, "textspeed=%d\n", g_cfg.textspeed);
+            fprintf(rec_file, "overclock=%d\n", g_cfg.overclock);
+            fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
             atexit(record_close);
         }
         else LOGE("cannot write %s", g_cfg.record_path);
@@ -380,6 +385,7 @@ int platform_init(void) {
     win = SDL_CreateWindow("Harvest Moon: Back to Nature", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            win_w, 240 * sc, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
+    update_title();
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
     if (!ren) { fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
@@ -620,6 +626,13 @@ static void dump_ram(uint64_t frame) {
 /* Wait until the next emulated frame is due (59.29 Hz NTSC).  When an audio device is
  * present the queue depth is used as the clock instead, so audio never drifts. */
 static int fast_forward;
+
+/* the window title shows the memory card in slot 1 (F1-F4) */
+static void update_title(void) {
+    char t[96];
+    snprintf(t, sizeof t, "Harvest Moon: Back to Nature  [Memory card %d]", memcard_bank());
+    SDL_SetWindowTitle(win, t);
+}
 static bool frame_black;   /* the picture just shown is black (fastload) */
 
 /* a coarse grid of the picture, all (nearly) black */
@@ -704,6 +717,9 @@ void platform_frame(void) {
                 SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
             } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
                 shot_request = 1;
+            } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
+                       ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
+                if (memcard_switch_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1, false)) update_title();
             } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                 fullscreen = 0;
                 SDL_SetWindowFullscreen(win, 0);
@@ -719,6 +735,7 @@ void platform_frame(void) {
     if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
     record_frame((int)frame, g_pad_buttons[0]);
     g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);   /* after recording: replays skip alike */
+    { static int shown_bank; if (memcard_bank() != shown_bank) { shown_bank = memcard_bank(); update_title(); } }
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
     if (shown) present(w, h, wide);
     throttle();

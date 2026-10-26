@@ -34,6 +34,10 @@ CONTROLS
   F11 or Alt+Enter   toggle fullscreen         Esc   leave fullscreen
   F12                screenshot (screenshots folder)
   Tab (hold)         fast-forward (can be disabled in hmbtn.ini)
+  F1 - F4            memory card 1 - 4 in slot 1 (shown in the window title)
+  L1 / R1            on a diary list (saving or loading): previous / next memory card
+  Triangle (hold)    on a diary list: hold 2 seconds to delete that diary
+  Start (hold)       fast-forward a cutscene (stops at each dialogue)
 
 All keys and buttons can be remapped in hmbtn.ini. Controllers can be plugged in at any time.
 
@@ -43,7 +47,13 @@ Saving works exactly as on the PlayStation: go to bed in your house and pick one
 diaries (Continue on the title screen loads them). The memory card is stored in
 saves\card1.mcd - a standard 128 KB raw memory card image, compatible with DuckStation, ePSXe,
 PCSX and others, so you can copy an existing card here to continue an old game, or take your
-card to an emulator. If the game folder is not writable, the card is kept in
+card to an emulator.
+For more than three diaries there are four cards, three diaries each: saves\card1.mcd,
+card1_2.mcd, card1_3.mcd and card1_4.mcd. On a diary list (saving or loading) L1 / R1 put
+the previous / next card in slot 1 and show its diaries ("Memory card N" above the list);
+when loading, cards without a diary are skipped. F1-F4 pick a card anywhere else. The card
+last used is chosen again next time. If the game folder is not writable, the cards
+are kept in
 %APPDATA%\HarvestMoonBTN (Windows) or ~/.local/share/HarvestMoonBTN (Linux).
 
 NOTES

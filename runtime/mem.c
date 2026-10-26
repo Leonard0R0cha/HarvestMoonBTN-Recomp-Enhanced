@@ -1,5 +1,10 @@
 /* Memory map: RAM, scratchpad and the I/O register space. */
 #include "psx.h"
+
+/* Text the port shows in the game's own message boxes (e.g. "Memory card 2" on the diary
+ * lists), in the game's text encoding. It lives in expansion region 1, which the game never
+ * uses (open bus on the console), so it cannot collide with the game's memory. */
+uint16_t g_port_text[128];
 #include "gpu.h"
 #include "spu.h"
 
@@ -65,6 +70,10 @@ static uint32_t io_read(uint32_t p, int width) {
     if (p >= 0x1F801820 && p < 0x1F801828) {
         /* MDEC: not used by this game; report idle */
         return (p & 4) ? 0x80040000u : 0;
+    }
+    if (p >= PORT_TEXT_ADDR && p < PORT_TEXT_ADDR + sizeof g_port_text) {   /* text made by the port */
+        uint32_t v; memcpy(&v, (uint8_t *)g_port_text + (p - PORT_TEXT_ADDR), 4);
+        return v;
     }
     if (p >= 0x1F000000 && p < 0x1F800000) return 0xFFFFFFFFu;   /* expansion 1: open bus */
     if (p >= 0x1F802000 && p < 0x1F804000) return 0;              /* expansion 2 (debug) */

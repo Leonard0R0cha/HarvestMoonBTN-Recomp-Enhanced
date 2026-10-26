@@ -194,6 +194,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "fastload")) g_cfg.fastload = atoi(val);
     else if (!strcmp(key, "skipscenes")) g_cfg.skipscenes = atoi(val);
     else if (!strcmp(key, "textspeed")) g_cfg.textspeed = atoi(val);
+    else if (!strcmp(key, "overclock")) g_cfg.overclock = atoi(val);
+    else if (!strcmp(key, "emptybag")) g_cfg.emptybag = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
@@ -233,6 +235,7 @@ static void usage(void) {
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --no-autoslot         ask for the MEMORY CARD slot when saving/loading\n"
+           "  --card N              start with memory card N (1-4) in slot 1 (F1-F4 switch)\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
            "  --log N               log level 0..4\n"
            "  --verify-data         check the game data pack against its checksums and exit\n"
@@ -299,6 +302,7 @@ static void load_exe(void) {
 
 int main(int argc, char **argv) {
     int verify_data = 0;
+    int card_bank = 0;   /* 1-4 from --card, 0 = the one last used */
     find_exe_dir(argv[0]);
     g_cfg.scale = 3;
     g_cfg.aspect_4_3 = 1;
@@ -309,6 +313,8 @@ int main(int argc, char **argv) {
     g_cfg.fastload = 1;
     g_cfg.skipscenes = 1;
     g_cfg.textspeed = 3;
+    g_cfg.overclock = 200;
+    g_cfg.emptybag = 1;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);
@@ -326,6 +332,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
         else if (!strcmp(a, "--no-autoslot")) g_cfg.autoslot = 0;
+        else if (!strcmp(a, "--card")) { card_bank = atoi(nx); i++; }
+        else if (!strcmp(a, "--overclock")) { g_cfg.overclock = atoi(nx); i++; }
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
         else if (!strcmp(a, "--scaling")) { set_scaling(nx); i++; }
         else if (!strcmp(a, "--log")) { g_log_level = atoi(nx); i++; }
@@ -423,9 +431,14 @@ int main(int argc, char **argv) {
             LOGW("game folder is read-only; saving memory cards to %s", g_cfg.save_dir);
         }
     }
+    memcard_open_banks(card_bank);
+    if (g_cfg.overclock < 100) g_cfg.overclock = 100;
+    if (g_cfg.overclock > 400) g_cfg.overclock = 400;
+    g_cycle_scale = 256u * 100u / (uint32_t)g_cfg.overclock;
+    if (g_cfg.overclock != 100) LOGI("CPU overclock %d%%", g_cfg.overclock);
     char card1[1200];
-    snprintf(card1, sizeof card1, "%s/card1.mcd", g_cfg.save_dir);
-    if (g_cfg.record_path[0]) {         /* the replay starts from the same memory card: <recording>_card1.mcd */
+    memcard_bank_file(card1, sizeof card1);
+    if (g_cfg.record_path[0]) {         /* the replay starts from the same memory card (the one in slot 1): <recording>_card1.mcd */
         char copy[1200];
         size_t k = strlen(g_cfg.record_path);
         FILE *in = fopen(card1, "rb"), *out;
@@ -440,7 +453,6 @@ int main(int argc, char **argv) {
         if (in) fclose(in);
         LOGI("recording the session to %s", g_cfg.record_path);
     }
-    memcard_load(0, card1);
 
     mem_reset();
     gte_reset();

@@ -81,3 +81,31 @@ uint16_t quick_skip(uint16_t pad) {
 bool quick_skipping(void) {
     return skipping;
 }
+
+/* R1 switches tools and R2 items; each press makes the player stop for a moment, even with
+ * nothing to switch to, so pressing them while running with an empty rucksack stutters the
+ * run. What the player carries (the list 800F9BE4 builds): the tool in hand at 80071A84 and
+ * up to 8 more in the rucksack from 80071A90, the item in hand at 80071A8A and up to 8 more
+ * from 80071AC0 (6 bytes each, 0 = empty). With none of a kind, its button is dropped from
+ * the pad state the farm/town control reads (801231F4 held, 801231F8 newly pressed;
+ * game pad bits: R1 = 8, R2 = 2). */
+#define PLAYER_PAD_HELD    0x801231F4u
+#define PLAYER_PAD_PRESSED 0x801231F8u
+#define PAD_GAME_R1        0x0008u
+#define PAD_GAME_R2        0x0002u
+
+static bool carries(uint32_t in_hand, uint32_t slots) {
+    if (MEM_R16(in_hand)) return true;
+    for (int i = 0; i < 8; i++) if (MEM_R16(slots + 6u * (uint32_t)i)) return true;
+    return false;
+}
+
+void quick_bag_filter(void) {
+    if (!g_cfg.emptybag) return;
+    uint32_t drop = 0;
+    if (!carries(0x80071A84u, 0x80071A90u)) drop |= PAD_GAME_R1;
+    if (!carries(0x80071A8Au, 0x80071AC0u)) drop |= PAD_GAME_R2;
+    if (!drop) return;
+    MEM_W32(PLAYER_PAD_HELD, MEM_R32(PLAYER_PAD_HELD) & ~drop);
+    MEM_W32(PLAYER_PAD_PRESSED, MEM_R32(PLAYER_PAD_PRESSED) & ~drop);
+}

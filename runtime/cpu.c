@@ -3,6 +3,7 @@
 
 CPU g_cpu;
 int g_trace_calls;
+uint32_t g_cycle_scale = 256;
 
 bool bios_rom_call(CPU *c, uint32_t addr);
 

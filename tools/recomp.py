@@ -430,6 +430,10 @@ ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
 ENTRY_HOOKS[0x800D6F78] = 'ITEM_BEGIN(R[7], MEM_R16(R[29] + 16u));'
 ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
+# Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
+# VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would
+# end the wait early and the game, which runs as fast as VSync(2) lets it, would speed up.
+UNSCALED_CYCLES = {0x80032CFC}
 # 80022794 animates the message/help window (6 steps of width, then N of height, one per
 # game tick; counter pointer and N in its 6th/7th arguments at sp+24/28): quick_window
 # (runtime/quickui.c) can move the counter to the end so it opens or closes at once.
@@ -448,18 +452,29 @@ SITE_HOOKS[0x80018C94] = 'quick_text(R[16]);'
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
 # cancel, anything else = still choosing); the hook right after each call can answer for the
-# player (runtime/memcard.c). Each screen's opening (the delay slot of its jal 801372A0, state
+# player (runtime/memcard.c; second argument 1 on the screens that read a diary). Each screen's opening (the delay slot of its jal 801372A0, state
 # byte 80137584 = 0) starts a new visit.
 MODULE_SITE_HOOKS = {
-    'saveload': {0x8012EF28: 'R[3] = memcard_slot_menu(R[3]);',
-                 0x80130678: 'R[3] = memcard_slot_menu(R[3]);',
-                 0x80131654: 'R[3] = memcard_slot_menu(R[3]);',
+    # The farm/town control copies the pad state for the player each tick: held buttons to
+    # 801231F4, newly pressed to 801231F8 (800C41C0 / its jal's delay slot 800C41C8);
+    # quick_bag_filter drops R1 / R2 there when there is nothing to switch to.
+    'GF_FARM': {0x800C41C8: 'quick_bag_filter();'},
+    'saveload': {0x8012EF28: 'R[3] = memcard_slot_menu(R[3], 0);',
+                 0x80130678: 'R[3] = memcard_slot_menu(R[3], 1);',
+                 0x80131654: 'R[3] = memcard_slot_menu(R[3], 1);',
                  0x8012E350: 'memcard_slot_visit();',
                  0x8012E5A4: 'memcard_slot_visit();',
-                 0x8012E84C: 'memcard_slot_visit();'},
+                 0x8012E84C: 'memcard_slot_visit();',
+                 # the diary lists (menu 80136B18: 0-2 = diary, -1 = cancel, 3+ = still
+                 # choosing; copied to a0 / a1 right after the call): L1/R1 change card
+                 0x8012F33C: 'R[4] = memcard_diary_menu(R[4], 0);',
+                 0x80130B40: 'R[5] = memcard_diary_menu(R[5], 1);',
+                 0x80131AE0: 'R[5] = memcard_diary_menu(R[5], 1);'},
 }
+# ... and at their entry (per overlay too): with autoslot the slot menu is not drawn at all
+MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] = 2; return; }'}}
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
-MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'memcard_text(R[6]);')}
+MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
 
 def with_hooks(i, s, fn_start, mod):
@@ -668,6 +683,8 @@ class Emitter:
         P('  FUNC_ENTER(0x%08Xu);' % fi.start)
         if fi.start in ENTRY_HOOKS:
             P('  ' + ENTRY_HOOKS[fi.start])
+        if fi.start in MODULE_ENTRY_HOOKS.get(mod.name, {}):
+            P('  ' + MODULE_ENTRY_HOOKS[mod.name][fi.start])
         order = sorted(fi.body)
         if order[0] != fi.start:
             P('  goto L_%08X;' % fi.start)
@@ -693,11 +710,12 @@ class Emitter:
                 # standalone copy of the delay slot is emitted next; fall through must skip it
                 need.add(ft)
         cyc = 0
+        cost = '%d' if fi.start in UNSCALED_CYCLES else 'CYC(%d)'
 
         def flush():
             nonlocal cyc
             if cyc:
-                P('  c->cycles += %d;' % cyc)
+                P('  c->cycles += %s;' % (cost % cyc))
                 cyc = 0
 
         for a in order:

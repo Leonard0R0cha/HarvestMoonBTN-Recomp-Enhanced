@@ -73,6 +73,7 @@ static uint8_t card_exchange(int port, uint8_t in, bool *ack) {
     *ack = true;
     if (k == 1) {
         s.mc_cmd = in;
+        if (in == 'R' || in == 'W') memcard_touch();
         if (in != 'R' && in != 'W' && in != 'S') { *ack = false; return s.mc_flag[port]; }
         return s.mc_flag[port];
     }
@@ -242,4 +243,9 @@ void sio_write(uint32_t off, uint32_t v, int width) {
     case 0x0E: s.baud = (uint16_t)v; break;
     default: break;
     }
+}
+
+/* a different card in the port: it reports "new card" until written, like a fresh insert */
+void sio_card_changed(int port) {
+    s.mc_flag[port] |= 0x08;
 }
