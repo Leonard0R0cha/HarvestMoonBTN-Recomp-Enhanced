@@ -690,6 +690,59 @@ static void test_ground_scale(void)
     check("ground scale: 1 looking along the plane", gte_ground_scale(160, 20) == 1.0f, 1);
 }
 
+/* Widescreen 16:9: screen X squeezed by 3/4 about OFX (Y, depth and IR untouched), the precise
+ * position follows, and the ground scale undoes the squeeze (still constant on a plane). */
+static void test_widescreen(void)
+{
+    float x, y, w, lo = 1e9f, hi = 0;
+    uint32_t n0;
+    int i, j;
+    setup_rtps_identity();
+    gte_set_widescreen(3, 4);
+    n0 = gte_projections();
+    WD(0, XY(100, 50)); WD(1, 200);
+    gte_command(OP_RTPS);
+    check("widescreen RTPS SXY2 = (235,170)", D(14), XY(235, 170));
+    check("widescreen RTPS IR1 unchanged", D(9), 100);
+    check("widescreen RTPS SZ3 unchanged", D(19), 200);
+    check("widescreen precise x", gte_sxy_precise(14, &x, &y, &w) && x == 235.0f && y == 170.0f, 1);
+    WD(0, XY(-100, 50));
+    gte_command(OP_RTPS);
+    check("widescreen RTPS left of centre", D(14), XY(85, 170));
+    WD(0, XY(10, 20)); WD(1, 200); WD(2, XY(-10, 0)); WD(3, 200); WD(4, XY(40, 0)); WD(5, 200);
+    gte_command(OP_RTPT);
+    check("widescreen RTPT SXY0 (167.5)", D(12), XY(167, 140));
+    check("widescreen RTPT SXY1 (152.5)", D(13), XY(152, 120));
+    check("widescreen RTPT SXY2", D(14), XY(190, 120));
+    check("widescreen: projections counted", gte_projections() - n0, 5);
+
+    WC(0, XY(2901, 0)); WC(1, XY(2902, 1300)); WC(2, XY(3680, -1301)); WC(3, XY(-2598, 1836)); WC(4, 2597);
+    WC(5, 0); WC(6, 300); WC(7, 10000);
+    WC(26, 1000);
+    for (i = -1; i <= 1; i++)
+        for (j = -1; j <= 1; j++) {
+            WD(0, XY(i * 1000, 0)); WD(1, j * 1000);
+            gte_command(OP_RTPS);
+            if (gte_sxy_precise(14, &x, &y, &w)) {
+                float zc = w * gte_ground_scale(x, y);
+                lo = zc < lo ? zc : lo;
+                hi = zc > hi ? zc : hi;
+            }
+        }
+    check("widescreen ground scale: depth * scale constant on a plane", hi > 0 && hi - lo < 1e-3f * hi, 1);
+
+    /* the farm's frustum side planes, 9.5 degrees off the view axis (and its opposite) */
+    check("widescreen frustum angle 108", gte_widescreen_angle(108), 143);
+    check("widescreen frustum angle -108", gte_widescreen_angle(-108), (uint32_t)-143);
+    check("widescreen frustum angle 2156", gte_widescreen_angle(2156), 2191);
+    check("widescreen widen 3600 (16:9)", (uint32_t)gte_widescreen_widen(3600), 4800);
+    gte_set_widescreen(36, 63);                        /* 21:9 */
+    check("widescreen widen 3600 (21:9)", (uint32_t)gte_widescreen_widen(3600), 6300);
+    gte_set_widescreen(1, 1);
+    check("frustum angle unchanged when off", gte_widescreen_angle(2156), 2156);
+    check("widen unchanged when off", (uint32_t)gte_widescreen_widen(3600), 3600);
+}
+
 int main(void)
 {
     test_registers();
@@ -705,6 +758,7 @@ int main(void)
     test_division();
     test_state_and_misc();
     test_ground_scale();
+    test_widescreen();
 
     printf("%d checks, %d failures\n", g_checks, g_fails);
     return g_fails ? 1 : 0;

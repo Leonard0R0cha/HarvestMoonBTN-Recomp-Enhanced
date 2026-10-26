@@ -16,6 +16,17 @@ int      gte_sxy_precise(int reg, float *x, float *y, float *w);
 /* Depth scale for a sprite standing at screen point (sx, sy), 1 at the projection centre. */
 float    gte_ground_scale(float sx, float sy);
 
+/* Widescreen: screen X of RTPS/RTPT is scaled by num/den about OFX (1/1 = off), so a wider view
+ * fits the picture. The game sees the squeezed coordinates. Not part of the state. */
+void     gte_set_widescreen(int num, int den);
+/* Vertices projected by RTPS/RTPT so far (the frontend's "is the game drawing 3D" test). */
+uint32_t gte_projections(void);
+/* Widescreen: distance v of the 4:3 view widened like the view (v unchanged when off). */
+int32_t  gte_widescreen_widen(int32_t v);
+/* Widescreen: angle a (4096 = full turn) off the view axis, widened like the view (a side plane
+ * of the game's own frustum test); a unchanged when widescreen is off. */
+int32_t  gte_widescreen_angle(int32_t a);
+
 size_t   gte_state_size(void);
 void     gte_save_state(void *dst);
 void     gte_load_state(const void *src);

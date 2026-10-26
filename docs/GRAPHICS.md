@@ -2,9 +2,9 @@
 
 What was added on top of the original-accurate renderer, how it works, and what was learned
 about the game along the way. All of it is optional (see the `[video]` settings in the
-[README](../README.md#configuration) or the launcher), and none of it changes what the game
-itself sees: with every option on, RAM and VRAM stay bit-identical to a plain run (checked
-at several frames of a recorded play session).
+[README](../README.md#configuration) or the launcher), and apart from widescreen none of it
+changes what the game itself sees: with every other option on, RAM and VRAM stay
+bit-identical to a plain run (checked at several frames of a recorded play session).
 
 | Setting | What it does | Needs |
 |---|---|---|
@@ -12,6 +12,7 @@ at several frames of a recorded play session).
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly | upscale 2+ |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `sprite_depth = 1` | 2D objects get smaller further away, like the 3D ground | pgxp |
+| `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
 
 The launcher (`launcher.pyw` in the build folder, needs Python) edits all of these.
@@ -73,7 +74,8 @@ ground wobbles too, which hides it.
 | 800165D8 | multi-part quad builder (villagers) | same |
 | 80016C08 | single-quad builder (the player) | same |
 | 800D93C8 | farm field object loop | big stumps and boulders are drawn at the anchor plus a y offset; that point is registered as an alias of the anchor (800D9590) |
-| 80024A4C | HUD icons | deliberately not tagged |
+| 80024A4C | HUD icons | deliberately not tagged (widescreen tags them as HUD) |
+| 800D7144 | item builder | what the player holds over its head (called for it by 800C9F20, the player's held item routine, at the player's position plus an offset) is tagged with the player's anchor; an item put down or thrown (drawn through 800D6F78 by the jal at 800CC3FC, at a point that routine projected) with its own anchor; item icons in menus aren't tagged |
 
 A sprite rectangle whose position word carries a tag, or a quad whose corners all carry the
 same tag, is drawn in the upscaled copy shifted by the anchor's offset, rigidly, by whole
@@ -90,18 +92,138 @@ stump doesn't, so it looks bigger. With the wobbly original ground this was hard
 **Fix (optional): depth scaling.** With `sprite_depth` each tagged sprite is also scaled
 about its anchor by
 
-    s = depth where the projection centre's ray meets the anchor's horizontal plane
-        ------------------------------------------------------------------------------
+    s = depth where the projection centre's ray meets the player's ground level
+        ---------------------------------------------------------------------------
                                   depth of the anchor
 
-computed from the GTE's rotation matrix (the plane normal in view space is row 1 of the
-matrix's inverse, so a scaled matrix doesn't matter). Sprites at the centre of the view keep
-their drawn size (so the player, whom the camera follows, doesn't change), and everything else
-follows the ground. Checked against the game: for the ~150 ground objects of a farm frame,
-depth × s came out at the same value (9866) for every one. Scaled sprites are sampled
-nearest-texel, so they stay sharp; their pixels become slightly uneven. Objects above the
-ground (something held overhead) are scaled for their own height, so they can come out a
-few percent smaller than the player.
+The numerator comes from the player's anchor while the camera follows the player (the
+projection writes each object's screen position through a0, and a0 = 80128B88 is the player's)
+and `gte_ground_scale`, which computes
+from the GTE's rotation matrix the depth where the centre ray meets the horizontal plane
+through a point (the plane normal in view space is row 1 of the matrix's inverse, so a scaled
+matrix doesn't matter). Sprites at the centre of the view on the player's level keep their
+drawn size, and everything else follows the ground. Checked against the game: for the ~150
+ground objects of a farm frame, the depth where the centre ray meets their level came out at
+the same value (9866) for every one, and the player's level gives 9866 on the farm, in the
+village and on the beach. Scaled sprites are sampled nearest-texel, so they stay sharp; their
+pixels become slightly uneven.
+
+**Finding: objects resized when the player climbed or jumped.** The first version used the
+centre ray's depth on each object's *own* level. The camera follows the player at a fixed
+distance, also up and down: climbing the ladder to the hot spring lifts the camera, so the
+centre ray meets the ground below much further away, and a stump down there grew and shrank
+as the player went up and down; every jump made all the ground objects grow by up to 5% and
+back. Measured against the player's level, which the camera keeps at the same distance, an
+object only changes size when its own distance does: in a recorded farm session the
+reference stayed at 9866, within 0.6% (the camera lags a jump slightly), through jumps and
+the stairs to the beach, and a boulder near a jump now shrinks smoothly as it moves up the
+screen instead of pulsing.
+
+**Finding: the player and villagers snapped to their size after area changes and in
+cutscenes.** A second version took the smallest reference of the player's last 8 projections
+(the player's object also projects its shadow, which lies below the player while it jumps),
+and fell back to each object's own level when the player hadn't been projected for a few
+frames. Arriving in town, the player is first projected away from the centre with a 4% smaller
+reference, which the minimum kept for 8 projections before the size jumped back; in cutscenes
+the camera doesn't follow the player, and the switch to the fallback made villagers jump in
+size. The reference is the camera's distance to the player's level, so it is now measured only
+while the camera follows the player (its anchor within 2 pixels of the projection centre,
+which the shadow never is), smoothed (1/8 per projection), and otherwise kept: in cutscenes, at
+the edges of a map and while changing areas, objects scale smoothly with their own distance,
+like the 3D world. Before the first measurement, each object's own level is used.
+
+## Widescreen
+
+Unlike the other options, widescreen changes what the game sees, because the game has to draw
+more of the world. The GTE scales the screen X of every perspective transform by
+(4/3) / (W/H) about the projection centre (3/4 for 16:9), so a wider view fits the 320 pixels
+the game draws, and the frontend shows the picture stretched to W:H. The game culls and sorts
+with the squeezed coordinates, so it draws what a wider screen would show.
+
+- **2D objects keep their shape.** People, stumps and rocks are flat sprites of a fixed size
+  at a projected point (see above): the squeeze moves their anchor but not their width, so
+  stretched to 16:9 they would look a third too wide. In the upscaled copy every tagged
+  sprite is squeezed by the same factor about its anchor (nearest texel, like depth scaling;
+  at upscale 4 and 16:9 a texel is exactly 3 pixels wide). This needs upscale 2 or more but
+  not PGXP: without PGXP the anchors are recorded with no sub-pixel offset.
+- **Screens without 3D stay 4:3.** The title screen, menus and videos are 2D pictures. The
+  picture is shown wide while the game projected at least 32 vertices in one of the last 10
+  frames, and never for 24-bit video. "Any projection" is not enough: with the full-screen
+  Start menu open the game still projects one vertex every other frame (against ~2,600 for
+  the house), and the menu came out stretched.
+- **Area changes stay wide.** Leaving an area, the game stops drawing 3D and fades out the
+  last picture, then shows black or "Now Loading" (97% black). Switching to 4:3 as soon as the
+  3D stopped squeezed the fading room for a moment. Once wide, the picture now stays wide
+  until a picture without 3D that is mostly not black follows a black one (at least 90% of
+  the pixels with red, green and blue at 0 or 1): the Start menu is less than 13% black from
+  its first frame after the fade. In the new-game intro and the village tour the only
+  switches left are for the Start menu, on its first frame and on the black frame after it.
+- **Full-screen menus are 4:3 from their first frame.** The toolbox in the house opens straight
+  from the room, with no black in between, so it stayed wide and stretched. Every full-screen
+  menu (toolbox, Start menu, memory card screens) draws the same scrolling tiled background:
+  800223D4 tiles the screen through a callback that builds each tile with the sprite builder,
+  so the tiles are tagged while it calls it (jalr at 80022498). The game builds a frame while
+  the previous one is shown, so the GPU notes, for each drawing buffer (top or bottom of VRAM),
+  whether the frame last drawn there had a menu background, and the picture shown is 4:3 when
+  its buffer holds a menu: switching on a "menu was drawn" signal instead showed the room
+  squeezed for 3 frames before the toolbox and the toolbox stretched for 3 frames after it.
+  The HUD isn't squeezed in a frame that draws a menu background.
+- **The HUD keeps its 4:3 shape, centred.** The clock, dialogue boxes, portraits and text over
+  the 3D view are squeezed back by the same factor about the middle of the picture, in the
+  upscaled copy (upscale 2+), so they keep their size and sit in the middle 4:3 area of the
+  wide picture. They are found by the routines that build them, traced by recording which
+  function wrote each GPU command in a frame with the clock and one with a dialogue: window
+  background (800153BC, a gouraud quad), border lines (8001530C, `LINE_F2`), corner pixels
+  (8001526C), one text glyph (80019070) and portraits (80019E80) tag everything they write;
+  the clock's icon comes from the shared sprite builder, which is tagged while the HUD icon
+  routine (80024A4C) calls it (jal at 80024AB8). The full-screen colour tint of the time of
+  day (8001316C) is not HUD and stays full width. The same routines draw the full-screen
+  menus, which are shown at 4:3, so the HUD is squeezed only while the game is in a 3D scene,
+  by the same test that shows the picture wide (32 projections since the last frame, or in
+  one of the 10 before), asked when the GPU draws the HUD. Asked when the HUD was built, the
+  first frame after every black screen (changing areas, closing a menu) showed the clock
+  stretched: the game builds its HUD before it projects the frame's 3D scene. Menus, the Start
+  menu's fade in and out, an area change and the way back into 3D were checked frame by frame.
+  Without upscaling the HUD stays stretched.
+
+  Some HUD comes from the shared sprite routines that also draw the world: the arrow at the
+  end of a dialogue page (the dialogue system, 800225C4, through 80015C50) and the item slots
+  of the bag (the field code's bag menu, 800FAB18). Every traced frame draws the world first
+  and the HUD last, as one block, so once a HUD-tagged primitive was drawn in a frame, untagged
+  rectangles and lines after it are HUD too, except ones covering the whole width (the bag's
+  full-screen dimming). The rule starts over at every VBlank and never applies to polygons.
+- **What the player holds keeps its shape.** An object picked up and held over the head is a
+  sprite drawn at the player's position plus an offset, which nothing tagged, so it came out a
+  third too wide. It now takes the player's anchor (sub-pixel offset, depth scale and the squeeze
+  about the player), like the player's own sprite, so it stays in shape and centred over the
+  player, and with PGXP it moves smoothly with the player instead of in whole pixels. Put down
+  or thrown, the item is drawn by another routine at a point it projects, so it takes that
+  point's anchor, like the objects lying in the field.
+- The PGXP positions and the depth scale use the squeezed coordinates (the ground scale
+  undoes the squeeze to get the view ray).
+
+**Finding: saw-tooth gaps at the sides.** With only the squeeze, black wedges appeared at the
+left and right edges of the farm (small at 16:9, a saw-tooth down both sides at 21:9). The
+model renderer (8001C0D4) skips each part of a model, such as a piece of the ground, unless
+its centre (a single point) passes the test at 8001C1C0: the direction from the camera, against
+four planes at 80061EA8. Those planes are rebuilt every frame (8001D348) by turning the camera
+matrix by four angles at 800491E0. On the farm they are 2156 and −108 (180° + 9.5° and −9.5°,
+a little wider than the 4:3 view's 9.1°) for the sides, and 93 and 1962 for top and bottom.
+A hook on the two loads of the side angles (8001D45C, 8001D4A4) widens them so that their
+tangent grows like the view (−108 → −143 for 16:9). The polygons' own screen test (8001D21C)
+is loose (x −20…398) and works on squeezed coordinates, so it needs nothing.
+
+**Finding: field objects popping in at the top corners.** On the farm, weeds, rocks and
+branches in the top corners of the wider view appeared and disappeared as the view moved. The
+farm's field object loop (800D93C8) draws only the tiles within 3600 units of the view's centre
+(a 19 × 19 tile square from 800D92FC, enough for 4:3). A hook where that returns (800D9414)
+widens the square like the view: 3 tiles more on each side at 16:9, 7 at 21:9.
+
+What remains black at the sides is the edge of the map (past the town wall, beyond the
+ground at the farm exit), which a 4:3 camera never shows; the black areas stay the same with
+the side planes opened all the way. The game draws more, but it doesn't slow down: it flips
+the same number of frames (30 per second) at 4:3, 16:9 and 21:9 on the farm and through the
+village tour.
 
 ## Testing method
 
@@ -112,4 +234,6 @@ few percent smaller than the player.
   with `fastcd = 1` without it, so the replay went somewhere else entirely.
 - Every option was checked for game-state identity (RAM + VRAM dumps compared with a plain
   run) and with unit tests in `runtime/tests/` (upscaled texel sampling, PGXP vertices,
-  perspective, sprite shifting and depth scaling, the ground-scale formula).
+  perspective, sprite shifting and depth scaling, the ground-scale formula, the widescreen
+  projection, sprite squeeze and frustum angles). Widescreen changes the game state on
+  purpose; with it off the game state is unchanged.

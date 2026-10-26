@@ -942,7 +942,7 @@ static void test_pgxp(void)
 
 /* Sprites at projected points: a tagged rectangle moves rigidly by its sub-pixel offset in the
  * upscaled copy (texels stay n x n blocks); untagged or stale ones stay put; native VRAM unchanged */
-static void sprite_scene(int anchored, uint32_t tag_value, float scale)
+static void sprite_scene(int anchored, uint32_t tag_value, float scale, float z)
 {
     uint16_t tex[16 * 16];
     int i;
@@ -951,10 +951,47 @@ static void sprite_scene(int anchored, uint32_t tag_value, float scale)
     screen_320();
     upload(640, 0, 16, 16, tex);
     gp0(0xE100010A);                                  /* 15-bit page at x=640 */
-    gpu_sprite_anchor(100, 100, 0.5f, -0.25f, scale);
+    gpu_sprite_anchor(100, 100, 0.5f, -0.25f, scale, z, 0);
     gpu_sprite_begin(anchored ? 100 : 99, 100);      /* the builder starts at a known anchor or not */
     gpu_sprite_tag(0x3000, tag_value);               /* ... and writes the position word */
     gp0(0x65000000); gp0_at(xy(110, 120), 0x3000); gp0(0); gp0(xy(16, 16));
+}
+
+/* Widescreen HUD: an 8x12 glyph at (232,19) and a white window border line from (232,50) to
+ * (303,50), tagged as HUD (on) or with the tags dropped */
+static void hud_scene(int on)
+{
+    uint16_t tex[16 * 16];
+    int i;
+    for (i = 0; i < 256; i++)
+        tex[i] = rgb15(i % 16 + 4, i / 16 + 4, (i * 7) % 31 + 1);
+    screen_320();
+    upload(640, 0, 16, 16, tex);
+    gp0(0xE100010A);
+    gpu_hud_begin(on);
+    gpu_sprite_tag(0x3000, xy(232, 19));
+    gp0(0x65000000); gp0_at(xy(232, 19), 0x3000); gp0(0); gp0(xy(8, 12));
+    gpu_sprite_tag(0x3100, xy(232, 50));
+    gp0(0x40FFFFFF); gp0_at(xy(232, 50), 0x3100); gp0(xy(303, 50));
+}
+
+static int no_3d_scene(void) { return 0; }
+
+/* What the player holds: the player's anchor at (160,120) + (0.5,-0.25), a 16x16 item at
+ * (145,83) built as the held object (on) or as another item (off) */
+static void held_scene(int on)
+{
+    uint16_t tex[16 * 16];
+    int i;
+    for (i = 0; i < 256; i++)
+        tex[i] = rgb15(i % 16 + 4, i / 16 + 4, (i * 7) % 31 + 1);
+    screen_320();
+    upload(640, 0, 16, 16, tex);
+    gp0(0xE100010A);
+    gpu_sprite_anchor(160, 120, 0.5f, -0.25f, 1.0f, 1000.0f, 1);
+    gpu_held_begin(on);
+    gpu_sprite_tag(0x3000, xy(145, 83));
+    gp0(0x65000000); gp0_at(xy(145, 83), 0x3000); gp0(0); gp0(xy(16, 16));
 }
 
 static void test_pgxp_sprite(void)
@@ -966,11 +1003,11 @@ static void test_pgxp_sprite(void)
     long bad = 0;
 
     gpu_set_upscale(n);
-    g_pgxp = 0;
-    sprite_scene(1, xy(110, 120), 1.0f);
+    g_pgxp = g_sprite_tags = 0;
+    sprite_scene(1, xy(110, 120), 1.0f, 0.0f);
     memcpy(ref, gpu_vram(), sizeof ref);
-    g_pgxp = 1;
-    sprite_scene(1, xy(110, 120), 1.0f);
+    g_pgxp = g_sprite_tags = 1;
+    sprite_scene(1, xy(110, 120), 1.0f, 0.0f);
     CHECK(g_sprite_on, "anchor found");
     CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "sprite shift: native VRAM unchanged");
     gpu_render_display(out, &w, &h);
@@ -981,10 +1018,10 @@ static void test_pgxp_sprite(void)
                     bad += out[(y * n + j - 1) * w + (x * n + i + 2)] != argb15(px(x, y));
     CHECK(bad == 0, "tagged sprite: %ld pixels not shifted by (+2,-1) as exact 4x4 texel blocks", bad);
 
-    sprite_scene(0, xy(110, 120), 1.0f);                     /* rebuilt without a known anchor */
+    sprite_scene(0, xy(110, 120), 1.0f, 0.0f);                     /* rebuilt without a known anchor */
     gpu_render_display(out, &w, &h);
     CHECK(out[120 * n * w + 110 * n] == argb15(px(110, 120)), "sprite without anchor not shifted");
-    sprite_scene(1, xy(111, 120), 1.0f);                     /* tag no longer matches the word */
+    sprite_scene(1, xy(111, 120), 1.0f, 0.0f);                     /* tag no longer matches the word */
     gpu_render_display(out, &w, &h);
     CHECK(out[120 * n * w + 110 * n] == argb15(px(110, 120)), "stale sprite tag ignored");
     gpu_sprite_begin(99, 100);
@@ -997,7 +1034,7 @@ static void test_pgxp_sprite(void)
         int k, tagged;
         for (tagged = 4; tagged >= 3; tagged--) {
             long badq = 0;
-            sprite_scene(1, xy(110, 120), 1.0f);
+            sprite_scene(1, xy(110, 120), 1.0f, 0.0f);
             for (k = 0; k < 4; k++)
                 gpu_sprite_tag(0x5000u + 8u * (uint32_t)k, k < tagged ? xy(Q[k][0], Q[k][1]) : 0);
             gp0(0x2D000000);
@@ -1020,7 +1057,7 @@ static void test_pgxp_sprite(void)
     {
         long bads = 0;
         g_sprite_depth = 1;
-        sprite_scene(1, xy(110, 120), 0.5f);
+        sprite_scene(1, xy(110, 120), 0.5f, 0.0f);
         CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "depth-scaled sprite: native VRAM unchanged");
         gpu_render_display(out, &w, &h);
         for (y = 439; y < 471; y++)
@@ -1029,13 +1066,134 @@ static void test_pgxp_sprite(void)
         CHECK(bads == 0, "depth-scaled sprite: %ld pixels not the half-size sprite", bads);
         CHECK(out[439 * w + 421] != out[439 * w + 422] && out[471 * w + 422] != out[470 * w + 422] &&
               out[135 * n * w + 125 * n] != argb15(px(125, 135)), "depth-scaled sprite: nothing drawn outside");
-        sprite_scene(1, xy(110, 120), 1.0f);              /* scale 1 stays a rigid shift */
+        sprite_scene(1, xy(110, 120), 1.0f, 0.0f);              /* scale 1 stays a rigid shift */
         gpu_render_display(out, &w, &h);
         CHECK(out[(120 * n - 1) * w + 110 * n + 2] == argb15(px(110, 120)), "depth scaling at scale 1: rigid shift");
+
+        /* with the player projected, the scale is the depth of the player's ground level over the
+         * anchor's: scale 1 at depth 1000 there, the sprite (scale 1 on its own level) at 2000 */
+        bads = 0;
+        gpu_sprite_anchor(160, 120, 0.0f, 0.0f, 1.0f, 1000.0f, 2);
+        sprite_scene(1, xy(110, 120), 1.0f, 2000.0f);
+        gpu_render_display(out, &w, &h);
+        for (y = 439; y < 471; y++)
+            for (x = 422; x < 454; x++)
+                bads += out[y * w + x] != argb15(px(110 + (x - 422) / 2, 120 + (y - 439) / 2));
+        CHECK(bads == 0, "depth scale against the player's level: %ld pixels not the half-size sprite", bads);
+        /* kept while the camera doesn't follow the player (off centre) or it isn't projected */
+        gpu_sprite_anchor(60, 200, 0.0f, 0.0f, 1.0f, 500.0f, 1);
+        for (i = 0; i < 5; i++)
+            gpu_vblank();
+        bads = 0;
+        sprite_scene(1, xy(110, 120), 1.0f, 2000.0f);
+        gpu_render_display(out, &w, &h);
+        for (y = 439; y < 471; y++)
+            for (x = 422; x < 454; x++)
+                bads += out[y * w + x] != argb15(px(110 + (x - 422) / 2, 120 + (y - 439) / 2));
+        CHECK(bads == 0, "reference kept: %ld pixels not the half-size sprite", bads);
         g_sprite_depth = 0;
     }
 
-    g_pgxp = 0;
+    /* widescreen 16:9: squeezed by 3/4 horizontally about the anchor: the rect covers target pixels
+     * 432..479 x 479..542, 3x4 per texel; native VRAM unchanged */
+    {
+        long badw = 0;
+        g_sprite_ws = 0.75f;
+        sprite_scene(1, xy(110, 120), 1.0f, 0.0f);
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "widescreen sprite: native VRAM unchanged");
+        gpu_render_display(out, &w, &h);
+        for (y = 479; y < 543; y++)
+            for (x = 432; x < 480; x++)
+                badw += out[y * w + x] != argb15(px(110 + (x - 432) / 3, 120 + (y - 479) / 4));
+        CHECK(badw == 0, "widescreen sprite: %ld pixels not the squeezed sprite", badw);
+        CHECK(out[479 * w + 431] != out[479 * w + 432] && out[479 * w + 480] != out[479 * w + 479],
+              "widescreen sprite: nothing drawn beside it");
+        g_sprite_ws = 1.0f;
+    }
+
+    /* widescreen HUD: squeezed by 3/4 about the middle of the drawing area (x 160) so it keeps its
+     * 4:3 shape: the glyph covers target pixels 856..879 x 76..123, 3x4 per texel */
+    {
+        long badh = 0;
+        g_sprite_ws = 0.75f;
+        g_sprite_depth = 1;                            /* HUD tags have no depth scale */
+        hud_scene(1);
+        gpu_render_display(out, &w, &h);
+        for (y = 76; y < 124; y++)
+            for (x = 856; x < 880; x++)
+                badh += out[y * w + x] != argb15(px(232 + (x - 856) / 3, 19 + (y - 76) / 4));
+        CHECK(badh == 0, "widescreen HUD: %ld pixels not the glyph squeezed about the centre", badh);
+        CHECK(out[76 * w + 855] != out[76 * w + 856] && out[76 * w + 880] != out[76 * w + 879],
+              "widescreen HUD: nothing drawn beside it");
+        CHECK(out[200 * w + 856] == 0xFFFFFFFFu && out[203 * w + 1071] == 0xFFFFFFFFu &&
+              out[200 * w + 855] != 0xFFFFFFFFu && out[200 * w + 1072] != 0xFFFFFFFFu &&
+              out[200 * w + 1215] != 0xFFFFFFFFu, "widescreen HUD line: target pixels 856..1071, squeezed");
+        /* after HUD in this frame, an untagged rectangle is HUD too (the glyph again at (232,60)),
+         * but not one covering the whole width (green, rows 100..107) */
+        gp0(0x65000000); gp0(xy(232, 60)); gp0(0); gp0(xy(8, 12));
+        gp0(0x6000FF00); gp0(xy(0, 100)); gp0(xy(320, 8));
+        gpu_render_display(out, &w, &h);
+        badh = 0;
+        for (y = 240; y < 288; y++)
+            for (x = 856; x < 880; x++)
+                badh += out[y * w + x] != argb15(px(232 + (x - 856) / 3, 60 + (y - 240) / 4));
+        CHECK(badh == 0, "untagged rectangle after the HUD: %ld pixels not squeezed about the centre", badh);
+        CHECK(out[400 * w] == argb15(px(0, 100)) && out[431 * w + 1279] == argb15(px(319, 107)) &&
+              (px(0, 100) & 0x3E0u), "full-width rectangle after the HUD: not squeezed");
+        gpu_vblank();
+        g_scene_3d = no_3d_scene;                        /* tagged, but the picture isn't a 3D scene */
+        hud_scene(1);
+        gpu_render_display(out, &w, &h);
+        CHECK(out[76 * w + 928] == argb15(px(232, 19)) && out[203 * w + 1215] == 0xFFFFFFFFu,
+              "HUD while the picture is not a 3D scene: not squeezed");
+        g_scene_3d = NULL;
+        gpu_vblank();                                    /* the next frame starts with the world */
+        hud_scene(0);
+        gpu_render_display(out, &w, &h);
+        CHECK(out[76 * w + 928] == argb15(px(232, 19)) && out[123 * w + 959] == argb15(px(239, 30)) &&
+              out[203 * w + 1215] == 0xFFFFFFFFu, "HUD outside 3D scenes: not squeezed");
+        g_sprite_ws = 1.0f;
+        g_sprite_depth = 0;
+    }
+
+    /* widescreen menus: a frame with a menu background tile makes its buffer a menu (shown at 4:3),
+     * and the tile isn't squeezed, also after HUD; the next frame there without one is no menu */
+    {
+        g_sprite_ws = 0.75f;
+        gpu_vblank();
+        hud_scene(1);                                   /* HUD first, as the clock in the toolbox */
+        gpu_menu_begin();
+        gpu_sprite_tag(0x3200, xy(0, 100));
+        gp0(0x65000000); gp0_at(xy(0, 100), 0x3200); gp0(0); gp0(xy(16, 16));
+        gpu_render_display(out, &w, &h);
+        CHECK(gpu_display_menu(), "frame with a menu background: shown as a menu");
+        CHECK(out[400 * w] == argb15(px(0, 100)) && out[463 * w + 63] == argb15(px(15, 115)),
+              "menu background tile: not squeezed");
+        gpu_vblank();
+        hud_scene(0);
+        CHECK(!gpu_display_menu(), "next frame without a menu background: no menu");
+        g_sprite_ws = 1.0f;
+    }
+
+    /* the held object in widescreen: shifted by the player's offset and squeezed about the
+     * player's anchor, so it stays over the player: target pixels 597..644 x 331..394 */
+    {
+        long badp = 0;
+        g_sprite_ws = 0.75f;
+        held_scene(1);
+        gpu_render_display(out, &w, &h);
+        for (y = 331; y < 395; y++)
+            for (x = 597; x < 645; x++)
+                badp += out[y * w + x] != argb15(px(145 + (x - 597) / 3, 83 + (y - 331) / 4));
+        CHECK(badp == 0, "held object: %ld pixels not squeezed about the player's anchor", badp);
+        held_scene(0);
+        gpu_render_display(out, &w, &h);
+        CHECK(out[332 * w + 580] == argb15(px(145, 83)) && out[395 * w + 643] == argb15(px(160, 98)),
+              "other items: not tagged, drawn as they are");
+        g_sprite_ws = 1.0f;
+    }
+
+    g_pgxp = g_sprite_tags = 0;
     gpu_set_upscale(1);
     free(out);
 }

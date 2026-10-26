@@ -135,6 +135,7 @@ typedef struct {
     int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
+    int  ws_w, ws_h;            /* widescreen aspect W:H (e.g. 16:9), 0 = off */
     int  fullscreen;
     int  headless;              /* no window / audio (testing) */
     int  max_frames;            /* exit after N frames (testing) */
@@ -144,6 +145,7 @@ typedef struct {
     char screenshot_dir[1024];
     char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." or "@FILE" */
     char record_path[1024];      /* testing: write the pad input of the session here */
+    int  record;                /* record every session to recordings/ (bug reports) */
     int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
     int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;

@@ -6,6 +6,7 @@
 #include "spu.h"
 #include "gte.h"
 #include <stdarg.h>
+#include <time.h>
 #include <ctype.h>
 #include <sys/stat.h>
 #ifdef _WIN32
@@ -40,6 +41,7 @@ volatile int g_quit;
 static FILE *log_file;
 
 int platform_init(void);
+int platform_3d_scene(void);
 void platform_shutdown(void);
 void platform_error_box(const char *title, const char *msg);
 bool platform_set_binding(const char *key, const char *val);
@@ -165,6 +167,15 @@ static void set_scaling(const char *val) {
     else LOGW("unknown scaling '%s' (sharp-bilinear, sharp or smooth)", val);
 }
 
+/* "off" / "0", "1" (= 16:9) or an aspect ratio W:H wider than 4:3 */
+static void set_widescreen(const char *val) {
+    int w = 0, h = 0;
+    if (sscanf(val, "%d:%d", &w, &h) == 2 && w > 0 && h > 0 && w * 3 > h * 4) { g_cfg.ws_w = w; g_cfg.ws_h = h; }
+    else if (!strcmp(val, "1")) { g_cfg.ws_w = 16; g_cfg.ws_h = 9; }
+    else if (!strcmp(val, "0") || !strcmp(val, "off")) g_cfg.ws_w = g_cfg.ws_h = 0;
+    else LOGW("unknown widescreen '%s' (off, 16:9, 16:10, 21:9, ...)", val);
+}
+
 static void set_option(const char *key, const char *val) {
     if (!strcmp(key, "disc")) snprintf(g_cfg.disc_path, sizeof g_cfg.disc_path, "%s", val);
     else if (!strcmp(key, "savedir")) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", val);
@@ -173,8 +184,10 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
+    else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
+    else if (!strcmp(key, "record")) g_cfg.record = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
@@ -210,6 +223,7 @@ static void usage(void) {
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
+           "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
@@ -295,6 +309,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
+        else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
@@ -345,6 +360,15 @@ int main(int argc, char **argv) {
         log_file = fopen(lp, "w");
     }
     if (!g_cfg.screenshot_dir[0]) snprintf(g_cfg.screenshot_dir, sizeof g_cfg.screenshot_dir, "%sscreenshots", exe_dir);
+    if (g_cfg.record && !g_cfg.record_path[0] && !g_cfg.headless) {   /* recordings/session_<date>_<time>.txt */
+        char d[1100];
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        snprintf(d, sizeof d, "%srecordings", exe_dir);
+        mkdir_p(d);
+        snprintf(g_cfg.record_path, sizeof g_cfg.record_path, "%s/session_%04d%02d%02d_%02d%02d%02d.txt", d,
+                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+    }
 
     if (platform_init() != 0) return 1;
 
@@ -387,6 +411,21 @@ int main(int argc, char **argv) {
     }
     char card1[1200];
     snprintf(card1, sizeof card1, "%s/card1.mcd", g_cfg.save_dir);
+    if (g_cfg.record_path[0]) {         /* the replay starts from the same memory card: <recording>_card1.mcd */
+        char copy[1200];
+        size_t k = strlen(g_cfg.record_path);
+        FILE *in = fopen(card1, "rb"), *out;
+        snprintf(copy, sizeof copy, "%.*s_card1.mcd", (int)(k > 4 && !strcmp(g_cfg.record_path + k - 4, ".txt") ? k - 4 : k), g_cfg.record_path);
+        if (in && (out = fopen(copy, "wb")) != NULL) {
+            char buf[8192];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof buf, in)) > 0)
+                fwrite(buf, 1, n, out);
+            fclose(out);
+        }
+        if (in) fclose(in);
+        LOGI("recording the session to %s", g_cfg.record_path);
+    }
     memcard_load(0, card1);
 
     mem_reset();
@@ -398,6 +437,16 @@ int main(int argc, char **argv) {
     g_pgxp_persp = g_pgxp && g_cfg.perspective;
     g_sprite_depth = g_pgxp && g_cfg.sprite_depth;
     if (g_cfg.pgxp && !g_pgxp) LOGW("pgxp has no effect without upscale 2 or more");
+    if (g_cfg.ws_w) {
+        /* the game's projection is made for a 4:3 TV: squeeze x by (4/3) / (W/H) */
+        int num = 4 * g_cfg.ws_h, den = 3 * g_cfg.ws_w;
+        gte_set_widescreen(num, den);
+        if (gpu_upscale() > 1) g_sprite_ws = (float)num / (float)den;
+        else LOGW("widescreen: 2D objects and people look wider without upscale 2 or more");
+        g_scene_3d = platform_3d_scene;
+        LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
+    }
+    g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w);
     spu_init();
     dma_init();
     cdrom_init();

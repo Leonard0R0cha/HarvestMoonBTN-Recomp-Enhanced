@@ -168,12 +168,32 @@ static int pgxp_lookup(uint32_t addr, uint32_t value, float *x, float *y, float 
  * differs from x, y for an alias), the anchor selected for the sprite being built, and its
  * shift in the upscaled copy while drawing (target pixels). Sprite tags live in pgxp_mem:
  * x, y = offset, w = -scale, cx, cy = scale centre. */
-typedef struct { float dx, dy, s; int16_t cx, cy; } SpriteMap;
+typedef struct { float dx, dy, s, z; int16_t cx, cy; } SpriteMap;   /* z: the anchor's depth */
 static struct { int16_t x, y; SpriteMap m; uint32_t gen; } anchors[1024];
 static uint32_t anchor_gen = 1;
 static SpriteMap sprite_map;
+/* Depth scaling reference: the camera's distance to the player's level (the depth where the
+ * projection centre's ray meets it), measured while the camera follows the player (the player's
+ * anchor at the projection centre), smoothed, and kept as it is otherwise: in cutscenes, at the
+ * edges of a map, while changing areas, and for the player's shadow below it while it jumps.
+ * 0: not measured yet (each anchor's own level is used). */
+static float ref_z;
+static SpriteMap player_map;        /* the player's anchor (its own level), for what it holds */
+static float player_zc;             /* ... the depth of its level, and when it was projected */
+static uint32_t player_gen;
 static int32_t sprite_ox, sprite_oy;
-int g_sprite_on, g_sprite_depth;
+static float line_sq = 1.0f;        /* HUD line in widescreen: squeezed by line_sq about line_c */
+static int32_t line_c;
+/* Widescreen: a frame draws the world first and the HUD last, so once a HUD-tagged primitive was
+ * drawn this frame, untagged rectangles and lines are HUD too (the dialogue arrow and the bag's
+ * item slots come from shared sprite routines), except ones covering the whole width (the menus'
+ * full-screen dimming). Reset at every VBlank. */
+static int hud_after;
+int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call, g_menu_tile;
+#define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
+#define MENU_CX (INT16_MIN + 1)     /* tag of a full-screen menu's background tile */
+static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0 };   /* a HUD tag */
+float g_sprite_ws = 1.0f;
 
 static uint32_t anchor_slot(int x, int y)
 {
@@ -189,17 +209,82 @@ static void anchor_set(int x, int y, const SpriteMap *m)
     anchors[i].gen = anchor_gen;
 }
 
-void gpu_sprite_anchor(int x, int y, float dx, float dy, float s)
+void gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player)
 {
-    SpriteMap m = { dx, dy, s, (int16_t)x, (int16_t)y };
+    SpriteMap m = { dx, dy, s, z, (int16_t)x, (int16_t)y };
+    if (player) {
+        if (player_gen != anchor_gen || z * s < player_zc) {    /* the player, not its shadow */
+            player_map = m;
+            player_zc = z * s;
+            player_gen = anchor_gen;
+        }
+        if (player == 2)
+            ref_z = ref_z > 0.0f ? ref_z + (z * s - ref_z) * 0.125f : z * s;
+    }
     anchor_set(x, y, &m);
+}
+
+/* The depth scale is the reference over the anchor's depth: the camera follows the player at a
+ * fixed distance, so an object only changes size when its distance does, also when the player
+ * climbs above it, and in cutscenes objects scale with the camera like the 3D world. Before the
+ * reference is measured, the scale for the anchor's own ground level. */
+static void begin_map(const SpriteMap *m)
+{
+    sprite_map = *m;
+    if (ref_z > 0.0f && sprite_map.z > 0.0f) {
+        float s = ref_z / sprite_map.z;
+        sprite_map.s = s < 0.5f ? 0.5f : s > 2.0f ? 2.0f : s;
+    }
 }
 
 void gpu_sprite_begin(int x, int y)
 {
     uint32_t i = anchor_slot(x, y);
     g_sprite_on = anchors[i].gen + 1 >= anchor_gen && anchors[i].x == x && anchors[i].y == y;
-    sprite_map = anchors[i].m;
+    begin_map(&anchors[i].m);
+}
+
+/* What the player holds above its head is drawn at the player's position plus an offset: it is
+ * placed, scaled and squeezed with the player's anchor, like the player (on = 0: drop old tags). */
+void gpu_held_begin(int on)
+{
+    g_sprite_on = on && player_gen + 1 >= anchor_gen;
+    begin_map(&player_map);
+}
+
+/* Widescreen: full-screen menus (toolbox, Start menu, memory card screens) are shown at 4:3. The
+ * game builds a frame while the previous one is shown, so what decides is the picture: the frame
+ * (VBlank count) each drawing buffer (top or bottom of VRAM) was last drawn in, and the last one
+ * with a menu background tile in it. */
+static uint32_t buf_drawn[2], buf_menu[2];
+static inline int draw_buf(void)
+{
+    return S.clip_y0 >= 240;
+}
+
+static inline int drawing_menu(void)
+{
+    return buf_menu[draw_buf()] == anchor_gen;
+}
+
+int gpu_display_menu(void)
+{
+    int b = S.disp_y >= 240;
+    return buf_menu[b] && buf_menu[b] == buf_drawn[b];
+}
+
+void gpu_menu_begin(void)
+{
+    static const SpriteMap menu = { 0.0f, 0.0f, 1.0f, 0.0f, MENU_CX, 0 };
+    g_sprite_on = 1;
+    sprite_map = menu;
+}
+
+void gpu_hud_begin(int on)
+{
+    static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, 0.0f, HUD_CX, 0 };
+    g_sprite_on = on;
+    sprite_map = hud;
 }
 
 void gpu_sprite_alias(int ax, int ay, int bx, int by)
@@ -403,6 +488,14 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
     plot(&TN, x, y, rgb, bit15, blend);
     if (TH.buf) {
         uint32_t n = (uint32_t)TH.n, hx = (x & 1023u) * n, hy = (y & 511u) * n, i, j;
+        if (line_sq != 1.0f) {              /* HUD line: the pixel's squeezed span */
+            int32_t px, x0 = (int32_t)lrintf(((float)line_c + (float)((int32_t)(x & 1023u) - line_c) * line_sq) * (float)n);
+            int32_t x1 = (int32_t)lrintf(((float)line_c + (float)((int32_t)(x & 1023u) + 1 - line_c) * line_sq) * (float)n);
+            for (j = 0; j < n; j++)
+                for (px = x0; px < x1; px++)
+                    plot(&TH, (uint32_t)px, hy + j, rgb, bit15, blend);
+            return;
+        }
         if (sprite_ox | sprite_oy) {        /* sprite at a projected point: shifted, kept in the draw area */
             int32_t sx = (int32_t)hx + sprite_ox, sy = (int32_t)hy + sprite_oy, N = (int32_t)n;
             int32_t cx0 = S.clip_x0 * N, cx1 = S.clip_x1 * N + N - 1, cy0 = S.clip_y0 * N, cy1 = S.clip_y1 * N + N - 1;
@@ -430,13 +523,43 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
 }
 
 /* Upscaled-copy coordinate of native coordinate v (drawing offset included) of a tagged sprite
- * with scale centre c: shifted by the anchor's offset d and, with depth scaling, scaled by s
- * about c (unscaled sprites move rigidly, so their pixel art stays crisp). */
+ * with scale centre c: shifted by the anchor's offset d and scaled by s about c (unscaled sprites
+ * move rigidly, so their pixel art stays crisp). */
 static inline int32_t sprite_coord(int32_t v, int32_t c, float d, float s)
 {
-    if (!g_sprite_depth || s == 1.0f)
+    if (s == 1.0f)
         return v * TH.n + (int32_t)lrintf(d * (float)TH.n);
     return (int32_t)lrintf(((float)c + d + (float)(v - c) * s) * (float)TH.n);
+}
+
+/* The squeeze of the HUD: the world's while the picture is a 3D scene (shown wide) and not a menu,
+ * asked when the HUD is drawn. When it is built is too early: the game builds the HUD before it
+ * projects the 3D scene, so the first frame after a black screen isn't known to be 3D yet. */
+int (*g_scene_3d)(void);
+static inline float hud_sx(void)
+{
+    return (!g_scene_3d || g_scene_3d()) && !drawing_menu() ? g_sprite_ws : 1.0f;
+}
+
+/* Scale of the sprite tagged t: its depth scale (with depth scaling), and horizontally the
+ * widescreen squeeze. */
+static inline float sprite_sx(const PgxpWord *t)
+{
+    if (t->cx == HUD_CX)
+        return hud_sx();
+    return (g_sprite_depth ? -t->w : 1.0f) * g_sprite_ws;
+}
+
+static inline float sprite_sy(const PgxpWord *t)
+{
+    return g_sprite_depth ? -t->w : 1.0f;
+}
+
+/* Horizontal scale centre of the sprite tagged t (drawing offset included): its anchor, or for
+ * the HUD the middle of the drawing area. */
+static inline int32_t sprite_cx(const PgxpWord *t)
+{
+    return t->cx == HUD_CX ? (S.clip_x0 + S.clip_x1 + 1) / 2 : t->cx + S.offs_x;
 }
 
 /* CPU->VRAM data: the n x n block for native pixel (x, y), honouring the mask bit. */
@@ -836,6 +959,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
 static void cmd_polygon(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int gouraud = (op >> 4) & 1;
     int quad = (op >> 3) & 1;
     int tex = (op >> 2) & 1;
@@ -900,7 +1024,7 @@ static void cmd_polygon(const uint32_t *p)
         draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
     if (TH.buf) {
         const PgxpWord *st = NULL;
-        if (g_pgxp) {           /* a 2D sprite quad built at a projected point: every corner tagged alike */
+        if (g_sprite_tags) {    /* a 2D sprite quad built at a projected point: every corner tagged alike */
             const PgxpWord *t0 = &pgxp_mem[(cmd_addr[xyi[0]] & 0x1FFFFCu) >> 2];
             int same = 1;
             for (i = 0; i < nv && same; i++) {
@@ -910,6 +1034,8 @@ static void cmd_polygon(const uint32_t *p)
             }
             if (same)
                 st = t0;
+            if (st && st->cx == HUD_CX && hud_sx() != 1.0f)
+                hud_after = 1;
         }
         for (i = 0; i < nv; i++) {
             float fx, fy, fw;
@@ -918,8 +1044,8 @@ static void cmd_polygon(const uint32_t *p)
                 v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
                 v[i].w = fw;
             } else if (st) {
-                v[i].x = sprite_coord(v[i].x, st->cx + S.offs_x, st->x, -st->w);
-                v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, -st->w);
+                v[i].x = sprite_coord(v[i].x, sprite_cx(st), st->x, sprite_sx(st));
+                v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, sprite_sy(st));
             } else {
                 v[i].x *= TH.n;
                 v[i].y *= TH.n;
@@ -1032,6 +1158,7 @@ static inline void line_xy(LinePt *pt, uint32_t xy)
 static void cmd_line(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int gouraud = (op >> 4) & 1;
     int poly = (op >> 3) & 1;
     int abe = (op >> 1) & 1;
@@ -1049,7 +1176,18 @@ static void cmd_line(const uint32_t *p)
         line_xy(&b, p[2]);
     }
 
+    if (TH.buf && g_sprite_ws != 1.0f) {   /* a HUD line (window border), or a line after the HUD */
+        const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
+        int tagged = t && t->w < 0.0f && t->value == p[1];
+        if (tagged && t->cx == HUD_CX && hud_sx() != 1.0f)
+            hud_after = 1;
+        if (hud_after && (!tagged || t->cx == HUD_CX)) {
+            line_sq = g_sprite_ws;
+            line_c = sprite_cx(&hud_word);
+        }
+    }
     draw_line(a, b, gouraud, abe ? (int)S.abr : -1);
+    line_sq = 1.0f;
 
     if (poly) {
         S.gp0_state = GP0_STATE_POLYLINE;
@@ -1160,17 +1298,19 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
     }
 }
 
-/* The upscaled copy of a tagged sprite rectangle scaled with depth: the target pixels between
- * its scaled corners, each taking the texel under its centre (nearest, like the native sprite). */
+/* The upscaled copy of a tagged sprite rectangle scaled by sx, sy (depth, widescreen): the target
+ * pixels between its scaled corners, each taking the texel under its centre (nearest, like the
+ * native sprite). */
 static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uint32_t u0, uint32_t v0,
-                               uint32_t color, int tex, int raw, int blend, const PgxpWord *t)
+                               uint32_t color, int tex, int raw, int blend, const PgxpWord *t,
+                               float sx, float sy)
 {
-    const int32_t n = TH.n, cx = t->cx + S.offs_x, cy = t->cy + S.offs_y;
-    const float s = -t->w, fn = (float)n;
+    const int32_t n = TH.n, cx = sprite_cx(t), cy = t->cy + S.offs_y;
+    const float fn = (float)n;
     uint32_t r = color & 0xFFu, g = (color >> 8) & 0xFFu, b = (color >> 16) & 0xFFu;
     uint32_t fill = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
-    int32_t X0 = sprite_coord(x0, cx, t->x, s), X1 = sprite_coord(x0 + w, cx, t->x, s);
-    int32_t Y0 = sprite_coord(y0, cy, t->y, s), Y1 = sprite_coord(y0 + h, cy, t->y, s);
+    int32_t X0 = sprite_coord(x0, cx, t->x, sx), X1 = sprite_coord(x0 + w, cx, t->x, sx);
+    int32_t Y0 = sprite_coord(y0, cy, t->y, sy), Y1 = sprite_coord(y0 + h, cy, t->y, sy);
     uint8_t us = (uint8_t)u0;
     int u_inc = 1, v_inc = 1;
     int32_t px, py;
@@ -1191,14 +1331,14 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
     if (Y1 > (S.clip_y1 + 1) * n) Y1 = (S.clip_y1 + 1) * n;
 
     for (py = Y0; py < Y1; py++) {
-        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / s + (float)(cy - y0));
+        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / sy + (float)(cy - y0));
         uint8_t vr;
         if (line_skip(py / n))
             continue;
         ty = ty < 0 ? 0 : ty >= h ? h - 1 : ty;
         vr = (uint8_t)(v0 + (uint32_t)(ty * v_inc));
         for (px = X0; px < X1; px++) {
-            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / s + (float)(cx - x0));
+            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / sx + (float)(cx - x0));
             tx = tx < 0 ? 0 : tx >= w ? w - 1 : tx;
             if (tex) {
                 uint32_t tt = tex_fetch((uint8_t)(us + (uint32_t)(tx * u_inc)), vr);
@@ -1215,6 +1355,7 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
 static void cmd_rect(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int tex = (op >> 2) & 1;
     int abe = (op >> 1) & 1;
     int raw = op & 1;
@@ -1250,15 +1391,26 @@ static void cmd_rect(const uint32_t *p)
     x = sext11((uint32_t)(x + S.offs_x));
     y = sext11((uint32_t)(y + S.offs_y));
 
-    if (TH.buf && g_pgxp && cmd_addr[1] != 0xFFFFFFFFu) {   /* sprite built at a projected point */
-        const PgxpWord *t = &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2];
-        if (t->w < 0.0f && t->value == p[1]) {
-            if (g_sprite_depth && t->w != -1.0f) {          /* scaled: native as usual, then the copy */
+    if (TH.buf && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
+        const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
+        if (t && !(t->w < 0.0f && t->value == p[1]))
+            t = NULL;
+        if (t && t->cx == MENU_CX) {        /* a menu background tile, drawn as it is */
+            buf_menu[draw_buf()] = anchor_gen;
+            t = NULL;
+        } else if (t && t->cx == HUD_CX) {
+            if (hud_sx() != 1.0f)
+                hud_after = 1;
+        } else if (!t && hud_after && !(x <= S.clip_x0 && x + w > S.clip_x1))
+            t = &hud_word;
+        if (t) {
+            const float sx = sprite_sx(t), sy = sprite_sy(t);
+            if (sx != 1.0f || sy != 1.0f) {                 /* scaled: native as usual, then the copy */
                 uint16_t *hb = TH.buf;
                 TH.buf = NULL;
                 draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
                 TH.buf = hb;
-                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t);
+                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t, sx, sy);
                 return;
             }
             sprite_ox = sprite_coord(0, 0, t->x, 1.0f);
@@ -1732,6 +1884,7 @@ uint32_t gpu_read_status(void)
 
 void gpu_vblank(void)
 {
+    hud_after = 0;
     anchor_gen++;
     if (S.disp_mode & 0x20u)
         S.field ^= 1u;

@@ -53,13 +53,33 @@ void     gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y,
  * of the sprite being built (or drop an old sprite tag when no anchor was found). A sprite
  * rectangle whose position word carries a matching tag (or a quad whose corners all do) is
  * drawn shifted by the offset in the upscaled copy (rigidly, so the pixel art stays crisp).
- * With g_sprite_depth it is also scaled by the anchor's depth scale s about the anchor. */
+ * With g_sprite_depth it is also scaled by the anchor's depth scale s about the anchor, and with
+ * g_sprite_ws != 1 (widescreen) squeezed horizontally about it, like the GTE squeezes the world. */
+extern int g_sprite_tags;         /* anchors and sprite tags are recorded (pgxp or widescreen; upscaled) */
 extern int g_sprite_on;
 extern int g_sprite_depth;        /* scale tagged sprites with depth (needs g_pgxp) */
-void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s);
+extern float g_sprite_ws;         /* horizontal squeeze of tagged sprites, 1 = none */
+/* s: depth scale for the anchor's own ground level, z: its depth; player: 1 = the anchor is the
+ * player's, 2 = the player's at the projection centre (the camera follows it: its level is the
+ * reference for every depth scale) */
+void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player);
 void     gpu_sprite_begin(int x, int y);
 void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anchor a (offset, scale, centre) */
+void     gpu_held_begin(int on);  /* tag what the player holds with the player's anchor (on = 0: drop) */
+extern int g_held_call;           /* the player's held object is being drawn */
+extern int g_item_call;           /* an item on (or thrown to) the ground is being drawn */
+/* Widescreen: g_menu_tile is set while a full-screen menu's background is tiled; its tiles are
+ * tagged (gpu_menu_begin), and gpu_display_menu says the picture shown is such a menu (4:3). */
+extern int g_menu_tile;
+void     gpu_menu_begin(void);
+int      gpu_display_menu(void);
 void     gpu_sprite_tag(uint32_t addr, uint32_t value);
+/* Widescreen HUD: the following gpu_sprite_tag calls (on = 1) tag the HUD, which is squeezed by
+ * g_sprite_ws about the middle of the drawing area while g_scene_3d says the picture is a 3D
+ * scene (shown wide; NULL = always), or (on = 0) drop old tags. */
+void     gpu_hud_begin(int on);
+extern int (*g_scene_3d)(void);
+extern int g_hud_call;            /* the HUD icon routine is calling the sprite builder */
 
 const uint16_t *gpu_vram(void);           /* 1024x512 16-bit VRAM (debug / screenshots) */
 

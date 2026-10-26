@@ -382,18 +382,54 @@ def R(n):
 
 # Game-specific hooks for PGXP on 2D sprites placed at GTE-projected points (field objects,
 # characters): the object projection (8001DFD4) remembers each anchor's sub-pixel offset right
-# after it stores the whole-pixel x (v1) / y (v0). The sprite builders look the anchor up on
-# entry and tag every word they write: 80016280 (rectangles; anchor x/y in its 7th/8th
-# arguments at sp+24/28), 800165D8 (multi-part quads, e.g. villagers; 6th/7th at sp+20/24) and
-# 80016C08 (single quads, e.g. the player; x in a3, y in the 5th argument at sp+16).
+# after it stores the whole-pixel x (v1) / y (v0) to a0; a0 = 80128B88 is the player's (the
+# reference for depth scaling). The sprite builders look the anchor up on entry and tag every
+# word they write: 80016280 (rectangles; anchor x/y in its 7th/8th arguments at sp+24/28),
+# 800165D8 (multi-part quads, e.g. villagers; 6th/7th at sp+20/24) and 80016C08 (single quads,
+# e.g. the player; x in a3, y in the 5th argument at sp+16).
 # The farm's field object loop (800D93C8) draws big objects at anchor (sp+48/52) + a y offset;
 # at its last argument store (800D9590, x/y arguments at sp+16 / v0) the point becomes an alias.
-SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2]);',
-              0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);'}
+# Widescreen: the model renderer (8001C0D4) skips every part (e.g. a piece of the ground) whose
+# centre lies outside four planes; their setup (8001D348) turns the camera by the angles at
+# 800491E0. The first two (read at 8001D45C / 8001D4A4) are the side planes, a little wider than
+# the 4:3 view, and are opened up to the wider view. The farm's field objects are drawn for the
+# tiles within 3600 units of the view's centre (800D92FC, called by the field object loop); the
+# range is widened when it returns (800D9414).
+# Full-screen menus (toolbox, Start menu, memory card screens) draw a scrolling tiled background:
+# 800223D4 tiles the whole screen (24x24, x -12..344) through a callback (jalr at 80022498) that
+# builds each tile with the sprite builder. Those tiles are tagged, so the GPU knows which picture
+# is a menu and the frontend shows it at 4:3, from its first frame and with or without a black
+# screen before it.
+SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u);',
+              0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
+              0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
+              0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
+              0x800D9414: 'FIELD_RANGE(R[29] + 24u);',
+              0x80024ABC: 'g_hud_call = 1;',
+              0x80024AC0: 'g_hud_call = 0;',
+              0x800CA030: 'g_held_call = 1;',
+              0x800CA034: 'g_held_call = 0;',
+              0x800CC400: 'g_item_call = 1;',
+              0x800CC404: 'g_item_call = 0;',
+              0x8002249C: 'g_menu_tile = 1;',
+              0x800224A0: 'g_menu_tile = 0;'}
 ENTRY_HOOKS = {0x80016280: 'SPRITE_BEGIN(MEM_R16(R[29] + 24u), MEM_R16(R[29] + 28u));',
                0x800165D8: 'SPRITE_BEGIN(MEM_R16(R[29] + 20u), MEM_R16(R[29] + 24u));',
                0x80016C08: 'SPRITE_BEGIN(R[7], MEM_R16(R[29] + 16u));'}
-TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08}
+# Widescreen HUD: the routines that build the windows (800153BC background, 8001530C border
+# lines, 8001526C corner pixels), text (80019070, one glyph) and portraits (80019E80) tag what they
+# write as HUD, and so does the sprite builder when the HUD icon routine (80024A4C) calls it (jal
+# at 80024AB8).
+HUD_BUILDERS = (0x800153BC, 0x8001530C, 0x8001526C, 0x80019070, 0x80019E80)
+ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
+# What the player holds over its head: the field code's item builder (800D7144, through 800D6F78)
+# is called for it by the player's held item routine (800C9F20, jal at 800CA02C) at the player's
+# position plus an offset, and for item icons elsewhere (menus). An item put down or thrown is
+# drawn by the routine with the jal at 800CC3FC at a point it projected: its anchor, looked up
+# with the position 800D6F78 gets (x in a3, y in the 5th argument at sp+16).
+ENTRY_HOOKS[0x800D6F78] = 'ITEM_BEGIN(R[7], MEM_R16(R[29] + 16u));'
+ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
+TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 
 
 def with_hooks(i, s, fn_start):

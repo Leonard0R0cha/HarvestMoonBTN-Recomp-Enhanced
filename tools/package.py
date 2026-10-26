@@ -44,7 +44,7 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None):
     """files: [(source, name in folder)]; returns the folder path"""
     dist = dist or os.path.join(ROOT, 'dist')
     out = os.path.join(dist, name)
-    keep = ('saves', 'disc', 'screenshots', 'hmbtn.ini')   # the player's files survive a rebuild
+    keep = ('saves', 'disc', 'screenshots', 'recordings', 'hmbtn.ini')   # the player's files survive a rebuild
     if os.path.exists(out):
         for n in os.listdir(out):
             if n not in keep:
