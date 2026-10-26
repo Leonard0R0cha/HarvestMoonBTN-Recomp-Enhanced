@@ -189,8 +189,9 @@ static int32_t line_c;
  * item slots come from shared sprite routines), except ones covering the whole width (the menus'
  * full-screen dimming). Reset at every VBlank. */
 static int hud_after;
-int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call;
+int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call, g_menu_tile;
 #define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
+#define MENU_CX (INT16_MIN + 1)     /* tag of a full-screen menu's background tile */
 static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0 };   /* a HUD tag */
 float g_sprite_ws = 1.0f;
 
@@ -249,6 +250,34 @@ void gpu_held_begin(int on)
 {
     g_sprite_on = on && player_gen + 1 >= anchor_gen;
     begin_map(&player_map);
+}
+
+/* Widescreen: full-screen menus (toolbox, Start menu, memory card screens) are shown at 4:3. The
+ * game builds a frame while the previous one is shown, so what decides is the picture: the frame
+ * (VBlank count) each drawing buffer (top or bottom of VRAM) was last drawn in, and the last one
+ * with a menu background tile in it. */
+static uint32_t buf_drawn[2], buf_menu[2];
+static inline int draw_buf(void)
+{
+    return S.clip_y0 >= 240;
+}
+
+static inline int drawing_menu(void)
+{
+    return buf_menu[draw_buf()] == anchor_gen;
+}
+
+int gpu_display_menu(void)
+{
+    int b = S.disp_y >= 240;
+    return buf_menu[b] && buf_menu[b] == buf_drawn[b];
+}
+
+void gpu_menu_begin(void)
+{
+    static const SpriteMap menu = { 0.0f, 0.0f, 1.0f, 0.0f, MENU_CX, 0 };
+    g_sprite_on = 1;
+    sprite_map = menu;
 }
 
 void gpu_hud_begin(int on)
@@ -503,17 +532,17 @@ static inline int32_t sprite_coord(int32_t v, int32_t c, float d, float s)
     return (int32_t)lrintf(((float)c + d + (float)(v - c) * s) * (float)TH.n);
 }
 
-/* Scale of the sprite tagged t: its depth scale (with depth scaling), and horizontally the
- * widescreen squeeze. */
-/* The squeeze of the HUD: the world's while the picture is a 3D scene (shown wide), asked when the
- * HUD is drawn. When it is built is too early: the game builds the HUD before it projects the 3D
- * scene, so the first frame after a black screen isn't known to be 3D yet. */
+/* The squeeze of the HUD: the world's while the picture is a 3D scene (shown wide) and not a menu,
+ * asked when the HUD is drawn. When it is built is too early: the game builds the HUD before it
+ * projects the 3D scene, so the first frame after a black screen isn't known to be 3D yet. */
 int (*g_scene_3d)(void);
 static inline float hud_sx(void)
 {
-    return !g_scene_3d || g_scene_3d() ? g_sprite_ws : 1.0f;
+    return (!g_scene_3d || g_scene_3d()) && !drawing_menu() ? g_sprite_ws : 1.0f;
 }
 
+/* Scale of the sprite tagged t: its depth scale (with depth scaling), and horizontally the
+ * widescreen squeeze. */
 static inline float sprite_sx(const PgxpWord *t)
 {
     if (t->cx == HUD_CX)
@@ -930,6 +959,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
 static void cmd_polygon(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int gouraud = (op >> 4) & 1;
     int quad = (op >> 3) & 1;
     int tex = (op >> 2) & 1;
@@ -1128,6 +1158,7 @@ static inline void line_xy(LinePt *pt, uint32_t xy)
 static void cmd_line(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int gouraud = (op >> 4) & 1;
     int poly = (op >> 3) & 1;
     int abe = (op >> 1) & 1;
@@ -1324,6 +1355,7 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
 static void cmd_rect(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    buf_drawn[draw_buf()] = anchor_gen;
     int tex = (op >> 2) & 1;
     int abe = (op >> 1) & 1;
     int raw = op & 1;
@@ -1363,7 +1395,10 @@ static void cmd_rect(const uint32_t *p)
         const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         if (t && !(t->w < 0.0f && t->value == p[1]))
             t = NULL;
-        if (t && t->cx == HUD_CX) {
+        if (t && t->cx == MENU_CX) {        /* a menu background tile, drawn as it is */
+            buf_menu[draw_buf()] = anchor_gen;
+            t = NULL;
+        } else if (t && t->cx == HUD_CX) {
             if (hud_sx() != 1.0f)
                 hud_after = 1;
         } else if (!t && hud_after && !(x <= S.clip_x0 && x + w > S.clip_x1))

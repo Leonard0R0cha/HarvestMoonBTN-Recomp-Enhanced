@@ -68,6 +68,11 @@ void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anc
 void     gpu_held_begin(int on);  /* tag what the player holds with the player's anchor (on = 0: drop) */
 extern int g_held_call;           /* the player's held object is being drawn */
 extern int g_item_call;           /* an item on (or thrown to) the ground is being drawn */
+/* Widescreen: g_menu_tile is set while a full-screen menu's background is tiled; its tiles are
+ * tagged (gpu_menu_begin), and gpu_display_menu says the picture shown is such a menu (4:3). */
+extern int g_menu_tile;
+void     gpu_menu_begin(void);
+int      gpu_display_menu(void);
 void     gpu_sprite_tag(uint32_t addr, uint32_t value);
 /* Widescreen HUD: the following gpu_sprite_tag calls (on = 1) tag the HUD, which is squeezed by
  * g_sprite_ws about the middle of the drawing area while g_scene_3d says the picture is a 3D

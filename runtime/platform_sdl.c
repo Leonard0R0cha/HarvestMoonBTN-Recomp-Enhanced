@@ -514,7 +514,7 @@ static int display_wide(void) {
     else if (hold_3d > 0) hold_3d--;
     proj_mark = n;
     gpu_get_display(&d);
-    if (d.is_24bit) wide = 0;
+    if (d.is_24bit || gpu_display_menu()) wide = 0;     /* video, or a full-screen menu */
     else if (hold_3d > 0) { wide = 1; blank = 0; }
     else if (!was_wide) wide = 0;
     else if (display_dark(&d)) { wide = 1; blank = 1; }

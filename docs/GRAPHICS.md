@@ -158,6 +158,16 @@ with the squeezed coordinates, so it draws what a wider screen would show.
   the pixels with red, green and blue at 0 or 1): the Start menu is less than 13% black from
   its first frame after the fade. In the new-game intro and the village tour the only
   switches left are for the Start menu, on its first frame and on the black frame after it.
+- **Full-screen menus are 4:3 from their first frame.** The toolbox in the house opens straight
+  from the room, with no black in between, so it stayed wide and stretched. Every full-screen
+  menu (toolbox, Start menu, memory card screens) draws the same scrolling tiled background:
+  800223D4 tiles the screen through a callback that builds each tile with the sprite builder,
+  so the tiles are tagged while it calls it (jalr at 80022498). The game builds a frame while
+  the previous one is shown, so the GPU notes, for each drawing buffer (top or bottom of VRAM),
+  whether the frame last drawn there had a menu background, and the picture shown is 4:3 when
+  its buffer holds a menu: switching on a "menu was drawn" signal instead showed the room
+  squeezed for 3 frames before the toolbox and the toolbox stretched for 3 frames after it.
+  The HUD isn't squeezed in a frame that draws a menu background.
 - **The HUD keeps its 4:3 shape, centred.** The clock, dialogue boxes, portraits and text over
   the 3D view are squeezed back by the same factor about the middle of the picture, in the
   upscaled copy (upscale 2+), so they keep their size and sit in the middle 4:3 area of the

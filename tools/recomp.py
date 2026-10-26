@@ -395,6 +395,11 @@ def R(n):
 # the 4:3 view, and are opened up to the wider view. The farm's field objects are drawn for the
 # tiles within 3600 units of the view's centre (800D92FC, called by the field object loop); the
 # range is widened when it returns (800D9414).
+# Full-screen menus (toolbox, Start menu, memory card screens) draw a scrolling tiled background:
+# 800223D4 tiles the whole screen (24x24, x -12..344) through a callback (jalr at 80022498) that
+# builds each tile with the sprite builder. Those tiles are tagged, so the GPU knows which picture
+# is a menu and the frontend shows it at 4:3, from its first frame and with or without a black
+# screen before it.
 SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u);',
               0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
               0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
@@ -405,7 +410,9 @@ SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u);',
               0x800CA030: 'g_held_call = 1;',
               0x800CA034: 'g_held_call = 0;',
               0x800CC400: 'g_item_call = 1;',
-              0x800CC404: 'g_item_call = 0;'}
+              0x800CC404: 'g_item_call = 0;',
+              0x8002249C: 'g_menu_tile = 1;',
+              0x800224A0: 'g_menu_tile = 0;'}
 ENTRY_HOOKS = {0x80016280: 'SPRITE_BEGIN(MEM_R16(R[29] + 24u), MEM_R16(R[29] + 28u));',
                0x800165D8: 'SPRITE_BEGIN(MEM_R16(R[29] + 20u), MEM_R16(R[29] + 24u));',
                0x80016C08: 'SPRITE_BEGIN(R[7], MEM_R16(R[29] + 16u));'}

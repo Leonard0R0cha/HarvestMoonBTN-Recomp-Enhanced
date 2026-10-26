@@ -1156,6 +1156,25 @@ static void test_pgxp_sprite(void)
         g_sprite_depth = 0;
     }
 
+    /* widescreen menus: a frame with a menu background tile makes its buffer a menu (shown at 4:3),
+     * and the tile isn't squeezed, also after HUD; the next frame there without one is no menu */
+    {
+        g_sprite_ws = 0.75f;
+        gpu_vblank();
+        hud_scene(1);                                   /* HUD first, as the clock in the toolbox */
+        gpu_menu_begin();
+        gpu_sprite_tag(0x3200, xy(0, 100));
+        gp0(0x65000000); gp0_at(xy(0, 100), 0x3200); gp0(0); gp0(xy(16, 16));
+        gpu_render_display(out, &w, &h);
+        CHECK(gpu_display_menu(), "frame with a menu background: shown as a menu");
+        CHECK(out[400 * w] == argb15(px(0, 100)) && out[463 * w + 63] == argb15(px(15, 115)),
+              "menu background tile: not squeezed");
+        gpu_vblank();
+        hud_scene(0);
+        CHECK(!gpu_display_menu(), "next frame without a menu background: no menu");
+        g_sprite_ws = 1.0f;
+    }
+
     /* the held object in widescreen: shifted by the player's offset and squeezed about the
      * player's anchor, so it stays over the player: target pixels 597..644 x 331..394 */
     {
