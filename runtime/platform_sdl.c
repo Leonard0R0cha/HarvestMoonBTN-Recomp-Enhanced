@@ -19,6 +19,7 @@ uint16_t g_pad_buttons[2];
 bool g_pad_connected[2];
 
 static SDL_Window *win;
+static void update_title(void);
 static SDL_Renderer *ren;
 static SDL_Texture *tex;
 static SDL_AudioDeviceID audio;
@@ -147,6 +148,12 @@ static void parse_script(const char *s) {
             if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
             continue;
         }
+        if (!strncmp(tok, "autoslot=", 9)) { g_cfg.autoslot = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "quickui=", 8)) { g_cfg.quickui = atoi(tok + 8); continue; }
+        if (!strncmp(tok, "skipscenes=", 11)) { g_cfg.skipscenes = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "textspeed=", 10)) { g_cfg.textspeed = atoi(tok + 10); continue; }
+        if (!strncmp(tok, "emptybag=", 9)) { g_cfg.emptybag = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "overclock=", 10)) { g_cfg.overclock = atoi(tok + 10); g_cycle_scale = 256u * 100u / (uint32_t)(g_cfg.overclock < 100 ? 100 : g_cfg.overclock); continue; }
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
         *c1 = 0;
@@ -347,8 +354,14 @@ int platform_init(void) {
     if (g_cfg.record_path[0]) {
         rec_file = fopen(g_cfg.record_path, "w");
         if (rec_file) {
-            /* both change what the game does: the replay needs them */
-            fprintf(rec_file, "fastcd=%d\nwidescreen=%d:%d\n", g_cfg.fast_cd, g_cfg.ws_w, g_cfg.ws_h);
+            fprintf(rec_file, "fastcd=%d\n", g_cfg.fast_cd);   /* changes loading timing: the replay needs it */
+            fprintf(rec_file, "autoslot=%d\n", g_cfg.autoslot);   /* skips a menu: the replay needs it too */
+            fprintf(rec_file, "quickui=%d\n", g_cfg.quickui);     /* shortens animations: so does this */
+            fprintf(rec_file, "widescreen=%d:%d\n", g_cfg.ws_w, g_cfg.ws_h);   /* changes what the game does too */
+            fprintf(rec_file, "skipscenes=%d\n", g_cfg.skipscenes);
+            fprintf(rec_file, "textspeed=%d\n", g_cfg.textspeed);
+            fprintf(rec_file, "overclock=%d\n", g_cfg.overclock);
+            fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
             atexit(record_close);
         }
         else LOGE("cannot write %s", g_cfg.record_path);
@@ -372,6 +385,7 @@ int platform_init(void) {
     win = SDL_CreateWindow("Harvest Moon: Back to Nature", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            win_w, 240 * sc, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
+    update_title();
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
     if (!ren) { fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
@@ -613,9 +627,31 @@ static void dump_ram(uint64_t frame) {
  * present the queue depth is used as the clock instead, so audio never drifts. */
 static int fast_forward;
 
+/* the window title shows the memory card in slot 1 (F1-F4) */
+static void update_title(void) {
+    char t[96];
+    snprintf(t, sizeof t, "Harvest Moon: Back to Nature  [Memory card %d]", memcard_bank());
+    SDL_SetWindowTitle(win, t);
+}
+static bool frame_black;   /* the picture just shown is black (fastload) */
+
+/* a coarse grid of the picture, all (nearly) black */
+static bool picture_black(const uint32_t *px, int w, int h) {
+    if (w <= 0 || h <= 0) return false;
+    for (int y = h / 16; y < h; y += h / 8 + 1)
+        for (int x = w / 32; x < w; x += w / 16 + 1)
+            if ((px[(size_t)y * (size_t)w + (size_t)x] & 0xF0F0F0u) != 0) return false;
+    return true;
+}
+
+/* running at full speed: Tab, or one of the waits the speed-up options skip */
+static bool turbo(void) {
+    return fast_forward || memcard_busy() || quick_loading(frame_black) || quick_skipping();
+}
+
 static void throttle(void) {
     if (g_cfg.unthrottled) return;
-    if (fast_forward) { perf_next = SDL_GetPerformanceCounter(); if (audio_ok) SDL_ClearQueuedAudio(audio); return; }
+    if (turbo()) { perf_next = SDL_GetPerformanceCounter(); if (audio_ok) SDL_ClearQueuedAudio(audio); return; }
     uint64_t freq = SDL_GetPerformanceFrequency();
     double period = (double)freq / 59.2898;          /* NTSC PS1 frame rate */
     if (audio_ok) {
@@ -642,14 +678,21 @@ void platform_frame(void) {
     int w = 0, h = 0;
     bool shot = g_cfg.screenshot_every && frame >= (uint64_t)g_cfg.screenshot_start &&
                 frame % (uint64_t)g_cfg.screenshot_every == 0;
-    bool need_pixels = !g_cfg.headless || shot || shot_request;
+    /* at full speed only every 4th frame is shown: the rest would only slow it down */
+    bool shown = !g_cfg.headless && (!turbo() || (frame & 3) == 0);
+    bool need_pixels = shown || shot || shot_request;
+    if (need_pixels) {
+        gpu_render_display(frame_px, &w, &h);
+        frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
+    }
+    quick_hold_music(quick_loading(frame_black));   /* for the frame run next */
     int wide = display_wide();
-    if (need_pixels) gpu_render_display(frame_px, &w, &h);
     if (shot) save_screenshot(frame_px, w, h, frame, wide);
 
     if (g_cfg.headless) {
         g_pad_buttons[0] = script_buttons((int)frame);
         record_frame((int)frame, g_pad_buttons[0]);
+        g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);
         if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
         return;
     }
@@ -675,6 +718,9 @@ void platform_frame(void) {
                 SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
             } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
                 shot_request = 1;
+            } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
+                       ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
+                if (memcard_switch_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1, false)) update_title();
             } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                 fullscreen = 0;
                 SDL_SetWindowFullscreen(win, 0);
@@ -689,8 +735,10 @@ void platform_frame(void) {
     uint16_t b = read_controllers();
     if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
     record_frame((int)frame, g_pad_buttons[0]);
+    g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);   /* after recording: replays skip alike */
+    { static int shown_bank; if (memcard_bank() != shown_bank) { shown_bank = memcard_bank(); update_title(); } }
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
-    present(w, h, wide);
+    if (shown) present(w, h, wide);
     throttle();
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

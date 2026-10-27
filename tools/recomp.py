@@ -430,11 +430,68 @@ ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
 ENTRY_HOOKS[0x800D6F78] = 'ITEM_BEGIN(R[7], MEM_R16(R[29] + 16u));'
 ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
+# Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
+# VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would
+# end the wait early and the game, which runs as fast as VSync(2) lets it, would speed up.
+UNSCALED_CYCLES = {0x80032CFC}
+# 80022794 animates the message/help window (6 steps of width, then N of height, one per
+# game tick; counter pointer and N in its 6th/7th arguments at sp+24/28): quick_window
+# (runtime/quickui.c) can move the counter to the end so it opens or closes at once. The
+# caller (ra) tells the one window that must not be hurried (see quick_window).
+ENTRY_HOOKS[0x80022794] = 'quick_window(R[31], MEM_R32(R[29] + 24u), MEM_R32(R[29] + 28u));'
+# The screen fades start with their length in game ticks in a0: 800132B8 from black,
+# 800132F0 to black, 80013328 to black for doors (gp+32 = kind, gp+344/346 = tick/length).
+# The music fades in/out with them (8001FE00/8001FE34, same length in a0) and the game waits
+# for both, so they are shortened alike.
+for _a in (0x800132B8, 0x800132F0, 0x80013328, 0x8001FE00, 0x8001FE34):
+    ENTRY_HOOKS[_a] = 'R[4] = quick_fade(R[4]);'
+# The text printer (80018B98) shows one more character each time its timer runs out and
+# stores the count at gp+464 (80018C94), then walks the text shown; where the walk ends
+# (80018FF4) s0 is the next character and sp+112 is set in the call that walks an inserted
+# name. quick_text_walked types a few more plain characters at once (textspeed).
+SITE_HOOKS[0x80018C94] = 'quick_text();'
+SITE_HOOKS[0x80018FF4] = 'quick_text_walked(R[16], MEM_R32(R[29] + 112u));'
+# 80017AE8 ends the printer's wait for the button; besides the button, the end of a scroll of
+# the box calls it, and that must not end a wait (quick_text_wait_kept).
+ENTRY_HOOKS[0x80017AE8] = 'if (quick_text_wait_kept(R[31])) return;'
+# libsnd's sequencer tick (8002A6E4, SsSeqCalledTbyT) is not run while fastload runs a loading
+# pause at full speed, so the music does not run on unheard (quick_music_held).
+ENTRY_HOOKS[0x8002A6E4] = 'if (quick_music_held()) return;'
+
+# Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
+# screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
+# cancel, anything else = still choosing); the hook right after each call can answer for the
+# player (runtime/memcard.c; second argument 1 on the screens that read a diary). Each screen's opening (the delay slot of its jal 801372A0, state
+# byte 80137584 = 0) starts a new visit.
+MODULE_SITE_HOOKS = {
+    # The farm/town control copies the pad state for the player each tick: held buttons to
+    # 801231F4, newly pressed to 801231F8 (800C41C0 / its jal's delay slot 800C41C8);
+    # quick_bag_filter drops R1 / R2 there when there is nothing to switch to.
+    'GF_FARM': {0x800C41C8: 'quick_bag_filter();'},
+    'saveload': {0x8012EF28: 'R[3] = memcard_slot_menu(R[3], 0);',
+                 0x80130678: 'R[3] = memcard_slot_menu(R[3], 1);',
+                 0x80131654: 'R[3] = memcard_slot_menu(R[3], 1);',
+                 0x8012E350: 'memcard_slot_visit();',
+                 0x8012E5A4: 'memcard_slot_visit();',
+                 0x8012E84C: 'memcard_slot_visit();',
+                 # the diary lists (menu 80136B18: 0-2 = diary, -1 = cancel, 3+ = still
+                 # choosing; copied to a0 / a1 right after the call): L1/R1 change card
+                 0x8012F33C: 'R[4] = memcard_diary_menu(R[4], 0);',
+                 0x80130B40: 'R[5] = memcard_diary_menu(R[5], 1);',
+                 0x80131AE0: 'R[5] = memcard_diary_menu(R[5], 1);'},
+}
+# ... and at their entry (per overlay too): with autoslot the slot menu is not drawn at all
+MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] = 2; return; }'}}
+# ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
+MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
 
-def with_hooks(i, s, fn_start):
+def with_hooks(i, s, fn_start, mod):
     if i.addr in SITE_HOOKS:
         s += ' ' + SITE_HOOKS[i.addr]
+    hook = MODULE_SITE_HOOKS.get(mod.name, {}).get(i.addr)
+    if hook:
+        s += ' ' + hook
     if fn_start in TAG_STORES_IN and i.mn in ('sb', 'sh', 'sw'):
         s += ' SPRITE_TAG(%s);' % addr_expr(i)
     return s
@@ -635,6 +692,8 @@ class Emitter:
         P('  FUNC_ENTER(0x%08Xu);' % fi.start)
         if fi.start in ENTRY_HOOKS:
             P('  ' + ENTRY_HOOKS[fi.start])
+        if fi.start in MODULE_ENTRY_HOOKS.get(mod.name, {}):
+            P('  ' + MODULE_ENTRY_HOOKS[mod.name][fi.start])
         order = sorted(fi.body)
         if order[0] != fi.start:
             P('  goto L_%08X;' % fi.start)
@@ -660,11 +719,12 @@ class Emitter:
                 # standalone copy of the delay slot is emitted next; fall through must skip it
                 need.add(ft)
         cyc = 0
+        cost = '%d' if fi.start in UNSCALED_CYCLES else 'CYC(%d)'
 
         def flush():
             nonlocal cyc
             if cyc:
-                P('  c->cycles += %d;' % cyc)
+                P('  c->cycles += %s;' % (cost % cyc))
                 cyc = 0
 
         for a in order:
@@ -679,7 +739,7 @@ class Emitter:
                     flush()
                 s = emit_simple(i, mod)
                 if s:
-                    P('  ' + with_hooks(i, s, fi.start) + '  /* %08x: %s */' % (a, i))
+                    P('  ' + with_hooks(i, s, fi.start, mod) + '  /* %08x: %s */' % (a, i))
                 ft = a + 4
                 if i.kind == 'invalid':
                     continue
@@ -695,7 +755,10 @@ class Emitter:
             cyc += 1 + (insn_cycles(d) if d is not None else 1)
             ds = emit_simple(d, mod) if d is not None and not d.has_delay else ''
             if ds:
-                ds = with_hooks(d, ds, fi.start)
+                ds = with_hooks(d, ds, fi.start, mod)
+                th = MODULE_TEXT_HOOKS.get(mod.name)
+                if th and i.mn == 'jal' and i.target == th[0]:
+                    ds += ' ' + th[1]
             if d is not None and d.has_delay:
                 ds = '/* branch in delay slot ignored */'
             dcomment = '  /* %08x: %s */' % (a + 4, d) if d is not None else ''

@@ -175,7 +175,11 @@ ways:
 |---|---|
 | F11 or Alt+Enter | toggle fullscreen (Esc leaves fullscreen) |
 | F12 | screenshot (saved in `screenshots/`) |
+| F1–F4 | put memory card 1–4 in slot 1 (3 diaries each; shown in the window title) |
+| L1 / R1 on a diary list | previous / next memory card (shown above the list); when loading, only cards that have a diary |
+| Triangle (hold 2 s) on a diary list | delete the diary under the cursor |
 | Tab (hold) | fast-forward (can be disabled) |
+| START (hold, during a cutscene) | fast-forward the cutscene (`skipscenes`) |
 
 Controllers can be plugged in or out at any time. Any controller that SDL2 recognises as a
 game controller works (Xbox, PlayStation, Switch Pro and many others) with the Xbox-style
@@ -204,12 +208,20 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
 |  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
+|  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
+|  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |
+|  | `quickui` | `1` | menu and message windows open and close at once, fades to and from black (doors too) are 4× shorter; `0` = original |
+|  | `fastload` | `1` | the game runs at full speed while "Now Loading" or the black screen between places is shown; the music waits meanwhile, so it does not jump ahead; `0` = original wait |
+|  | `overclock` | `200` | CPU speed in percent (`100` = the console, up to `400`): the game no longer drops frames when a lot is going on, e.g. running around the farm while switching tools; video, sound and timing stay the same |
+|  | `emptybag` | `1` | R1 / R2 do nothing when there is no tool / item to switch to, so they no longer stop the player for a moment while running; `0` = original |
+|  | `textspeed` | `3` | characters the dialogue types at a time: `1` = original speed, `2`–`16` = faster |
+|  | `skipscenes` | `1` | hold START during a cutscene to run it at full speed; it pauses while a dialogue box is open, so choices are never made for you; `0` = off |
 | `[keyboard]` | `key_up` … `key_select` |  | comma-separated SDL key names, e.g. `key_cross = X,Space,K` |
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
 
 Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--widescreen W:H`, `--fastcd`,
-`--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
+`--no-autoslot`, `--card N`, `--overclock N`, `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
 options are described in [docs/TECHNICAL.md](docs/TECHNICAL.md#testing-and-debugging).
 
 ## Saves

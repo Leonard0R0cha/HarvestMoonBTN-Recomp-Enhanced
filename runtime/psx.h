@@ -114,6 +114,21 @@ bool memcard_load(int slot, const char *path);
 void memcard_flush(void);
 uint8_t *memcard_data(int slot);  /* 128KB raw image */
 void memcard_mark_dirty(int slot);
+#define CARD_BANKS 4
+void memcard_open_banks(int bank);  /* load slot 1 from bank 1-4; 0 = the bank last used */
+bool memcard_switch_bank(int bank, bool force); /* 0-based; false if refused (card in use) or the same */
+int memcard_bank(void);
+void memcard_bank_file(char *out, size_t n);             /* 1-based bank in slot 1 */
+void sio_card_changed(int port);    /* the card in this port was swapped */
+void memcard_touch(void);           /* the card's contents were read or written now */
+bool bios_card_files_open(void);    /* a file on a memory card is open */
+#define PORT_TEXT_ADDR 0x1F000400u
+extern uint16_t g_port_text[128];  /* text made by the port, read by the game at 9F000400 */
+bool memcard_busy(void);           /* a save/load screen is waiting for the card (fastcard) */
+bool quick_loading(bool black);    /* "Now Loading" or a black loading pause (fastload) */
+void quick_hold_music(bool hold);  /* the music sequencer waits (a loading pause run at full speed) */
+uint16_t quick_skip(uint16_t pad);  /* START held in a cutscene: the pad the game sees (skipscenes) */
+bool quick_skipping(void);         /* ... and whether it is skipping now */
 
 /* ---- dispatcher ---- */
 void dispatch_init(void);
@@ -147,6 +162,14 @@ typedef struct {
     char record_path[1024];      /* testing: write the pad input of the session here */
     int  record;                /* record every session to recordings/ (bug reports) */
     int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
+    int  autoslot;              /* save/load screens use MEMORY CARD slot 1 without asking */
+    int  fastcard;              /* full speed while a save/load screen waits for the card */
+    int  quickui;               /* windows open and close at once, shorter fades */
+    int  fastload;              /* full speed while "Now Loading" is shown */
+    int  skipscenes;            /* holding START in a cutscene runs it at full speed */
+    int  textspeed;             /* characters typed per step of the text printer (1 = original) */
+    int  overclock;             /* CPU speed in percent of the console's (100 = original) */
+    int  emptybag;              /* R1 / R2 do nothing with no tool / item to switch to */
     int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;
     int  allow_fast_forward;     /* hold Tab to run unthrottled */

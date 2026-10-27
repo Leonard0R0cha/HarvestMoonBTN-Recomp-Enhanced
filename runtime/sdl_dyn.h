@@ -15,7 +15,7 @@
     X(SDL_GetScancodeFromName) X(SDL_Init) X(SDL_IsGameController) X(SDL_JoystickInstanceID) \
     X(SDL_NumJoysticks) X(SDL_OpenAudioDevice) X(SDL_PauseAudioDevice) X(SDL_PollEvent) \
     X(SDL_QueueAudio) X(SDL_Quit) X(SDL_RenderClear) X(SDL_RenderCopy) X(SDL_RenderPresent) \
-    X(SDL_SetHint) X(SDL_SetRenderDrawColor) X(SDL_SetWindowFullscreen) \
+    X(SDL_SetHint) X(SDL_SetRenderDrawColor) X(SDL_SetWindowFullscreen) X(SDL_SetWindowTitle) \
     X(SDL_ShowSimpleMessageBox) X(SDL_UpdateTexture) X(SDL_memset)
 
 #define SDL_DYN_DECL(f) static __typeof__(&f) dyn_##f;
@@ -75,6 +75,7 @@ static const char *sdl_dyn_load(void) {
 #define SDL_SetHint dyn_SDL_SetHint
 #define SDL_SetRenderDrawColor dyn_SDL_SetRenderDrawColor
 #define SDL_SetWindowFullscreen dyn_SDL_SetWindowFullscreen
+#define SDL_SetWindowTitle dyn_SDL_SetWindowTitle
 #define SDL_ShowSimpleMessageBox dyn_SDL_ShowSimpleMessageBox
 #define SDL_UpdateTexture dyn_SDL_UpdateTexture
 #undef SDL_memset

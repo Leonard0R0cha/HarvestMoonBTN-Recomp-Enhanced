@@ -314,11 +314,16 @@ static int block_of(uint8_t *card, int first, uint32_t pos) {
     return b;
 }
 
+bool bios_card_files_open(void) {
+    for (int i = 2; i < 16; i++) if (fds[i].used) return true;
+    return false;
+}
+
 static int32_t card_open(const char *path, uint32_t mode) {
     char name[64];
     int slot = parse_bu(path, name, sizeof name);
     if (slot < 0) { k.last_err = 0x13; LOGW("open(%s): unsupported device", path); return -1; }
-    uint8_t *card = memcard_data(slot);
+    uint8_t *card = memcard_data(slot); memcard_touch();
     if (!card) { k.last_err = 0x10; return -1; }
     int first = find_file(card, name);
     if (mode & 0x200) {
@@ -368,7 +373,7 @@ static int32_t card_open(const char *path, uint32_t mode) {
 static int32_t card_rw(int fd, uint32_t buf, uint32_t len, bool wr) {
     if (fd < 2 || fd > 15 || !fds[fd].used) { k.last_err = 9; return -1; }
     Fd *F = &fds[fd];
-    uint8_t *card = memcard_data(F->slot);
+    uint8_t *card = memcard_data(F->slot); memcard_touch();
     if (!card) { k.last_err = 0x10; return -1; }
     if ((len & 0x7F) || (F->pos & 0x7F) || F->pos >= F->size) { k.last_err = 0x16; return -1; }
     if (F->pos + len > F->size) len = F->size - F->pos;
@@ -407,7 +412,7 @@ static uint32_t fill_dirent(uint8_t *card, int b, uint32_t de) {
 }
 
 static uint32_t card_search(uint32_t de) {
-    uint8_t *card = memcard_data(search.slot);
+    uint8_t *card = memcard_data(search.slot); memcard_touch();
     if (!card) return 0;
     for (int b = search.next; b < 16; b++) {
         uint8_t *f = dir_frame(card, b);
@@ -426,7 +431,7 @@ static uint32_t card_search(uint32_t de) {
 
 static void card_lowlevel(CPU *c, uint32_t port, uint32_t sector, uint32_t buf, bool wr) {
     int slot = (port >> 4) & 1;
-    uint8_t *card = memcard_data(slot);
+    uint8_t *card = memcard_data(slot); memcard_touch();
     if (sector > 0x3FF) { c->r[2] = 0; return; }
     if (!card) {
         defer_event(0xF0000011u, 0x0100, 1);
@@ -741,7 +746,7 @@ static void bios_b0(CPU *c, uint32_t fn) {
         int s1 = parse_bu(p1, n1, sizeof n1), s2 = parse_bu(p2, n2, sizeof n2);
         c->r[2] = 0;
         if (s1 < 0 || s1 != s2) break;
-        uint8_t *card = memcard_data(s1);
+        uint8_t *card = memcard_data(s1); memcard_touch();
         if (!card) break;
         int b = find_file(card, n1);
         if (b < 0 || find_file(card, n2) >= 0) break;
@@ -759,7 +764,7 @@ static void bios_b0(CPU *c, uint32_t fn) {
         gread_str(a0, p, sizeof p);
         int s = parse_bu(p, n, sizeof n);
         c->r[2] = 0;
-        uint8_t *card = s >= 0 ? memcard_data(s) : NULL;
+        uint8_t *card = s >= 0 ? memcard_data(s) : NULL; memcard_touch();
         if (!card) break;
         int b = find_file(card, n);
         while (b > 0) {

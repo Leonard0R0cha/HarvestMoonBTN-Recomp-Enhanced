@@ -211,6 +211,24 @@ void cop0_rfe(CPU *c);
 void events_run(CPU *c);
 
 extern int g_trace_calls;
+/* CPU overclock: the cost of the compiled code in CPU cycles, scaled by g_cycle_scale/256
+ * (256 = the console's speed). Video, audio, CD and timers keep the console's clock. */
+extern uint32_t g_cycle_scale;
+#define CYC(n) ((uint32_t)(((n) * g_cycle_scale) >> 8))
+/* saveload overlay hooks (memcard.c): answer the memory card slot menu for the player */
+uint32_t memcard_slot_menu(uint32_t result, int loading);
+void memcard_slot_visit(void);
+int memcard_slot_auto(void);
+uint32_t memcard_diary_menu(uint32_t result, int loading);
+uint32_t memcard_text(uint32_t text);
+/* quickui.c: skip the waits of menus and windows */
+void quick_window(uint32_t ra, uint32_t counter, uint32_t steps);
+uint32_t quick_fade(uint32_t ticks);
+void quick_text(void);
+void quick_text_walked(uint32_t next, uint32_t inserted);
+int quick_text_wait_kept(uint32_t ra);
+int quick_music_held(void);
+void quick_bag_filter(void);
 void trace_func(CPU *c, uint32_t addr);
 
 #define EVCHK() do { if (UNLIKELY(c->cycles >= c->next_event)) events_run(c); } while (0)
