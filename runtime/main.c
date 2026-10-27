@@ -184,6 +184,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
+    else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
@@ -232,6 +233,7 @@ static void usage(void) {
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
+           "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --no-autoslot         ask for the MEMORY CARD slot when saving/loading\n"
@@ -328,6 +330,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
+        else if (!strcmp(a, "--interp")) g_cfg.interp = 1;
+        else if (!strcmp(a, "--no-interp")) g_cfg.interp = 0;
         else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
@@ -473,6 +477,8 @@ int main(int argc, char **argv) {
         LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
     }
     g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w);
+    if (g_cfg.interp && g_pgxp) gpu_interp_enable();
+    else if (g_cfg.interp) LOGW("interp needs upscale 2 or more and pgxp");
     spu_init();
     dma_init();
     cdrom_init();

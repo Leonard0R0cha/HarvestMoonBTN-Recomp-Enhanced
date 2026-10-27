@@ -1232,6 +1232,78 @@ static void write_bmp(const char *path, const uint32_t *argb, int w, int h)
     fclose(f);
 }
 
+/* ---------------------------------------------------------------------- */
+/* Frame interpolation: the next frame redrawn with the camera halfway back */
+
+/* A frame drawn into the buffer at VRAM row y0: a triangle at view space (tx, 0), (tx + 80, 0),
+ * (tx, 80), depth 1000, projected with h 500 about (160, 120); the camera's translation is tx. */
+static void interp_frame(int y0, int tx)
+{
+    static const int16_t rot[9] = { 4096, 0, 0, 0, 4096, 0, 0, 0, 4096 };
+    static const int V[3][2] = { { 0, 0 }, { 80, 0 }, { 0, 80 } };
+    int i;
+    gpu_set_camera(rot, tx, 0, 1000, 500, 160 << 16, 120 << 16);
+    gp0(0xE3000000 | ((uint32_t)y0 << 10));
+    gp0(0xE4000000 | ((uint32_t)(y0 + 239) << 10) | 319u);
+    gp0(0xE5000000 | ((uint32_t)y0 << 11));
+    fill(0, y0, 320, 240, 0);
+    gp0(0x20FFFFFF);
+    for (i = 0; i < 3; i++) {
+        int sx = 160 + (V[i][0] + tx) / 2, sy = 120 + V[i][1] / 2;
+        gpu_pgxp_store(0x3000u + 4u * (uint32_t)i, xy(sx, sy), 1, (float)sx, (float)sy, 1000.0f);
+        gp0_at(xy(sx, sy), 0x3000u + 4u * (uint32_t)i);
+    }
+}
+
+/* One VBlank as the frontend runs it (workers on this thread): 1 = an in-between picture */
+static int interp_present(uint32_t *out, int *w, int *h)
+{
+    int shown, k;
+    gpu_vblank();
+    shown = gpu_render_interp(out, w, h);
+    if (!shown)
+        gpu_render_display(out, w, h);
+    if (gpu_interp_prepare())
+        for (k = 0; k < INTERP_WORKERS; k++)
+            gpu_interp_work(k);
+    return shown;
+}
+
+static void test_interp(void)
+{
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 4 * sizeof(uint32_t));
+    int w, h;
+#define LIT(x, y) ((out[(y) * 2 * w + (x) * 2] & 0xFFFFFFu) != 0)    /* native (x, y) in the 2x picture */
+
+    screen_320();
+    gpu_set_upscale(2);
+    g_pgxp = 1;
+    gpu_interp_enable();
+    CHECK(g_interp, "interp: enabled");
+    gp1(0x05000000 | (240u << 10));             /* both buffers shown once */
+    interp_present(out, &w, &h);
+    gp1(0x05000000);
+    interp_present(out, &w, &h);
+    interp_frame(240, 0);                       /* frame 1 into the bottom buffer */
+    interp_present(out, &w, &h);
+    interp_present(out, &w, &h);
+    gp1(0x05000000 | (240u << 10));             /* frame 1 shown, frame 2 drawn: the camera moved by -40 */
+    interp_frame(0, -40);
+    CHECK(!interp_present(out, &w, &h) && LIT(165, 125) && !LIT(155, 125), "interp: frame 1 shown first");
+    CHECK(interp_present(out, &w, &h), "interp: in-between picture on the second VBlank");
+    CHECK(LIT(155, 125) && !LIT(145, 125) && LIT(180, 125) && !LIT(188, 125),
+          "interp: the triangle halfway (x 150..190 instead of 160..200 and 140..180)");
+    gp1(0x05000000);                            /* frame 2 shown, frame 3 drawn (camera at -80) */
+    interp_frame(240, -80);
+    CHECK(!interp_present(out, &w, &h) && LIT(145, 125) && !LIT(135, 125), "interp: frame 2 as drawn");
+    gpu_interp_late();                          /* its in-between picture not ready in time: frame 2 again */
+    CHECK(!interp_present(out, &w, &h) && LIT(145, 125) && !LIT(135, 125), "interp: late picture not shown");
+#undef LIT
+    g_interp = g_pgxp = 0;
+    gpu_set_upscale(1);
+    free(out);
+}
+
 int main(int argc, char **argv)
 {
     const char *vram_path = argc > 1 ? argv[1] : "gpu_test_vram.bmp";
@@ -1286,6 +1358,7 @@ int main(int argc, char **argv)
     test_upscale_texels();
     test_pgxp();
     test_pgxp_sprite();
+    test_interp();
 
     printf("%d passed, %d failed\n", g_pass, g_fail);
     free(img);

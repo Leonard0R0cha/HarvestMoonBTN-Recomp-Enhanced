@@ -38,6 +38,21 @@ void     gpu_render_display(uint32_t *out, int *w, int *h);
 void     gpu_set_upscale(int n);
 int      gpu_upscale(void);
 
+/* Frame interpolation (prototype; needs upscaling and PGXP). gpu_set_camera gives the camera of
+ * the frame being built (the GTE matrix at the player's projection). For every shown picture the
+ * frontend calls gpu_render_interp (0: show gpu_render_display), then gpu_interp_prepare: 1 = run
+ * gpu_interp_work(0 .. INTERP_WORKERS - 1) (a band of the picture each, on worker threads) before
+ * the next gpu_render_interp, or call gpu_interp_late (the workers aren't done: that picture is
+ * not shown). */
+#define INTERP_WORKERS 3
+extern int g_interp;
+void     gpu_interp_enable(void);
+void     gpu_set_camera(const int16_t r[9], int32_t tx, int32_t ty, int32_t tz, uint32_t h, int32_t ofx, int32_t ofy);
+int      gpu_render_interp(uint32_t *out, int *w, int *h);
+int      gpu_interp_prepare(void);
+void     gpu_interp_work(int part);
+void     gpu_interp_late(void);
+
 /* PGXP (upscaled display only): sub-pixel positions of GTE-projected vertices. The recompiled
  * SWC2 of a screen XY register tags that RAM word with gpu_pgxp_store(); the GPU DMA sets
  * g_gp0_addr to the RAM address of each word it sends, and a polygon vertex whose word still

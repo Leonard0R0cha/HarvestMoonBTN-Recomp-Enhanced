@@ -672,6 +672,41 @@ static void throttle(void) {
     }
 }
 
+/* Frame interpolation: the worker threads drawing in-between pictures (a band each) */
+static SDL_Thread *interp_thread[INTERP_WORKERS];
+static SDL_sem *interp_go[INTERP_WORKERS], *interp_done;
+static int interp_pending;          /* workers still drawing */
+void place_thread(int which);       /* cpu_place.c */
+
+static int interp_worker(void *part) {
+    int k = (int)(intptr_t)part;
+    place_thread(1 + k);            /* a performance core of its own */
+    for (;;) {
+        SDL_SemWait(interp_go[k]);
+        gpu_interp_work(k);
+        SDL_SemPost(interp_done);
+    }
+    return 0;
+}
+
+/* The in-between picture for the next VBlank, drawn while the game goes on */
+static void interp_start(void) {
+    if (!interp_thread[0] && (!g_cfg.headless || getenv("HMBTN_INTERP_THREAD"))) {   /* headless: SDL may be absent */
+        place_thread(0);            /* the game's thread: the other performance cores */
+        interp_done = SDL_CreateSemaphore(0);
+        for (int k = 0; k < INTERP_WORKERS; k++) {
+            interp_go[k] = SDL_CreateSemaphore(0);
+            interp_thread[k] = SDL_CreateThread(interp_worker, "interp", (void *)(intptr_t)k);
+        }
+    }
+    if (interp_thread[INTERP_WORKERS - 1]) {
+        interp_pending = INTERP_WORKERS;
+        for (int k = 0; k < INTERP_WORKERS; k++) SDL_SemPost(interp_go[k]);
+    } else {
+        for (int k = 0; k < INTERP_WORKERS; k++) gpu_interp_work(k);
+    }
+}
+
 void platform_frame(void) {
     uint64_t frame = frame_count();
     dump_ram(frame);
@@ -680,10 +715,67 @@ void platform_frame(void) {
                 frame % (uint64_t)g_cfg.screenshot_every == 0;
     /* at full speed only every 4th frame is shown: the rest would only slow it down */
     bool shown = !g_cfg.headless && (!turbo() || (frame & 3) == 0);
+    if (!g_cfg.headless) {
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            switch (ev.type) {
+            case SDL_QUIT: g_quit = 1; break;
+            case SDL_CONTROLLERDEVICEADDED: open_pad(ev.cdevice.which); break;
+            case SDL_AUDIODEVICEADDED: if (!ev.adevice.iscapture) open_audio(); break;
+            case SDL_CONTROLLERDEVICEREMOVED:
+                for (int i = 0; i < MAX_PADS; i++)
+                    if (pads[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == ev.cdevice.which) {
+                        SDL_GameControllerClose(pads[i]);
+                        pads[i] = NULL;
+                    }
+                break;
+            case SDL_KEYDOWN:
+                if (ev.key.repeat) break;
+                if (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
+                    (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
+                    fullscreen = !fullscreen;
+                    SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
+                    shot_request = 1;
+                } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
+                           ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
+                    if (memcard_switch_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1, false)) update_title();
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F9 && g_cfg.interp && g_pgxp) {
+                    g_interp = !g_interp;       /* compare: in-between pictures on/off */
+                    LOGI("interp %s", g_interp ? "on" : "off");
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
+                    fullscreen = 0;
+                    SDL_SetWindowFullscreen(win, 0);
+                }
+                break;
+            }
+        }
+        {
+            const Uint8 *ks = SDL_GetKeyboardState(NULL);
+            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
+        }
+        uint16_t b = read_controllers();
+        if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
+        record_frame((int)frame, g_pad_buttons[0]);
+        g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);   /* after recording: replays skip alike */
+        { static int shown_bank; if (memcard_bank() != shown_bank) { shown_bank = memcard_bank(); update_title(); } }
+        /* wait until this VBlank is due, then show its picture: the pictures come at even intervals
+         * however the game's work is spread over its VBlanks (drawing a frame can take longer than
+         * one), and an in-between picture has until then to be drawn */
+        throttle();
+    }
     bool need_pixels = shown || shot || shot_request;
     if (need_pixels) {
-        gpu_render_display(frame_px, &w, &h);
-        frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
+        /* workers not done yet: no in-between picture this time, rather than holding the game up */
+        while (interp_pending && SDL_SemTryWait(interp_done) == 0) interp_pending--;
+        if (interp_pending) gpu_interp_late();
+        /* an in-between picture (not at full speed): the frame on screen is still the last one,
+         * so frame_black stays as it was */
+        if (turbo() || !gpu_render_interp(frame_px, &w, &h)) {
+            gpu_render_display(frame_px, &w, &h);
+            frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
+        }
+        if (!interp_pending && !turbo() && gpu_interp_prepare()) interp_start();
     }
     quick_hold_music(quick_loading(frame_black));   /* for the frame run next */
     int wide = display_wide();
@@ -697,48 +789,7 @@ void platform_frame(void) {
         return;
     }
 
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        switch (ev.type) {
-        case SDL_QUIT: g_quit = 1; break;
-        case SDL_CONTROLLERDEVICEADDED: open_pad(ev.cdevice.which); break;
-        case SDL_AUDIODEVICEADDED: if (!ev.adevice.iscapture) open_audio(); break;
-        case SDL_CONTROLLERDEVICEREMOVED:
-            for (int i = 0; i < MAX_PADS; i++)
-                if (pads[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == ev.cdevice.which) {
-                    SDL_GameControllerClose(pads[i]);
-                    pads[i] = NULL;
-                }
-            break;
-        case SDL_KEYDOWN:
-            if (ev.key.repeat) break;
-            if (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
-                (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
-                fullscreen = !fullscreen;
-                SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-            } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
-                shot_request = 1;
-            } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
-                       ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
-                if (memcard_switch_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1, false)) update_title();
-            } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
-                fullscreen = 0;
-                SDL_SetWindowFullscreen(win, 0);
-            }
-            break;
-        }
-    }
-    {
-        const Uint8 *ks = SDL_GetKeyboardState(NULL);
-        fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
-    }
-    uint16_t b = read_controllers();
-    if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
-    record_frame((int)frame, g_pad_buttons[0]);
-    g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);   /* after recording: replays skip alike */
-    { static int shown_bank; if (memcard_bank() != shown_bank) { shown_bank = memcard_bank(); update_title(); } }
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
     if (shown) present(w, h, wide);
-    throttle();
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

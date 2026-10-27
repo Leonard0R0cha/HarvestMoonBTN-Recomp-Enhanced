@@ -119,7 +119,10 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         hdr_t = max(os.path.getmtime(os.path.join(rt, h)) for h in os.listdir(rt) if h.endswith('.h'))
         if os.path.exists(obj) and os.path.exists(stamp):
             t = os.path.getmtime(obj)
-            if t >= os.path.getmtime(src) and t >= hdr_t:
+            src_t = os.path.getmtime(src)
+            if os.path.basename(src).startswith('gpu_replay'):    # includes gpu.c
+                src_t = max(src_t, os.path.getmtime(os.path.join(rt, 'gpu.c')))
+            if t >= src_t and t >= hdr_t:
                 return obj, 0, ''
         code, out = sh(cc + flags + ['-c', src, '-o', obj])
         if code == 0:

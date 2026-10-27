@@ -225,6 +225,54 @@ the side planes opened all the way. The game draws more, but it doesn't slow dow
 the same number of frames (30 per second) at 4:3, 16:9 and 21:9 on the farm and through the
 village tour.
 
+## Frame interpolation (in-between pictures)
+
+The game builds a new frame every other VBlank (30 a second) and shows each one twice. With
+`interp = 1` the second VBlank shows a picture halfway to the next frame, so the camera and
+the 3D scenery move every VBlank.
+
+- **The next frame is already drawn by then.** The game flips to the frame it drew last and
+  sends the next frame's drawing commands right away (DrawOTag after VSync), so on the second
+  VBlank of a frame the next one is complete in the other buffer. The in-between picture is
+  that next frame redrawn with the camera half a step back: no extra latency, and the real
+  frames are shown exactly as before.
+- **What is recorded.** For each drawing buffer, the commands of the last frame drawn into it,
+  with each word's RAM address and PGXP word, the GPU state when it began, and its camera.
+  The camera is the GTE matrix and translation used to project the player's anchor (8001E02C):
+  that is the world-to-view transform, whose translation changes as the camera follows the
+  player.
+- **The redraw.** Every precise vertex (screen x, y and depth) goes back to view space, through
+  P' = Rm Rc^-1 (P - Tc) + Tm with the camera halfway between the two frames, and is projected
+  again. Sprites at projected points move with their anchor the same way; the player's own
+  sprites (the camera follows the player) move by half of the player's step on screen.
+  People, animals and animations are still drawn as in the next frame, so they move at 30
+  pictures a second.
+- **Not for every VBlank.** Menus, videos, camera cuts (rotation, a big jump, a different
+  projection) and frames the game took longer than two VBlanks for get no in-between picture.
+  When a frame stays up a third or fourth VBlank (the game slowing down), the in-between
+  picture stays too, rather than stepping back.
+- **Three worker threads.** Redrawing a frame costs about as much as drawing it (about 15 ms
+  at upscale 4 on the farm), so three threads draw a third of the picture each while the game
+  goes on. Each has a GPU of its own: `gpu_replay*.c` compile `gpu.c` again with the public
+  names renamed, and keep their variables in sections of their own, aligned to whole cache
+  lines (a worker's sprite offsets had ended up in the same cache line as the GTE registers).
+  The game never waits for them: a picture that is not ready in time is replaced by the real
+  frame.
+- **Where the threads run.** On a hybrid CPU with the Balanced power plan, Windows parked all
+  performance cores but one, so the game's thread and the workers took turns on one or two
+  cores and every in-between picture cost the game the time of drawing it (slowdowns by the
+  waterfall). Each worker now has a performance core of its own and the game's thread the
+  others (`cpu_place.c`, hard affinity, which Windows honours on parked cores by waking them).
+- **Pacing.** The frontend waits until a VBlank is due before it renders and shows that
+  VBlank's picture (it used to show it first and wait afterwards). The pictures then come at
+  even intervals however the game's work is spread over its two VBlanks (drawing a frame can
+  take longer than one), and an in-between picture has a whole VBlank to be drawn.
+
+Measured with replays paced in real time (the waterfall west of the farm, the heaviest place
+found): the game keeps its full speed with `interp` on, and the in-between pictures are ready
+in time at upscale 2 and 3. At upscale 4 by the waterfall the game's own drawing already takes
+more than a frame's time, so there it shows 30 pictures a second.
+
 ## Testing method
 
 - `--record FILE` saves the pad input of a play session; `--input @FILE` replays it
@@ -237,3 +285,8 @@ village tour.
   perspective, sprite shifting and depth scaling, the ground-scale formula, the widescreen
   projection, sprite squeeze and frustum angles). Widescreen changes the game state on
   purpose; with it off the game state is unchanged.
+- Interpolation only changes what is shown. The in-between pictures were compared frame by
+  frame across 1, 2 and 3 worker bands (identical) and checked against the frames before and
+  after (the scenery moves halfway); speed was measured with replays paced in real time from a
+  given frame, since an unthrottled replay never leaves the game idle and hides when pictures
+  are due.

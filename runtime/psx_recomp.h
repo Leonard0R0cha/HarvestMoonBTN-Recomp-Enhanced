@@ -88,6 +88,17 @@ static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y, int player) {
         float cx = px - (float)(int32_t)gte_read_ctrl(24) / 65536.0f, cy = py - (float)(int32_t)gte_read_ctrl(25) / 65536.0f;
         if (player && cx > -2.0f && cx < 2.0f && cy > -2.0f && cy < 2.0f)
             player = 2;                 /* at the projection centre: the camera follows the player */
+        if (player && g_interp) {       /* the camera of this frame: the GTE matrix projecting the player */
+            int16_t r[9];
+            for (int k = 0; k < 4; k++) {
+                uint32_t m = gte_read_ctrl(k);
+                r[2 * k] = (int16_t)m;
+                r[2 * k + 1] = (int16_t)(m >> 16);
+            }
+            r[8] = (int16_t)gte_read_ctrl(4);
+            gpu_set_camera(r, (int32_t)gte_read_ctrl(5), (int32_t)gte_read_ctrl(6), (int32_t)gte_read_ctrl(7),
+                           gte_read_ctrl(26) & 0xFFFFu, (int32_t)gte_read_ctrl(24), (int32_t)gte_read_ctrl(25));
+        }
         if (!g_pgxp) {                  /* widescreen without PGXP: squeezed, but not shifted */
             px = (float)(int16_t)x;
             py = (float)(int16_t)y;

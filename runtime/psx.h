@@ -150,6 +150,7 @@ typedef struct {
     int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
+    int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
     int  ws_w, ws_h;            /* widescreen aspect W:H (e.g. 16:9), 0 = off */
     int  fullscreen;
     int  headless;              /* no window / audio (testing) */
@@ -161,7 +162,7 @@ typedef struct {
     char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." or "@FILE" */
     char record_path[1024];      /* testing: write the pad input of the session here */
     int  record;                /* record every session to recordings/ (bug reports) */
-    int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
+    int  fast_cd;               /* faster CD data reads (not XA streaming): 1 = 4x, N >= 2 = N times */
     int  autoslot;              /* save/load screens use MEMORY CARD slot 1 without asking */
     int  fastcard;              /* full speed while a save/load screen waits for the card */
     int  quickui;               /* windows open and close at once, shorter fades */

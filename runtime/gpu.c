@@ -30,8 +30,10 @@
 #include "gpu.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define VRAM_W 1024
 #define VRAM_H 512
@@ -139,7 +141,7 @@ static Target TH;                   /* upscaled copy; buf == NULL when off */
  * in S.cmd. */
 int g_pgxp, g_pgxp_persp;
 uint32_t g_gp0_addr = 0xFFFFFFFFu;
-typedef struct { uint32_t value; float x, y, w; int16_t cx, cy; } PgxpWord;
+typedef struct { uint32_t value; float x, y, w; int16_t cx, cy; float z; } PgxpWord;   /* z: sprite anchor depth */
 static PgxpWord pgxp_mem[0x200000 / 4];
 static uint32_t cmd_addr[16];
 
@@ -192,7 +194,7 @@ static int hud_after;
 int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call, g_menu_tile;
 #define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
 #define MENU_CX (INT16_MIN + 1)     /* tag of a full-screen menu's background tile */
-static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0 };   /* a HUD tag */
+static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0, 0.0f };   /* a HUD tag */
 float g_sprite_ws = 1.0f;
 
 static uint32_t anchor_slot(int x, int y)
@@ -309,6 +311,7 @@ void gpu_sprite_tag(uint32_t addr, uint32_t value)
     pgxp_mem[i].w = -sprite_map.s;
     pgxp_mem[i].cx = sprite_map.cx;
     pgxp_mem[i].cy = sprite_map.cy;
+    pgxp_mem[i].z = sprite_map.z;
 }
 
 /* dither_lut[y&3][x&3][v]: (v + offset) / 8 saturated to 0..31, v = 0..511 */
@@ -560,6 +563,55 @@ static inline float sprite_sy(const PgxpWord *t)
 static inline int32_t sprite_cx(const PgxpWord *t)
 {
     return t->cx == HUD_CX ? (S.clip_x0 + S.clip_x1 + 1) / 2 : t->cx + S.offs_x;
+}
+
+/* ---- Frame interpolation (prototype) ----
+ * The game shows each frame for two VBlanks, and the next frame is already drawn (into the other
+ * buffer) when the second one comes. For that VBlank the frontend can show an in-between picture:
+ * the next frame's drawing commands (recorded per drawing buffer) redrawn into a scratch copy of
+ * the upscaled VRAM with the camera half a step back towards the frame on screen.
+ * replaying: such a redraw is running; ifm, ifk: the view-space change from the recorded camera to
+ * the in-between one (P' = M P + K); ih, iofx, iofy, iws: the projection; ipdx, ipdy: the player's
+ * own half step on screen, for sprites at the player's anchor (ipcx, ipcy). */
+static int replaying;
+static int32_t band_y0 = 0, band_y1 = 1024;    /* a redraw's band of VRAM rows (each worker draws one) */
+static float ifm[9], ifk[3], ih, iofx, iofy, iws, ipdx, ipdy;
+static int16_t ipcx = INT16_MIN + 2, ipcy;
+
+/* A projected point (GTE screen x, y and view depth z) seen from the in-between camera. */
+static void interp_point(float *x, float *y, float *z)
+{
+    float X = (*x - iofx) / iws * *z / ih, Y = (*y - iofy) * *z / ih, Z = *z;
+    float X2 = ifm[0] * X + ifm[1] * Y + ifm[2] * Z + ifk[0];
+    float Y2 = ifm[3] * X + ifm[4] * Y + ifm[5] * Z + ifk[1];
+    float Z2 = ifm[6] * X + ifm[7] * Y + ifm[8] * Z + ifk[2];
+    if (Z2 < 16.0f)
+        return;
+    *x = iofx + X2 / Z2 * ih * iws;
+    *y = iofy + Y2 / Z2 * ih;
+    *z = Z2;
+}
+
+/* The tag of a sprite at a projected point with its anchor moved for the in-between picture: like
+ * the camera, or like the player for the player's anchor (the camera follows the player). */
+static const PgxpWord *interp_tag(const PgxpWord *t, PgxpWord *tmp)
+{
+    float x, y, z;
+    if (!replaying || !t || t->cx == HUD_CX || t->cx == MENU_CX)
+        return t;
+    *tmp = *t;
+    if (t->cx == ipcx && t->cy == ipcy) {
+        tmp->x += ipdx;
+        tmp->y += ipdy;
+    } else if (t->z > 0.0f) {
+        x = (float)t->cx + t->x;
+        y = (float)t->cy + t->y;
+        z = t->z;
+        interp_point(&x, &y, &z);
+        tmp->x = x - (float)t->cx;
+        tmp->y = y - (float)t->cy;
+    }
+    return tmp;
 }
 
 /* CPU->VRAM data: the n x n block for native pixel (x, y), honouring the mask bit. */
@@ -1019,11 +1071,14 @@ static void cmd_polygon(const uint32_t *p)
         c.flat_r == 0x80 && c.flat_g == 0x80 && c.flat_b == 0x80)
         c.raw = 1;
 
-    draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
-    if (quad)
-        draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
+    if (!replaying) {           /* a redraw only needs the upscaled copy */
+        draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
+        if (quad)
+            draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
+    }
     if (TH.buf) {
         const PgxpWord *st = NULL;
+        PgxpWord stmp;
         if (g_sprite_tags) {    /* a 2D sprite quad built at a projected point: every corner tagged alike */
             const PgxpWord *t0 = &pgxp_mem[(cmd_addr[xyi[0]] & 0x1FFFFCu) >> 2];
             int same = 1;
@@ -1036,10 +1091,13 @@ static void cmd_polygon(const uint32_t *p)
                 st = t0;
             if (st && st->cx == HUD_CX && hud_sx() != 1.0f)
                 hud_after = 1;
+            st = interp_tag(st, &stmp);
         }
         for (i = 0; i < nv; i++) {
             float fx, fy, fw;
             if (g_pgxp && pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &fx, &fy, &fw)) {
+                if (replaying)
+                    interp_point(&fx, &fy, &fw);
                 v[i].x = (int32_t)lrintf((fx + (float)S.offs_x) * (float)TH.n);
                 v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
                 v[i].w = fw;
@@ -1285,7 +1343,7 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
                     ur = (uint8_t)(ur + u_inc);
                 }
             } else if (blend < 0 && !S.mask_check && !TH.buf) {
-                uint16_t *row = &S.vram[((uint32_t)y & 511u) << 10];
+                uint16_t *row = &TN.buf[((uint32_t)y & 511u) << 10];
                 uint16_t val = (uint16_t)(fill | S.mask_set);
                 for (x = x_start; x < x_bound; x++)
                     row[x] = val;
@@ -1392,6 +1450,7 @@ static void cmd_rect(const uint32_t *p)
     y = sext11((uint32_t)(y + S.offs_y));
 
     if (TH.buf && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
+        PgxpWord ttmp;
         const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         if (t && !(t->w < 0.0f && t->value == p[1]))
             t = NULL;
@@ -1403,6 +1462,7 @@ static void cmd_rect(const uint32_t *p)
                 hud_after = 1;
         } else if (!t && hud_after && !(x <= S.clip_x0 && x + w > S.clip_x1))
             t = &hud_word;
+        t = interp_tag(t, &ttmp);
         if (t) {
             const float sx = sprite_sx(t), sy = sprite_sy(t);
             if (sx != 1.0f || sy != 1.0f) {                 /* scaled: native as usual, then the copy */
@@ -1439,9 +1499,9 @@ static void cmd_fill(const uint32_t *p)
     for (y = 0; y < h; y++) {
         int32_t dy = (y0 + y) & 511;
         uint16_t *row;
-        if (line_skip(dy))
+        if (line_skip(dy) || dy < band_y0 || dy >= band_y1)
             continue;
-        row = &S.vram[dy << 10];
+        row = &TN.buf[dy << 10];
         for (x = 0; x < w; x++)
             row[(x0 + x) & 1023] = val;
         if (TH.buf) {
@@ -1587,10 +1647,14 @@ static void gp0_env(uint32_t w)
     case 0xE3:
         S.clip_x0 = (int32_t)(w & 0x3FFu);
         S.clip_y0 = (int32_t)((w >> 10) & 0x3FFu);
+        if (S.clip_y0 < band_y0)
+            S.clip_y0 = band_y0;
         break;
     case 0xE4:
         S.clip_x1 = (int32_t)(w & 0x3FFu);
         S.clip_y1 = (int32_t)((w >> 10) & 0x3FFu);
+        if (S.clip_y1 > band_y1 - 1)
+            S.clip_y1 = band_y1 - 1;
         break;
     case 0xE5:
         S.offs_x = sext11(w);
@@ -1604,6 +1668,9 @@ static void gp0_env(uint32_t w)
         break;
     }
 }
+
+int g_interp;
+static void frame_record(const uint32_t *p, uint32_t op);
 
 static void gp0_execute(const uint32_t *p)
 {
@@ -1660,6 +1727,325 @@ static void gp0_execute(const uint32_t *p)
         gp0_env(p[0]);
         break;
     }
+    if (g_interp && !replaying)
+        frame_record(p, op);
+}
+
+/* Frame records: the drawing commands of the last frame drawn into each buffer (top or bottom of
+ * VRAM) with the RAM address and PGXP word of each command word, the GPU state when it began, its
+ * camera (world to view: r, t; projection: h, ofx, ofy) and the player's anchor in it. */
+#define FR_WORDS (1 << 18)
+#define STATE_OFS offsetof(GpuState, cmd)
+typedef struct { float r[9], t[3], h, ofx, ofy; uint32_t gen; } Camera;
+typedef struct {
+    uint32_t gen, last;             /* gens of its first and last command */
+    int n, full, player;
+    Camera cam;
+    float px, py;                   /* the player's anchor on screen */
+    int16_t pcx, pcy;
+    uint8_t state[sizeof(GpuState) - STATE_OFS];
+    uint32_t w[FR_WORDS], a[FR_WORDS];
+    PgxpWord pw[FR_WORDS];
+} FrameRec;
+
+/* A redraw for the worker thread, which has a GPU of its own (gpu_replay.c compiles this file a
+ * second time): copies of the frame's commands and of what drawing them reads (native VRAM for
+ * textures, the GPU state at the frame's start), the in-between camera (P' = m P + k), the
+ * player's half step, and the target: th, a scratch copy of the upscaled VRAM whose rows y0..y1
+ * are first copied from src. */
+typedef struct {
+    int n;
+    uint32_t w[FR_WORDS], a[FR_WORDS];
+    PgxpWord pw[FR_WORDS];
+    uint8_t state[sizeof(GpuState) - STATE_OFS];
+    uint16_t vram[VRAM_W * VRAM_H];
+    float m[9], k[3], h, ofx, ofy, ws, pdx, pdy;
+    int16_t pcx, pcy;
+    int pgxp, persp, depth, scene3d, log;
+    Target th;
+    const uint16_t *src;
+    uint32_t y0, y1;
+    int32_t band[INTERP_WORKERS + 1];   /* worker k draws VRAM rows band[k] .. band[k + 1] */
+} InterpJob;
+
+#ifdef GPU_REPLAY
+static int replay_scene3d;
+static int replay_scene(void)
+{
+    return replay_scene3d;
+}
+
+void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
+{
+    clock_t t0 = clock();
+    uint32_t y, k;
+    int i, len;
+    if (!dither_lut_ready)
+        build_dither_lut();
+    band_y0 = y0;
+    band_y1 = y1;
+    for (y = j->y0; y < j->y1; y++) {
+        if (y < (uint32_t)y0 * (uint32_t)j->th.n || y >= (uint32_t)y1 * (uint32_t)j->th.n)
+            continue;
+        uint32_t row = (y % (512u * (uint32_t)j->th.n)) << j->th.sh;
+        memcpy(&j->th.buf[row], &j->src[row], (size_t)1024 * (size_t)j->th.n * sizeof(uint16_t));
+    }
+    clock_t t1 = clock();
+    memcpy(S.vram, j->vram, sizeof S.vram);
+    memcpy((uint8_t *)&S + STATE_OFS, j->state, sizeof j->state);
+    if (S.clip_y0 < band_y0)
+        S.clip_y0 = band_y0;
+    if (S.clip_y1 > band_y1 - 1)
+        S.clip_y1 = band_y1 - 1;
+    clut_invalidate();
+    TH = j->th;
+    g_pgxp = j->pgxp;
+    g_pgxp_persp = j->persp;
+    g_sprite_depth = j->depth;
+    g_sprite_tags = 1;
+    g_sprite_ws = j->ws;
+    replay_scene3d = j->scene3d;
+    g_scene_3d = replay_scene;
+    memcpy(ifm, j->m, sizeof ifm);
+    memcpy(ifk, j->k, sizeof ifk);
+    ih = j->h;
+    iofx = j->ofx;
+    iofy = j->ofy;
+    iws = j->ws;
+    ipdx = j->pdx;
+    ipdy = j->pdy;
+    ipcx = j->pcx;
+    ipcy = j->pcy;
+    hud_after = 0;
+    memset(buf_menu, 0, sizeof buf_menu);
+    replaying = 1;
+    for (k = 0; k < (uint32_t)j->n; k += (uint32_t)len) {
+        len = gp0_cmd_len(j->w[k] >> 24);
+        for (i = 0; i < len; i++) {         /* the PGXP words as they were */
+            uint32_t a = cmd_addr[i] = j->a[k + i];
+            if (a != 0xFFFFFFFFu)
+                pgxp_mem[(a & 0x1FFFFCu) >> 2] = j->pw[k + i];
+        }
+        gp0_execute(&j->w[k]);
+    }
+    replaying = 0;
+    if (j->log)
+        fprintf(stderr, "interp: copy %.2f ms ", (double)(t1 - t0) * 1000.0 / CLOCKS_PER_SEC);
+    if (j->log)
+        fprintf(stderr, "interp: drawn %.2f ms\n", (double)(clock() - t0) * 1000.0 / CLOCKS_PER_SEC);
+}
+#endif
+void gpu_replay_run(const InterpJob *j, int32_t y0, int32_t y1);      /* gpu_replay.c */
+void gpu_replay_run2(const InterpJob *j, int32_t y0, int32_t y1);     /* gpu_replay2.c */
+void gpu_replay_run3(const InterpJob *j, int32_t y0, int32_t y1);     /* gpu_replay3.c */
+
+static FrameRec *frec;              /* [2] */
+static Camera cam_cur;
+static InterpJob *job;
+static uint16_t *interp_buf;        /* the in-between picture: a scratch copy of the upscaled VRAM */
+static uint32_t job_gen;            /* the next frame the in-between picture is made for */
+static int since_flip, last_y = -1, disp_y[2] = { -1, -1 }, ilog;
+
+static void frame_record(const uint32_t *p, uint32_t op)
+{
+    FrameRec *r;
+    int len, k;
+    if (!frec || !(op == 0x02 || (op >= 0x20 && op < 0x80) || (op >= 0xE1 && op <= 0xE6)))
+        return;
+    if ((op >> 5) == 2 && (op & 0x08))          /* polylines go on in polyline_word: not recorded */
+        return;
+    r = &frec[draw_buf()];
+    if (anchor_gen - r->last > 1) {             /* a new frame in this buffer */
+        r->gen = anchor_gen;
+        r->n = r->full = 0;
+        memcpy(r->state, (uint8_t *)&S + STATE_OFS, sizeof r->state);
+        r->cam = cam_cur;
+        if (anchor_gen - cam_cur.gen > 3)
+            r->cam.gen = 0;
+        r->player = player_gen + 3 >= anchor_gen;
+        r->pcx = player_map.cx;
+        r->pcy = player_map.cy;
+        r->px = (float)player_map.cx + player_map.dx;
+        r->py = (float)player_map.cy + player_map.dy;
+    }
+    r->last = anchor_gen;
+    len = gp0_cmd_len(op);
+    if (r->full || r->n + len > FR_WORDS) {
+        r->full = 1;
+        return;
+    }
+    for (k = 0; k < len; k++) {
+        uint32_t a = cmd_addr[k];
+        r->w[r->n + k] = p[k];
+        r->a[r->n + k] = a;
+        if (a != 0xFFFFFFFFu)
+            r->pw[r->n + k] = pgxp_mem[(a & 0x1FFFFCu) >> 2];
+    }
+    r->n += len;
+}
+
+void gpu_set_camera(const int16_t r[9], int32_t tx, int32_t ty, int32_t tz, uint32_t h, int32_t ofx, int32_t ofy)
+{
+    int k;
+    for (k = 0; k < 9; k++)
+        cam_cur.r[k] = (float)r[k] / 4096.0f;
+    cam_cur.t[0] = (float)tx;
+    cam_cur.t[1] = (float)ty;
+    cam_cur.t[2] = (float)tz;
+    cam_cur.h = (float)h;
+    cam_cur.ofx = (float)ofx / 65536.0f;
+    cam_cur.ofy = (float)ofy / 65536.0f;
+    cam_cur.gen = anchor_gen;
+}
+
+void gpu_interp_enable(void)
+{
+    if (!TH.buf || frec)
+        return;
+    frec = calloc(2, sizeof *frec);
+    job = malloc(sizeof *job);
+    interp_buf = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof(uint16_t));
+    g_interp = frec && job && interp_buf;
+    ilog = getenv("HMBTN_INTERP_LOG") != NULL;
+}
+
+/* inv = m^-1 (3x3, row-major); 0 when singular */
+static int inv3(const float *m, float *inv)
+{
+    float d = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+    if (fabsf(d) < 1e-9f)
+        return 0;
+    inv[0] = (m[4] * m[8] - m[5] * m[7]) / d;
+    inv[1] = (m[2] * m[7] - m[1] * m[8]) / d;
+    inv[2] = (m[1] * m[5] - m[2] * m[4]) / d;
+    inv[3] = (m[5] * m[6] - m[3] * m[8]) / d;
+    inv[4] = (m[0] * m[8] - m[2] * m[6]) / d;
+    inv[5] = (m[2] * m[3] - m[0] * m[5]) / d;
+    inv[6] = (m[3] * m[7] - m[4] * m[6]) / d;
+    inv[7] = (m[1] * m[6] - m[0] * m[7]) / d;
+    inv[8] = (m[0] * m[4] - m[1] * m[3]) / d;
+    return 1;
+}
+
+/* Every shown picture: notes buffer flips, and on the second VBlank of a frame (also on a third
+ * and fourth when the game slowed down, rather than stepping back) shows the in-between picture
+ * made for it. 0: none, show gpu_render_display. */
+int gpu_render_interp(uint32_t *out, int *w, int *h)
+{
+    GpuDisplay d;
+    uint32_t disp_saved;
+    uint16_t *hb;
+    int b;
+
+    if (!frec)
+        return 0;
+    gpu_get_display(&d);
+    since_flip = d.vram_y == last_y ? since_flip + 1 : 1;
+    last_y = d.vram_y;
+    b = d.vram_y >= 240;
+    disp_y[b] = d.vram_y;
+    if (!g_interp || since_flip < 2 || since_flip > 4 || !job_gen || job_gen != frec[!b].gen || !d.enabled ||
+        d.is_24bit || disp_y[!b] < 0)
+        return 0;
+    if (ilog && since_flip > 2)
+        fprintf(stderr, "interp: held\n");
+    hb = TH.buf;
+    TH.buf = interp_buf;
+    disp_saved = S.disp_y;              /* the next frame's buffer, from the in-between picture */
+    S.disp_y = (uint32_t)disp_y[!b];
+    gpu_render_display(out, w, h);
+    S.disp_y = disp_saved;
+    TH.buf = hb;
+    return 1;
+}
+
+/* After the first VBlank of a frame is shown: the next frame is drawn already. Sets up its redraw
+ * with the camera halfway back to this frame's, for gpu_interp_work (the worker thread) to do
+ * while the game goes on. 0: none (a menu, a camera cut, a slowdown...). */
+int gpu_interp_prepare(void)
+{
+    const FrameRec *cur, *prev;
+    GpuDisplay d;
+    float rm[9], ri[9], tm[3], diff = 0.0f, dt;
+    int b, i, j, k;
+
+    if (!g_interp || !frec || !TH.buf || since_flip != 1)
+        return 0;
+    job_gen = 0;
+    gpu_get_display(&d);
+    b = d.vram_y >= 240;
+    cur = &frec[!b];                    /* the next frame */
+    prev = &frec[b];                    /* the frame on screen */
+    if (ilog)
+        fprintf(stderr, "interp: y %d gen %u/%u n %d/%d cam %u/%u t %.0f %.0f %.0f p %.1f %.1f\n", d.vram_y,
+                cur->gen, prev->gen, cur->n, prev->n, cur->cam.gen, prev->cam.gen, cur->cam.t[0], cur->cam.t[1],
+                cur->cam.t[2], cur->px, cur->py);
+    if (!d.enabled || d.is_24bit || disp_y[!b] < 0 || gpu_display_menu() || (buf_menu[!b] && buf_menu[!b] == buf_drawn[!b]))
+        return 0;
+    if (!cur->n || cur->full || !cur->cam.gen || !prev->cam.gen || cur->gen - prev->gen != 2)
+        return 0;
+    for (k = 0; k < 9; k++)
+        diff += fabsf(cur->cam.r[k] - prev->cam.r[k]);
+    dt = fabsf(cur->cam.t[0] - prev->cam.t[0]) + fabsf(cur->cam.t[1] - prev->cam.t[1]) + fabsf(cur->cam.t[2] - prev->cam.t[2]);
+    if (diff > 0.1f || dt > 600.0f || cur->cam.h != prev->cam.h || !inv3(cur->cam.r, ri))     /* a camera cut */
+        return 0;
+
+    /* P' = Rm Rc^-1 (P - Tc) + Tm, with Rm, Tm halfway between the two cameras */
+    for (k = 0; k < 9; k++)
+        rm[k] = 0.5f * (cur->cam.r[k] + prev->cam.r[k]);
+    for (k = 0; k < 3; k++)
+        tm[k] = 0.5f * (cur->cam.t[k] + prev->cam.t[k]);
+    for (i = 0; i < 3; i++)
+        for (j = 0; j < 3; j++)
+            job->m[i * 3 + j] = rm[i * 3] * ri[j] + rm[i * 3 + 1] * ri[3 + j] + rm[i * 3 + 2] * ri[6 + j];
+    for (i = 0; i < 3; i++)
+        job->k[i] = tm[i] - (job->m[i * 3] * cur->cam.t[0] + job->m[i * 3 + 1] * cur->cam.t[1] + job->m[i * 3 + 2] * cur->cam.t[2]);
+    job->h = cur->cam.h;
+    job->ofx = cur->cam.ofx;
+    job->ofy = cur->cam.ofy;
+    job->ws = g_sprite_ws;
+    job->pcx = INT16_MIN + 2;
+    if (cur->player && prev->player) {
+        job->pcx = cur->pcx;
+        job->pcy = cur->pcy;
+        job->pdx = 0.5f * (prev->px - cur->px);
+        job->pdy = 0.5f * (prev->py - cur->py);
+    }
+    job->n = cur->n;
+    memcpy(job->w, cur->w, (size_t)cur->n * sizeof *job->w);
+    memcpy(job->a, cur->a, (size_t)cur->n * sizeof *job->a);
+    memcpy(job->pw, cur->pw, (size_t)cur->n * sizeof *job->pw);
+    memcpy(job->state, cur->state, sizeof job->state);
+    memcpy(job->vram, S.vram, sizeof job->vram);
+    job->pgxp = g_pgxp;
+    job->persp = g_pgxp_persp;
+    job->depth = g_sprite_depth;
+    job->scene3d = !g_scene_3d || g_scene_3d();
+    job->log = ilog;
+    job->th = TH;
+    job->th.buf = interp_buf;
+    job->src = TH.buf;
+    job->y0 = (uint32_t)disp_y[!b] * (uint32_t)TH.n;
+    job->y1 = (uint32_t)(disp_y[!b] + d.height) * (uint32_t)TH.n;
+    for (k = 1; k < INTERP_WORKERS; k++)
+        job->band[k] = disp_y[!b] + d.height * k / INTERP_WORKERS;
+    job->band[0] = 0;
+    job->band[INTERP_WORKERS] = 1024;
+    job_gen = cur->gen;
+    return 1;
+}
+
+void gpu_interp_work(int part)
+{
+    static void (*const run[INTERP_WORKERS])(const InterpJob *, int32_t, int32_t) = {
+        gpu_replay_run, gpu_replay_run2, gpu_replay_run3
+    };
+    run[part](job, job->band[part], job->band[part + 1]);
+}
+
+void gpu_interp_late(void)
+{
+    job_gen = 0;
 }
 
 void gpu_write_gp0(uint32_t w)

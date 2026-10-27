@@ -18,7 +18,8 @@ launcher. See [docs/GRAPHICS.md](docs/GRAPHICS.md).
 - Keyboard and game controller support (Xbox / XInput and other SDL-supported controllers), fully remappable
 - Window or fullscreen, scaled from the original 320×240 (sharp-bilinear, sharp or smooth, 4:3 or square pixels)
 - Optional higher internal resolution (2×–4×), precise 3D vertices (PGXP), perspective-correct textures,
-  2D objects that scale with depth, and a widescreen view (16:9, 16:10, 21:9)
+  2D objects that scale with depth, a widescreen view (16:9, 16:10, 21:9), and in-between pictures that move
+  the camera and the 3D scenery at 60 fps
 - Saving works as on the PlayStation, on a standard memory card file usable in emulators too
 - Optional hold-to-fast-forward, screenshots
 
@@ -175,6 +176,7 @@ ways:
 |---|---|
 | F11 or Alt+Enter | toggle fullscreen (Esc leaves fullscreen) |
 | F12 | screenshot (saved in `screenshots/`) |
+| F9 | in-between pictures on / off (with `interp = 1`), to compare |
 | F1–F4 | put memory card 1–4 in slot 1 (3 diaries each; shown in the window title) |
 | L1 / R1 on a diary list | previous / next memory card (shown above the list); when loading, only cards that have a diary |
 | Triangle (hold 2 s) on a diary list | delete the diary under the cursor |
@@ -204,9 +206,10 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
 |  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
 |  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects and the HUD keep their shape with `upscale` 2+ |
+|  | `interp` | `0` | `1` = in-between pictures: the camera and the 3D scenery move at 60 fps while the game runs at 30 (needs `pgxp`; 3 extra CPU threads) |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
-|  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |
+|  | `fastcd` | `0` | shorter loading pauses: `1` = disc data 4x faster, `2` or more = that many times (music streaming is unaffected) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
 |  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
 |  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |
@@ -220,7 +223,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
 
-Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--widescreen W:H`, `--fastcd`,
+Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--perspective`, `--sprite-depth`, `--widescreen W:H`, `--interp`, `--fastcd`,
 `--no-autoslot`, `--card N`, `--overclock N`, `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
 options are described in [docs/TECHNICAL.md](docs/TECHNICAL.md#testing-and-debugging).
 

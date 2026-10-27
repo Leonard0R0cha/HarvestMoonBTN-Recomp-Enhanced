@@ -335,12 +335,17 @@ static void stop_reading(void) {
     sched_cancel(EV_CDROM_READ);
 }
 
+/* fastcd: how many times faster data is read, the head seeks and commands answer (1 = 4x, as it
+ * always was; 2 or more = that many times). Streamed music (XA) keeps the console's speed. */
+static uint64_t cd_speed(void) {
+    return g_cfg.fast_cd <= 0 ? 1 : g_cfg.fast_cd == 1 ? 4 : (uint64_t)g_cfg.fast_cd;
+}
+
 static uint64_t seek_time(uint32_t from, uint32_t to) {
     uint32_t d = from > to ? from - to : to - from;
     uint64_t t = 20000 + (uint64_t)d * 8;   /* rough model; long seeks ~0.1s */
     if (t > 3000000) t = 3000000;
-    if (g_cfg.fast_cd) t /= 4;
-    return t;
+    return t / cd_speed();
 }
 
 static void start_seek(int then) {
@@ -400,7 +405,7 @@ void cdrom_read_event(void) {
         cd.pending_data = true;
         if (!(cd.int_flag & 7) && !cd.qn) deliver_data_sector();
     }
-    if (g_cfg.fast_cd && !(cd.mode & 0x40)) period /= 4;
+    if (!(cd.mode & 0x40)) period /= cd_speed();
     sched_set(EV_CDROM_READ, g_cpu.cycles + period);
 }
 
@@ -635,7 +640,7 @@ void cdrom_write8(uint32_t off, uint8_t v) {
         cd.cmd_nparam = cd.nparam;
         cd.nparam = 0;
         cd.busy = 1;
-        sched_set(EV_CDROM, g_cpu.cycles + (v == 0x0A ? 0x13cce : 0xc4e1) / (g_cfg.fast_cd ? 4 : 1));
+        sched_set(EV_CDROM, g_cpu.cycles + (v == 0x0A ? 0x13cce : 0xc4e1) / cd_speed());
         break;
     case (2 << 2) | 0: /* parameter */
         if (cd.nparam < 16) cd.param[cd.nparam++] = v;
