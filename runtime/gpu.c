@@ -1091,6 +1091,20 @@ static void cmd_polygon(const uint32_t *p)
                 st = t0;
             if (st && st->cx == HUD_CX && hud_sx() != 1.0f)
                 hud_after = 1;
+            if (!st && hud_after && hud_sx() != 1.0f) {
+                /* a flat 2D polygon after the HUD is HUD too (the rucksack's selection box is four
+                 * textured quads), unless it covers the whole width (fades) or is projected 3D */
+                int32_t x0 = v[0].x, x1 = v[0].x;
+                int flat = 1;
+                for (i = 0; i < nv && flat; i++) {
+                    float fx, fy, fw;
+                    flat = !(g_pgxp && pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &fx, &fy, &fw));
+                    x0 = v[i].x < x0 ? v[i].x : x0;
+                    x1 = v[i].x > x1 ? v[i].x : x1;
+                }
+                if (flat && !(x0 <= S.clip_x0 && x1 > S.clip_x1))
+                    st = &hud_word;
+            }
             st = interp_tag(st, &stmp);
         }
         for (i = 0; i < nv; i++) {
