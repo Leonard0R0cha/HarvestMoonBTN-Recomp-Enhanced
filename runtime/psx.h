@@ -162,7 +162,7 @@ typedef struct {
     char input_script[65536];    /* testing: scripted input "frame:BUTTONS,frame:..." or "@FILE" */
     char record_path[1024];      /* testing: write the pad input of the session here */
     int  record;                /* record every session to recordings/ (bug reports) */
-    int  fast_cd;               /* faster CD data reads (not used for XA streaming) */
+    int  fast_cd;               /* faster CD data reads (not XA streaming): 1 = 4x, N >= 2 = N times */
     int  autoslot;              /* save/load screens use MEMORY CARD slot 1 without asking */
     int  fastcard;              /* full speed while a save/load screen waits for the card */
     int  quickui;               /* windows open and close at once, shorter fades */

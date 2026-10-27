@@ -209,7 +209,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `interp` | `0` | `1` = in-between pictures: the camera and the 3D scenery move at 60 fps while the game runs at 30 (needs `pgxp`; 3 extra CPU threads) |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
-|  | `fastcd` | `0` | `1` = shorter loading pauses (music streaming is unaffected) |
+|  | `fastcd` | `0` | shorter loading pauses: `1` = disc data 4x faster, `2` or more = that many times (music streaming is unaffected) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
 |  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
 |  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |

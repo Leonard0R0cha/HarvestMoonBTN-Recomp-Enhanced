@@ -17,7 +17,7 @@ OPTIONS = [
     ('Game', 'general', 'disc', 'file', 'Disc image (.cue/.bin) or data pack (.pak)'),
     ('Game', 'general', 'savedir', 'dir', 'Memory card folder'),
     ('Game', 'behaviour', 'fastforward', 'bool', 'Allow holding Tab to fast-forward'),
-    ('Game', 'behaviour', 'fastcd', 'bool', 'Shorter loading pauses'),
+    ('Game', 'behaviour', 'fastcd', 'choice:0|1|8|16', 'Shorter loading pauses (0 = original, 1 = 4x, 8 = 8x, 16 = 16x disc speed)'),
     ('Game', 'behaviour', 'record', 'bool', 'Record sessions for bug reports (recordings folder)'),
     ('Game', 'behaviour', 'autoslot', 'bool', 'Save and load on MEMORY CARD slot 1 without asking'),
     ('Game', 'behaviour', 'fastcard', 'bool', 'No waiting while the MEMORY CARD is read or written'),
