@@ -1140,6 +1140,16 @@ static void test_pgxp_sprite(void)
         CHECK(badh == 0, "untagged rectangle after the HUD: %ld pixels not squeezed about the centre", badh);
         CHECK(out[400 * w] == argb15(px(0, 100)) && out[431 * w + 1279] == argb15(px(319, 107)) &&
               (px(0, 100) & 0x3E0u), "full-width rectangle after the HUD: not squeezed");
+        /* ... and so is a flat polygon (the rucksack's selection box is textured quads): red,
+         * x 232..240 -> target 856..879; one covering the whole width (blue, rows 120..123) is not */
+        gp0(0x280000FF); gp0(xy(232, 140)); gp0(xy(240, 140)); gp0(xy(232, 148)); gp0(xy(240, 148));
+        gp0(0x28FF0000); gp0(xy(0, 120)); gp0(xy(320, 120)); gp0(xy(0, 124)); gp0(xy(320, 124));
+        gpu_render_display(out, &w, &h);
+        CHECK(out[570 * w + 856] == argb15(px(232, 142)) && out[570 * w + 879] == argb15(px(239, 142)) &&
+              out[570 * w + 855] != out[570 * w + 856] && out[570 * w + 880] != out[570 * w + 879] &&
+              (px(232, 142) & 0x1Fu), "flat polygon after the HUD: squeezed about the centre");
+        CHECK(out[482 * w] == argb15(px(0, 120)) && out[482 * w + 1279] == argb15(px(319, 120)) &&
+              (px(0, 120) & 0x7C00u), "full-width polygon after the HUD: not squeezed");
         gpu_vblank();
         g_scene_3d = no_3d_scene;                        /* tagged, but the picture isn't a 3D scene */
         hud_scene(1);

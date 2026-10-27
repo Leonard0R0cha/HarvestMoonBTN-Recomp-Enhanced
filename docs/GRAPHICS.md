@@ -191,7 +191,9 @@ with the squeezed coordinates, so it draws what a wider screen would show.
   of the bag (the field code's bag menu, 800FAB18). Every traced frame draws the world first
   and the HUD last, as one block, so once a HUD-tagged primitive was drawn in a frame, untagged
   rectangles and lines after it are HUD too, except ones covering the whole width (the bag's
-  full-screen dimming). The rule starts over at every VBlank and never applies to polygons.
+  full-screen dimming). So are flat 2D polygons (no projected vertex): the rucksack's selection
+  box, shown once an item is picked, is four textured quads. The rule starts over at every
+  VBlank and never applies to projected 3D polygons.
 - **What the player holds keeps its shape.** An object picked up and held over the head is a
   sprite drawn at the player's position plus an offset, which nothing tagged, so it came out a
   third too wide. It now takes the player's anchor (sub-pixel offset, depth scale and the squeeze
