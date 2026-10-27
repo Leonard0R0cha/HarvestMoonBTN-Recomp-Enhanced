@@ -16,7 +16,8 @@
     X(SDL_NumJoysticks) X(SDL_OpenAudioDevice) X(SDL_PauseAudioDevice) X(SDL_PollEvent) \
     X(SDL_QueueAudio) X(SDL_Quit) X(SDL_RenderClear) X(SDL_RenderCopy) X(SDL_RenderPresent) \
     X(SDL_SetHint) X(SDL_SetRenderDrawColor) X(SDL_SetWindowFullscreen) X(SDL_SetWindowTitle) \
-    X(SDL_ShowSimpleMessageBox) X(SDL_UpdateTexture) X(SDL_memset)
+    X(SDL_ShowSimpleMessageBox) X(SDL_UpdateTexture) X(SDL_memset) \
+    X(SDL_CreateSemaphore) X(SDL_CreateThread) X(SDL_SemPost) X(SDL_SemTryWait) X(SDL_SemWait)
 
 #define SDL_DYN_DECL(f) static __typeof__(&f) dyn_##f;
 SDL_DYN_FUNCS(SDL_DYN_DECL)
@@ -42,6 +43,11 @@ static const char *sdl_dyn_load(void) {
 #define SDL_SetRenderTarget dyn_SDL_SetRenderTarget
 #define SDL_SetTextureScaleMode dyn_SDL_SetTextureScaleMode
 #define SDL_Delay dyn_SDL_Delay
+#define SDL_CreateSemaphore dyn_SDL_CreateSemaphore
+#define SDL_CreateThread dyn_SDL_CreateThread
+#define SDL_SemPost dyn_SDL_SemPost
+#define SDL_SemTryWait dyn_SDL_SemTryWait
+#define SDL_SemWait dyn_SDL_SemWait
 #define SDL_GameControllerClose dyn_SDL_GameControllerClose
 #define SDL_GameControllerGetAxis dyn_SDL_GameControllerGetAxis
 #define SDL_GameControllerGetButton dyn_SDL_GameControllerGetButton

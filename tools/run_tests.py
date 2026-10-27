@@ -20,7 +20,7 @@ else:
 # test -> runtime sources it needs (None = the whole runtime except main + frontend)
 TESTS = {
     'gte_test': ['gte.c'],
-    'gpu_test': ['gpu.c'],
+    'gpu_test': ['gpu.c', 'gpu_replay.c', 'gpu_replay2.c', 'gpu_replay3.c'],
     'spu_test': ['spu.c'],
     'memcard_fs_test': None,
 }
