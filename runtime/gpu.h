@@ -37,6 +37,10 @@ void     gpu_render_display(uint32_t *out, int *w, int *h);
  * gpu_render_display shows; 1 = off (default). The native VRAM is unaffected either way. */
 void     gpu_set_upscale(int n);
 int      gpu_upscale(void);
+/* Band workers: n threads draw the upscaled polygons, each a share of the rows (the same
+ * picture as drawn by the GPU alone); 0 = none. Call after gpu_set_upscale. */
+void     gpu_set_threads(int n);
+int      gpu_threads(void);
 
 /* Frame interpolation (prototype; needs upscaling and PGXP). gpu_set_camera gives the camera of
  * the frame being built (the GTE matrix at the player's projection). For every shown picture the
@@ -97,6 +101,7 @@ extern int (*g_scene_3d)(void);
 extern int g_hud_call;            /* the HUD icon routine is calling the sprite builder */
 
 const uint16_t *gpu_vram(void);           /* 1024x512 16-bit VRAM (debug / screenshots) */
+uint32_t gpu_changes(void);       /* changes when anything that can alter the picture shown does */
 
 size_t   gpu_state_size(void);
 void     gpu_save_state(void *dst);

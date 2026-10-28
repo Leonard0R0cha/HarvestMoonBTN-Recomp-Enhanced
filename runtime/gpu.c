@@ -34,6 +34,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdatomic.h>
+#include "workers.h"
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
 
 #define VRAM_W 1024
 #define VRAM_H 512
@@ -135,6 +140,20 @@ typedef struct {
 } Target;
 static Target TN = { S.vram, 10, 1023, 511, 1, { 0 } };
 static Target TH;                   /* upscaled copy; buf == NULL when off */
+/* Where textures and CLUTs are read: this GPU's own, except in a band worker's copy (gpu_band1.c
+ * ...), which draws the GPU's polygons with the GPU's native VRAM and each polygon's CLUT. */
+static const uint16_t *tex_vram = S.vram;
+static const uint16_t *tex_clut = S.clut;
+/* A band worker's copy draws the polygons' upscaled rows in stripe band_k of band_nb: stripes of
+ * BAND_STRIPE rows taken in turn, so each worker gets about as much of the picture (sky or ground)
+ * as the others. band_nb 0: all rows. */
+#define BAND_STRIPE 8u
+static int band_k, band_nb;
+
+static inline int band_row(int32_t y)
+{
+    return !band_nb || (int)(((uint32_t)y / BAND_STRIPE) % (uint32_t)band_nb) == band_k;
+}
 
 /* PGXP shadow RAM: one entry per RAM word, used while the word still holds the tagged value
  * (w = 0: no precise position; w < 0: sprite tag, below). cmd_addr: RAM address of each word
@@ -416,16 +435,16 @@ static inline uint32_t tex_fetch(uint32_t u, uint32_t v)
 {
     uint32_t tu = (u & S.tw_and_u) | S.tw_or_u;
     uint32_t tv = (v & S.tw_and_v) | S.tw_or_v;
-    const uint16_t *row = &S.vram[((S.tp_y + tv) & 511u) << 10];
+    const uint16_t *row = &tex_vram[((S.tp_y + tv) & 511u) << 10];
     uint32_t w;
 
     switch (S.tex_mode) {
     case 0:
         w = row[(S.tp_x + (tu >> 2)) & 1023u];
-        return S.clut[(w >> ((tu & 3u) << 2)) & 0xFu];
+        return tex_clut[(w >> ((tu & 3u) << 2)) & 0xFu];
     case 1:
         w = row[(S.tp_x + (tu >> 1)) & 1023u];
-        return S.clut[(w >> ((tu & 1u) << 3)) & 0xFFu];
+        return tex_clut[(w >> ((tu & 1u) << 3)) & 0xFFu];
     default:
         return row[(S.tp_x + tu) & 1023u];
     }
@@ -693,6 +712,94 @@ static inline void interp_add(Interp *ig, const Interp *d, uint32_t count)
     ig->v += d->v * count;
 }
 
+/* The perspective-correct textured span of draw_span (upscaled pass) for one texture mode, with
+ * what stays the same along the span read once: the same arithmetic in the same order, so the
+ * same pixels, only faster (the waterfall draws a lot of these). */
+static inline __attribute__((always_inline)) void persp_span(const Target *t, const PolyCtx *c, uint32_t y,
+                                                             int32_t x, int32_t w, Interp ig, const InterpDelta *d,
+                                                             const Persp *pp, const uint8_t (*drow)[512],
+                                                             const uint32_t mode)
+{
+    float pu = (float)(pp->u[0] + pp->u[1] * x + pp->u[2] * (int32_t)y);
+    float pv = (float)(pp->v[0] + pp->v[1] * x + pp->v[2] * (int32_t)y);
+    float pq = (float)(pp->q[0] + pp->q[1] * x + pp->q[2] * (int32_t)y);
+    const float du = (float)pp->u[1], dv = (float)pp->v[1], dq = (float)pp->q[1];
+    const int32_t umin = pp->umin, umax = pp->umax, vmin = pp->vmin, vmax = pp->vmax;
+    const uint32_t and_u = S.tw_and_u, or_u = S.tw_or_u, and_v = S.tw_and_v, or_v = S.tw_or_v;
+    const uint32_t tp_x = S.tp_x, tp_y = S.tp_y;
+    const uint16_t *const vram = tex_vram, *const clut = tex_clut;
+#ifdef __SSE2__
+    /* four pixels at a time: the same sums one after the other, then the divisions and
+     * conversions of all four at once (the same IEEE results as one by one) */
+    int32_t qu[4], qv[4];
+    int qn = 0;
+    const __m128 half = _mm_set1_ps(1.0f / 2048), one = _mm_set1_ps(1.0f);
+#endif
+    for (; w > 0; w--, x++) {
+        int32_t tu, tv;
+        uint32_t u, v, tx;
+        const uint16_t *row;
+#ifdef __SSE2__
+        if (!qn && w >= 4) {
+            float a[4], b[4], q[4];
+            int k;
+            for (k = 0; k < 4; k++) {
+                a[k] = pu;
+                b[k] = pv;
+                q[k] = pq;
+                pu += du;
+                pv += dv;
+                pq += dq;
+            }
+            __m128 rr = _mm_div_ps(one, _mm_loadu_ps(q));
+            _mm_storeu_si128((__m128i *)qu, _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(a), rr), half)));
+            _mm_storeu_si128((__m128i *)qv, _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(_mm_loadu_ps(b), rr), half)));
+            qn = 4;
+        }
+        if (qn) {
+            tu = qu[4 - qn];
+            tv = qv[4 - qn];
+            qn--;
+        } else
+#endif
+        {
+            float r = 1.0f / pq;
+            tu = (int32_t)(pu * r + (1.0f / 2048));
+            tv = (int32_t)(pv * r + (1.0f / 2048));
+            pu += du;
+            pv += dv;
+            pq += dq;
+        }
+        tu = tu < umin ? umin : (tu > umax ? umax : tu);
+        tv = tv < vmin ? vmin : (tv > vmax ? vmax : tv);
+        u = ((uint32_t)tu & and_u) | or_u;
+        v = ((uint32_t)tv & and_v) | or_v;
+        row = &vram[((tp_y + v) & 511u) << 10];
+        if (mode == 0)
+            tx = clut[(row[(tp_x + (u >> 2)) & 1023u] >> ((u & 3u) << 2)) & 0xFu];
+        else if (mode == 1)
+            tx = clut[(row[(tp_x + (u >> 1)) & 1023u] >> ((u & 1u) << 3)) & 0xFFu];
+        else
+            tx = row[(tp_x + u) & 1023u];
+        if (tx) {
+            uint32_t rgb;
+            if (c->raw) {
+                rgb = tx & 0x7FFFu;
+            } else if (c->gouraud) {
+                rgb = modulate(tx, ig.r >> 24, ig.g >> 24, ig.b >> 24,
+                               c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
+            } else {
+                rgb = modulate(tx, c->flat_r, c->flat_g, c->flat_b,
+                               c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
+            }
+            plot(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1);
+        }
+        ig.r += d->dx.r;
+        ig.g += d->dx.g;
+        ig.b += d->dx.b;
+    }
+}
+
 static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_bound,
                       Interp ig, const InterpDelta *d, const Persp *pp)
 {
@@ -725,26 +832,17 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
 
     if (c->textured) {
         const uint8_t (*drow)[512] = dither_lut[(y / (uint32_t)t->n) & 3u];
-        float pu = 0, pv = 0, pq = 0;
         if (pp) {
-            pu = (float)(pp->u[0] + pp->u[1] * x + pp->u[2] * yi);
-            pv = (float)(pp->v[0] + pp->v[1] * x + pp->v[2] * yi);
-            pq = (float)(pp->q[0] + pp->q[1] * x + pp->q[2] * yi);
+            if (S.tex_mode == 0)
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 0);
+            else if (S.tex_mode == 1)
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 1);
+            else
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 2);
+            return;
         }
         for (; w > 0; w--, x++) {
-            uint32_t tx;
-            if (pp) {
-                float r = 1.0f / pq;
-                int32_t tu = (int32_t)(pu * r + (1.0f / 2048)), tv = (int32_t)(pv * r + (1.0f / 2048));
-                tu = tu < pp->umin ? pp->umin : (tu > pp->umax ? pp->umax : tu);
-                tv = tv < pp->vmin ? pp->vmin : (tv > pp->vmax ? pp->vmax : tv);
-                tx = tex_fetch((uint32_t)tu, (uint32_t)tv);
-                pu += (float)pp->u[1];
-                pv += (float)pp->v[1];
-                pq += (float)pp->q[1];
-            } else {
-                tx = tex_fetch(ig.u >> 24, ig.v >> 24);
-            }
+            uint32_t tx = tex_fetch(ig.u >> 24, ig.v >> 24);
             if (tx) {
                 uint32_t rgb;
                 if (c->raw) {
@@ -989,7 +1087,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
                 y = t->n == 1 ? sext11((uint32_t)yi) : yi;
                 if (y < cy0)
                     break;
-                if (y > cy1)
+                if (y > cy1 || !band_row(y))
                     continue;
                 draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
             }
@@ -998,7 +1096,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
                 int32_t y = t->n == 1 ? sext11((uint32_t)yi) : yi;
                 if (y > cy1)
                     break;
-                if (y >= cy0)
+                if (y >= cy0 && band_row(y))
                     draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
                 yi++;
                 lc += ls;
@@ -1007,6 +1105,265 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
         }
     }
 }
+
+/* ======================================================================= */
+/* Upscaled polygons in bands                                               */
+/* ======================================================================= */
+
+/* With upscaling, the GPU draws each polygon into the native VRAM itself (the game reads that
+ * back, and textures come from it) and queues its upscaled drawing: band workers (threads, each
+ * with a copy of this file of its own: gpu_band1.c ...) draw the queue in order, each into its
+ * stripes of the picture (band_row). Every upscaled pixel gets the same polygons in the same
+ * order as when drawn here, so the picture is the same. The GPU waits for the queue to be drawn
+ * before it draws anything else upscaled (sprites, lines, fills, copies, transfers), before the
+ * picture is shown, and before it draws natively over a texture a queued polygon reads. An item
+ * holds what drawing the polygon reads besides the native VRAM. */
+#define BQ 4096                     /* queue size (a power of 2) */
+#define BAND_MAX 4                  /* band workers at most */
+typedef struct {
+    PolyCtx c;
+    TriVtx v[4];
+    int quad, persp;
+    uint32_t tp_x, tp_y, tex_mode, tw_and_u, tw_or_u, tw_and_v, tw_or_v;
+    int32_t clip_x0, clip_y0, clip_x1, clip_y1;
+    uint32_t mask_set, mask_check, disp_mode, dfe, field;
+    uint16_t clut[256];
+} BandItem;
+
+#ifdef GPU_BAND
+/* Draws queue items from .. to - 1 (ring[i % BQ]) into stripe k of nb (band_row). th: the GPU's
+ * upscaled target (copied when gen changes). */
+void GPU_BAND_RUN(const BandItem *ring, uint64_t from, uint64_t to, const Target *th, uint32_t gen,
+                  const uint16_t *vram, int k, int nb)
+{
+    static uint32_t seen;
+    if (!dither_lut_ready)
+        build_dither_lut();
+    if (gen != seen) {
+        TH = *th;
+        seen = gen;
+    }
+    tex_vram = vram;
+    band_k = k;
+    band_nb = nb;
+    for (; from < to; from++) {
+        const BandItem *it = &ring[from & (BQ - 1)];
+        S.tp_x = it->tp_x;
+        S.tp_y = it->tp_y;
+        S.tex_mode = it->tex_mode;
+        S.tw_and_u = it->tw_and_u;
+        S.tw_or_u = it->tw_or_u;
+        S.tw_and_v = it->tw_and_v;
+        S.tw_or_v = it->tw_or_v;
+        S.clip_x0 = it->clip_x0;
+        S.clip_y0 = it->clip_y0;
+        S.clip_x1 = it->clip_x1;
+        S.clip_y1 = it->clip_y1;
+        S.mask_set = it->mask_set;
+        S.mask_check = it->mask_check;
+        S.disp_mode = it->disp_mode;
+        S.dfe = it->dfe;
+        S.field = it->field;
+        tex_clut = it->clut;
+        g_pgxp_persp = it->persp;
+        draw_triangle(&TH, &it->c, &it->v[0], &it->v[1], &it->v[2]);
+        if (it->quad)
+            draw_triangle(&TH, &it->c, &it->v[1], &it->v[2], &it->v[3]);
+    }
+}
+#endif
+
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+typedef void (*BandRun)(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+void band1_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+void band2_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+void band3_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+void band4_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+static const BandRun band_run[BAND_MAX] = { band1_run, band2_run, band3_run, band4_run };
+void place_thread(int which);       /* cpu_place.c */
+
+static BandItem *bq;
+static uint64_t bq_pub;                       /* items queued (the GPU's count) */
+static _Atomic uint64_t bq_head;              /* items queued, for the workers */
+static _Atomic uint64_t bq_done[BAND_MAX];    /* items each worker has drawn */
+static _Atomic int bq_sleepers, bq_syncing, nbands;
+static int band_threads;
+static uint32_t th_gen = 1;                   /* changes with TH */
+/* the native VRAM queued polygons read textures from: a bit per 16x16 tile, rows of 64 */
+static uint64_t tex_pend[32];
+static int tex_pend_any;
+
+static inline void cpu_relax(void)
+{
+#ifdef __SSE2__
+    _mm_pause();
+#endif
+}
+
+static uint64_t band_min_done(void)
+{
+    uint64_t m = bq_pub;
+    int k, nb = atomic_load(&nbands);
+    for (k = 0; k < nb; k++) {
+        uint64_t d = atomic_load(&bq_done[k]);
+        if (d < m)
+            m = d;
+    }
+    return m;
+}
+
+static int band_worker(void *arg)
+{
+    int k = (int)(intptr_t)arg, spin;
+    uint64_t done = atomic_load(&bq_head);
+    /* where the game's thread runs: performance cores, not the in-between pictures' (a worker on a
+     * slow core would hold the others up, as every picture waits for all of them) */
+    place_thread(0);
+    atomic_store(&bq_done[k], done);
+    for (;;) {
+        uint64_t head = atomic_load(&bq_head);
+        if (head != done) {
+            int nb = atomic_load(&nbands);
+            if (k < nb)
+                band_run[k](bq, done, head, &TH, th_gen, S.vram, k, nb);
+            done = head;
+            atomic_store(&bq_done[k], done);
+            if (atomic_load(&bq_syncing)) {
+                wk_lock();
+                wk_wake(WK_DONE);
+                wk_unlock();
+            }
+            continue;
+        }
+        for (spin = 0; spin < 256 && atomic_load_explicit(&bq_head, memory_order_relaxed) == done; spin++)
+            cpu_relax();
+        if (atomic_load(&bq_head) != done)
+            continue;
+        wk_lock();
+        atomic_fetch_add(&bq_sleepers, 1);
+        while (atomic_load(&bq_head) == done)
+            wk_wait(WK_WORK);
+        atomic_fetch_sub(&bq_sleepers, 1);
+        wk_unlock();
+    }
+    return 0;
+}
+
+/* wait until the queue is drawn */
+static void band_sync(void)
+{
+    if (!atomic_load(&nbands))
+        return;
+    if (band_min_done() < bq_pub) {
+        atomic_store(&bq_syncing, 1);
+        wk_lock();
+        wk_wake(WK_WORK);
+        while (band_min_done() < bq_pub)
+            wk_wait(WK_DONE);
+        wk_unlock();
+        atomic_store(&bq_syncing, 0);
+    }
+    if (tex_pend_any) {
+        memset(tex_pend, 0, sizeof tex_pend);
+        tex_pend_any = 0;
+    }
+}
+
+/* Before drawing natively over x0..x1, y0..y1 (as given to draw_triangle): wait if a queued
+ * polygon reads a texture there. Coordinates beyond +-1024 wrap around: wait to be safe. */
+static void band_native_draw(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
+{
+    uint64_t bits = 0;
+    int32_t tx, ty;
+    if (!tex_pend_any)
+        return;
+    if (x0 < -1024 || x1 > 1023 || y0 < -1024 || y1 > 1023) {
+        band_sync();
+        return;
+    }
+    x0 = x0 < S.clip_x0 ? S.clip_x0 : x0;
+    x1 = x1 > S.clip_x1 ? S.clip_x1 : x1;
+    y0 = y0 < S.clip_y0 ? S.clip_y0 : y0;
+    y1 = y1 > S.clip_y1 ? S.clip_y1 : y1;
+    if (x0 > x1 || y0 > y1)
+        return;
+    for (tx = x0 >> 4; tx <= x1 >> 4; tx++)
+        bits |= 1ull << (tx & 63);
+    for (ty = y0 >> 4; ty <= y1 >> 4; ty++)
+        if (tex_pend[ty & 31] & bits) {
+            band_sync();
+            return;
+        }
+}
+
+static void band_push(const PolyCtx *c, const TriVtx *v, int quad)
+{
+    BandItem *it;
+    if (bq_pub - band_min_done() >= BQ)
+        band_sync();
+    it = &bq[bq_pub & (BQ - 1)];
+    it->c = *c;
+    memcpy(it->v, v, (quad ? 4 : 3) * sizeof *v);
+    it->quad = quad;
+    it->persp = g_pgxp_persp;
+    it->tp_x = S.tp_x;
+    it->tp_y = S.tp_y;
+    it->tex_mode = S.tex_mode;
+    it->tw_and_u = S.tw_and_u;
+    it->tw_or_u = S.tw_or_u;
+    it->tw_and_v = S.tw_and_v;
+    it->tw_or_v = S.tw_or_v;
+    it->clip_x0 = S.clip_x0;
+    it->clip_y0 = S.clip_y0;
+    it->clip_x1 = S.clip_x1;
+    it->clip_y1 = S.clip_y1;
+    it->mask_set = S.mask_set;
+    it->mask_check = S.mask_check;
+    it->disp_mode = S.disp_mode;
+    it->dfe = S.dfe;
+    it->field = S.field;
+    if (c->textured) {
+        /* the texture page it reads: 64, 128 or 256 halfwords wide, 256 lines */
+        uint32_t w = S.tex_mode == 0 ? 64u : S.tex_mode == 1 ? 128u : 256u, i;
+        uint64_t bits = 0;
+        if (S.tex_mode < 2)
+            memcpy(it->clut, S.clut, sizeof it->clut);
+        for (i = 0; i < w / 16u; i++)
+            bits |= 1ull << (((S.tp_x >> 4) + i) & 63u);
+        for (i = 0; i < 16u; i++)
+            tex_pend[((S.tp_y >> 4) + i) & 31u] |= bits;
+        tex_pend_any = 1;
+    }
+    bq_pub++;
+    atomic_store(&bq_head, bq_pub);
+    if (atomic_load(&bq_sleepers)) {
+        wk_lock();
+        wk_wake(WK_WORK);
+        wk_unlock();
+    }
+}
+
+/* n band workers draw the upscaled polygons (0: the GPU draws them itself); after gpu_set_upscale */
+void gpu_set_threads(int n)
+{
+    band_sync();
+    if (n > BAND_MAX)
+        n = BAND_MAX;
+    if (n > 0 && (!TH.buf || (!bq && !(bq = malloc(BQ * sizeof *bq)))))
+        n = 0;
+    while (band_threads < n && wk_thread(band_worker, (void *)(intptr_t)band_threads))
+        band_threads++;
+    atomic_store(&nbands, n < band_threads ? n : band_threads);
+}
+
+int gpu_threads(void)
+{
+    return atomic_load(&nbands);
+}
+#define BAND_SYNC() band_sync()
+#else
+#define BAND_SYNC() ((void)0)
+#endif
 
 static void cmd_polygon(const uint32_t *p)
 {
@@ -1072,6 +1429,18 @@ static void cmd_polygon(const uint32_t *p)
         c.raw = 1;
 
     if (!replaying) {           /* a redraw only needs the upscaled copy */
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+        if (tex_pend_any) {     /* over a texture a queued polygon reads? */
+            int32_t x0 = v[0].x, x1 = v[0].x, y0 = v[0].y, y1 = v[0].y;
+            for (i = 1; i < nv; i++) {
+                x0 = v[i].x < x0 ? v[i].x : x0;
+                x1 = v[i].x > x1 ? v[i].x : x1;
+                y0 = v[i].y < y0 ? v[i].y : y0;
+                y1 = v[i].y > y1 ? v[i].y : y1;
+            }
+            band_native_draw(x0, y0, x1, y1);
+        }
+#endif
         draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
         if (quad)
             draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
@@ -1123,6 +1492,12 @@ static void cmd_polygon(const uint32_t *p)
                 v[i].y *= TH.n;
             }
         }
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+        if (atomic_load_explicit(&nbands, memory_order_relaxed)) {
+            band_push(&c, v, quad);
+            return;
+        }
+#endif
         draw_triangle(&TH, &c, &v[0], &v[1], &v[2]);
         if (quad)
             draw_triangle(&TH, &c, &v[1], &v[2], &v[3]);
@@ -1690,6 +2065,9 @@ static void gp0_execute(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
 
+    if (op == 0x02 || ((op >> 5) >= 2 && (op >> 5) <= 5))   /* fill, line, rect, copy, transfer */
+        BAND_SYNC();
+
     switch (op >> 5) {
     case 0:
         if (op == 0x01)
@@ -1951,6 +2329,7 @@ int gpu_render_interp(uint32_t *out, int *w, int *h)
     uint16_t *hb;
     int b;
 
+    BAND_SYNC();
     if (!frec)
         return 0;
     gpu_get_display(&d);
@@ -1982,6 +2361,8 @@ int gpu_interp_prepare(void)
     GpuDisplay d;
     float rm[9], ri[9], tm[3], diff = 0.0f, dt;
     int b, i, j, k;
+
+    BAND_SYNC();
 
     if (!g_interp || !frec || !TH.buf || since_flip != 1)
         return 0;
@@ -2062,8 +2443,17 @@ void gpu_interp_late(void)
     job_gen = 0;
 }
 
+/* counts everything that can change the picture shown (gpu_changes) */
+static uint32_t changes;
+
+uint32_t gpu_changes(void)
+{
+    return changes;
+}
+
 void gpu_write_gp0(uint32_t w)
 {
+    changes++;
     switch (S.gp0_state) {
     case GP0_STATE_VRAM_WRITE:
         vram_write_word(w);
@@ -2165,7 +2555,10 @@ static void soft_reset(void)
 
 void gpu_write_gp1(uint32_t v)
 {
+    changes++;
     uint32_t cmd = (v >> 24) & 0x3Fu;
+    if (cmd <= 0x01)            /* resets */
+        BAND_SYNC();
 
     switch (cmd) {
     case 0x00:
@@ -2348,11 +2741,34 @@ void gpu_get_display(GpuDisplay *d)
     d->hres_mode = (int)(((S.disp_mode >> 6) & 1u) | ((S.disp_mode & 3u) << 1));
 }
 
+/* 15-bit VRAM colour -> 0xFFRRGGBB (5 bits widened to 8: v << 3 | v >> 2) */
+static uint32_t rgb_lut[32768];
+
+static void build_rgb_lut(void)
+{
+    uint32_t p;
+    for (p = 0; p < 32768; p++) {
+        uint32_t r = p & 31u, g = (p >> 5) & 31u, b = (p >> 10) & 31u;
+        r = (r << 3) | (r >> 2);
+        g = (g << 3) | (g >> 2);
+        b = (b << 3) | (b >> 2);
+        rgb_lut[p] = 0xFF000000u | (r << 16) | (g << 8) | b;
+    }
+}
+
+static void convert_row(uint32_t *o, const uint16_t *row, int n)
+{
+    int x;
+    for (x = 0; x < n; x++)
+        o[x] = rgb_lut[row[x] & 0x7FFFu];
+}
+
 void gpu_render_display(uint32_t *out, int *w, int *h)
 {
     GpuDisplay d;
     int x, y, n;
 
+    BAND_SYNC();
     gpu_get_display(&d);
     n = (TH.buf && !d.is_24bit) ? TH.n : 1;    /* 24-bit (video) is shown at native size */
     *w = d.width * n;
@@ -2364,20 +2780,15 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
         return;
     }
 
+    if (!rgb_lut[0])
+        build_rgb_lut();
     if (n > 1) {
-        int W = 1024 * n;
+        int W = 1024 * n, x0 = d.vram_x * n, n1 = *w < W - x0 ? *w : W - x0;   /* n1: before the wrap */
         for (y = 0; y < *h; y++) {
             const uint16_t *row = &TH.buf[(uint32_t)((d.vram_y * n + y) % (512 * n)) << TH.sh];
             uint32_t *o = out + (size_t)y * (size_t)*w;
-            for (x = 0; x < *w; x++) {
-                int hx = d.vram_x * n + x;
-                uint32_t p = row[hx >= W ? hx - W : hx];
-                uint32_t r = p & 31u, g = (p >> 5) & 31u, b = (p >> 10) & 31u;
-                r = (r << 3) | (r >> 2);
-                g = (g << 3) | (g >> 2);
-                b = (b << 3) | (b >> 2);
-                o[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
-            }
+            convert_row(o, row + x0, n1);
+            convert_row(o + n1, row, *w - n1);
         }
         return;
     }
@@ -2397,14 +2808,8 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
                 o[x] = 0xFF000000u | (c[0] << 16) | (c[1] << 8) | c[2];
             }
         } else {
-            for (x = 0; x < d.width; x++) {
-                uint32_t p = row[(d.vram_x + x) & 1023];
-                uint32_t r = p & 31u, g = (p >> 5) & 31u, b = (p >> 10) & 31u;
-                r = (r << 3) | (r >> 2);
-                g = (g << 3) | (g >> 2);
-                b = (b << 3) | (b >> 2);
-                o[x] = 0xFF000000u | (r << 16) | (g << 8) | b;
-            }
+            for (x = 0; x < d.width; x++)
+                o[x] = rgb_lut[row[(d.vram_x + x) & 1023] & 0x7FFFu];
         }
     }
 }
@@ -2421,6 +2826,8 @@ const uint16_t *gpu_vram(void)
 void gpu_init(void)
 {
     int x;
+    BAND_SYNC();
+    changes++;
     if (!dither_lut_ready)
         build_dither_lut();
     for (x = 0; x < 4096; x++)
@@ -2437,6 +2844,12 @@ void gpu_init(void)
 void gpu_set_upscale(int n)
 {
     uint32_t sh, x;
+    BAND_SYNC();
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+    atomic_store(&nbands, 0);   /* gpu_set_threads again for the new size */
+    th_gen++;
+#endif
+    changes++;
     free(TH.buf);
     TH.buf = NULL;
     if (n < 2)
@@ -2468,11 +2881,14 @@ size_t gpu_state_size(void)
 
 void gpu_save_state(void *dst)
 {
+    BAND_SYNC();
     memcpy(dst, &S, sizeof(S));
 }
 
 void gpu_load_state(const void *src)
 {
+    BAND_SYNC();
+    changes++;
     if (!dither_lut_ready)
         build_dither_lut();
     memcpy(&S, src, sizeof(S));

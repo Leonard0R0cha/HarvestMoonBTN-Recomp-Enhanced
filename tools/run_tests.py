@@ -20,7 +20,8 @@ else:
 # test -> runtime sources it needs (None = the whole runtime except main + frontend)
 TESTS = {
     'gte_test': ['gte.c'],
-    'gpu_test': ['gpu.c', 'gpu_replay.c', 'gpu_replay2.c', 'gpu_replay3.c'],
+    'gpu_test': ['gpu.c', 'gpu_replay.c', 'gpu_replay2.c', 'gpu_replay3.c',
+                 'gpu_band1.c', 'gpu_band2.c', 'gpu_band3.c', 'gpu_band4.c', 'workers.c', 'cpu_place.c'],
     'spu_test': ['spu.c'],
     'memcard_fs_test': None,
 }
@@ -37,7 +38,7 @@ def main():
         exe = os.path.join(OUT, name + EXE)
         cmd = CC + ['-std=gnu11', '-O2', '-w', '-I' + RT] + srcs + ['-o', exe]
         if platform.system() != 'Windows':
-            cmd.append('-lm')
+            cmd += ['-lm', '-lpthread']
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode:
             print(r.stdout + r.stderr)

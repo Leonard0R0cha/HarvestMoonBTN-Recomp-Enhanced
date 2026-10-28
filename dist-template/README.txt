@@ -18,6 +18,11 @@ if needed: chmod +x HarvestMoonBTN
 
 {{GAME_DATA}}
 
+The picture is drawn by the processor, so no graphics card is needed; the internal resolution
+(upscale) is what costs. On a slower PC, pick the preset for its number of cores in the Video
+tab of launcher.pyw (2 cores: upscale 2, 4 cores: upscale 3); every effect stays on. The 3D
+is drawn by several threads at once (drawthreads in hmbtn.ini), with the same picture.
+
 CONTROLS
 --------
                  Keyboard                 Xbox controller
@@ -51,7 +56,8 @@ card to an emulator.
 For more than three diaries there are four cards, three diaries each: saves\card1.mcd,
 card1_2.mcd, card1_3.mcd and card1_4.mcd. On a diary list (saving or loading) L1 / R1 put
 the previous / next card in slot 1 and show its diaries ("Memory card N" above the list);
-when loading, cards without a diary are skipped. F1-F4 pick a card anywhere else. The card
+when loading, cards without a diary are skipped. F1-F4 pick a card directly, also on a
+diary list (which then shows that card's diaries). The card
 last used is chosen again next time. If the game folder is not writable, the cards
 are kept in
 %APPDATA%\HarvestMoonBTN (Windows) or ~/.local/share/HarvestMoonBTN (Linux).

@@ -1,4 +1,5 @@
-/* Frame interpolation: where the game's thread and the drawing workers run (Windows).
+/* Frame interpolation: where the game's thread and the drawing workers run (Windows). The band
+ * workers drawing the upscaled 3D (gpu.c) run where the game's thread does.
  * Measured on a hybrid CPU (8 performance + 8 efficiency cores) with the Balanced power plan:
  * Windows parks all performance cores but one, so the game's thread and the workers took turns
  * on one or two cores and each in-between picture cost the game's thread the time of drawing it.
