@@ -72,6 +72,12 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None):
         f.write(readme.replace('{{GAME_DATA}}\n', game_data))
     shutil.copy2(os.path.join(TPL, 'LICENSE-SDL2.txt'), os.path.join(out, 'LICENSE-SDL2.txt'))
     shutil.copy2(os.path.join(TPL, 'launcher.pyw'), os.path.join(out, 'launcher.pyw'))
+    # the launcher's own pictures (any it also finds there from elsewhere are kept)
+    assets = os.path.join(TPL, 'launcher-assets')
+    if os.path.isdir(assets):
+        os.makedirs(os.path.join(out, 'launcher-assets'), exist_ok=True)
+        for n in os.listdir(assets):
+            shutil.copy2(os.path.join(assets, n), os.path.join(out, 'launcher-assets', n))
 
     if make_zip:
         zpath = out + '.zip'
