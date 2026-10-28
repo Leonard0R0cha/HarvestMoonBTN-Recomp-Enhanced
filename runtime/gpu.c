@@ -1180,14 +1180,16 @@ void band2_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, c
 void band3_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
 void band4_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
 static const BandRun band_run[BAND_MAX] = { band1_run, band2_run, band3_run, band4_run };
-void place_thread(int which);       /* cpu_place.c */
+void place_thread(int which, int nbands);       /* cpu_place.c */
 
+#define BQ_WAKE 64                  /* sleeping workers are woken once this many items wait */
 static BandItem *bq;
 static uint64_t bq_pub;                       /* items queued (the GPU's count) */
+static uint64_t bq_woke;                      /* bq_pub when the workers were last woken */
 static _Atomic uint64_t bq_head;              /* items queued, for the workers */
 static _Atomic uint64_t bq_done[BAND_MAX];    /* items each worker has drawn */
 static _Atomic int bq_sleepers, bq_syncing, nbands;
-static int band_threads;
+static int band_threads, band_planned;       /* started; to be started (place_thread) */
 static uint32_t th_gen = 1;                   /* changes with TH */
 /* the native VRAM queued polygons read textures from: a bit per 16x16 tile, rows of 64 */
 static uint64_t tex_pend[32];
@@ -1216,9 +1218,9 @@ static int band_worker(void *arg)
 {
     int k = (int)(intptr_t)arg, spin;
     uint64_t done = atomic_load(&bq_head);
-    /* where the game's thread runs: performance cores, not the in-between pictures' (a worker on a
-     * slow core would hold the others up, as every picture waits for all of them) */
-    place_thread(0);
+    /* a performance core of its own, or where the game's thread runs (a worker on a slow core would
+     * hold the others up, as every picture waits for all of them) */
+    place_thread(1 + INTERP_WORKERS + k, band_planned);
     atomic_store(&bq_done[k], done);
     for (;;) {
         uint64_t head = atomic_load(&bq_head);
@@ -1256,6 +1258,7 @@ static void band_sync(void)
         return;
     if (band_min_done() < bq_pub) {
         atomic_store(&bq_syncing, 1);
+        bq_woke = bq_pub;
         wk_lock();
         wk_wake(WK_WORK);
         while (band_min_done() < bq_pub)
@@ -1336,7 +1339,10 @@ static void band_push(const PolyCtx *c, const TriVtx *v, int quad)
     }
     bq_pub++;
     atomic_store(&bq_head, bq_pub);
-    if (atomic_load(&bq_sleepers)) {
+    /* waking the workers takes the lock and sends them through the scheduler: woken for every
+     * polygon (workers asleep between slowly coming polygons), that cost frames tens of ms */
+    if (bq_pub - bq_woke >= BQ_WAKE && atomic_load(&bq_sleepers)) {
+        bq_woke = bq_pub;
         wk_lock();
         wk_wake(WK_WORK);
         wk_unlock();
@@ -1351,6 +1357,8 @@ void gpu_set_threads(int n)
         n = BAND_MAX;
     if (n > 0 && (!TH.buf || (!bq && !(bq = malloc(BQ * sizeof *bq)))))
         n = 0;
+    if (n > band_planned)
+        band_planned = n;
     while (band_threads < n && wk_thread(band_worker, (void *)(intptr_t)band_threads))
         band_threads++;
     atomic_store(&nbands, n < band_threads ? n : band_threads);
