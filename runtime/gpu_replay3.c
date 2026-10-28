@@ -48,6 +48,7 @@ static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define gpu_get_display replay3_gpu_get_display
 #define gpu_render_display replay3_gpu_render_display
 #define gpu_vram replay3_gpu_vram
+#define gpu_changes replay3_gpu_changes
 #define gpu_init replay3_gpu_init
 #define gpu_set_upscale replay3_gpu_set_upscale
 #define gpu_upscale replay3_gpu_upscale

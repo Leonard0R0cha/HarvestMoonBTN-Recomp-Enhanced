@@ -5,6 +5,7 @@
 #include "gpu.h"
 #include "spu.h"
 #include "gte.h"
+#include "workers.h"
 #include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
@@ -181,6 +182,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "savedir")) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", val);
     else if (!strcmp(key, "scale")) g_cfg.scale = atoi(val);
     else if (!strcmp(key, "upscale")) g_cfg.upscale = atoi(val);
+    else if (!strcmp(key, "drawthreads")) g_cfg.draw_threads = !strcmp(val, "auto") ? -1 : atoi(val);
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
@@ -229,6 +231,7 @@ static void usage(void) {
            "  --fullscreen          start in fullscreen (F11 toggles)\n"
            "  --scale N             initial window scale (default 3)\n"
            "  --upscale N           internal resolution 1..4 (default 1 = original 320x240)\n"
+           "  --drawthreads N       threads drawing the upscaled 3D, 0..4 (default: by processor)\n"
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
@@ -311,6 +314,7 @@ int main(int argc, char **argv) {
     g_cfg.allow_fast_forward = 1;
     g_cfg.autoslot = 1;
     g_cfg.fastcard = 1;
+    g_cfg.draw_threads = -1;
     g_cfg.quickui = 1;
     g_cfg.fastload = 1;
     g_cfg.skipscenes = 1;
@@ -327,6 +331,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--fullscreen")) g_cfg.fullscreen = 1;
         else if (!strcmp(a, "--scale")) { g_cfg.scale = atoi(nx); i++; }
         else if (!strcmp(a, "--upscale")) { g_cfg.upscale = atoi(nx); i++; }
+        else if (!strcmp(a, "--drawthreads")) { g_cfg.draw_threads = atoi(nx); i++; }
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
@@ -463,6 +468,12 @@ int main(int argc, char **argv) {
     gpu_init();
     gpu_set_upscale(g_cfg.upscale);
     if (gpu_upscale() != g_cfg.upscale) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
+    if (gpu_upscale() > 1) {
+        /* by processor: one thread per logical processor but the game's, up to 4 */
+        int n = g_cfg.draw_threads >= 0 ? g_cfg.draw_threads : wk_cpu_count() - 1;
+        gpu_set_threads(n);
+        if (gpu_threads()) LOGI("upscaled 3D drawn by %d threads", gpu_threads());
+    }
     g_pgxp = g_cfg.pgxp && gpu_upscale() > 1;
     g_pgxp_persp = g_pgxp && g_cfg.perspective;
     g_sprite_depth = g_pgxp && g_cfg.sprite_depth;

@@ -118,6 +118,7 @@ void memcard_mark_dirty(int slot);
 void memcard_open_banks(int bank);  /* load slot 1 from bank 1-4; 0 = the bank last used */
 bool memcard_switch_bank(int bank, bool force); /* 0-based; false if refused (card in use) or the same */
 int memcard_bank(void);
+bool memcard_select_bank(int bank);  /* F1-F4: on a diary list the list swaps it and shows it */
 void memcard_bank_file(char *out, size_t n);             /* 1-based bank in slot 1 */
 void sio_card_changed(int port);    /* the card in this port was swapped */
 void memcard_touch(void);           /* the card's contents were read or written now */
@@ -147,6 +148,7 @@ typedef struct {
     char save_dir[1024];
     int  scale;                 /* window scale */
     int  upscale;               /* internal resolution multiplier 1..4 (1 = original) */
+    int  draw_threads;          /* threads drawing the upscaled polygons: -1 = by processor, 0 = none */
     int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */

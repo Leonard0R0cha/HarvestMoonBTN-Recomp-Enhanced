@@ -544,14 +544,14 @@ static double display_aspect(int w, int h, int wide) {
     return wide ? aspect * (3.0 * g_cfg.ws_w) / (4.0 * g_cfg.ws_h) : aspect;
 }
 
-static void present(int w, int h, int wide) {
+static void present(int w, int h, int wide, bool same) {
     uint64_t f = SDL_GetPerformanceFrequency(), t0 = SDL_GetPerformanceCounter();
     int ww, wh;
     SDL_Rect src = { 0, 0, w, h }, dst = { 0, 0, 0, 0 };
     SDL_Texture *show = tex;
     SDL_GetRendererOutputSize(ren, &ww, &wh);
     if (w > 0 && h > 0) {
-        SDL_UpdateTexture(tex, &src, frame_px, w * 4);
+        if (!same) SDL_UpdateTexture(tex, &src, frame_px, w * 4);   /* same: tex holds it already */
         double aspect = display_aspect(w, h, wide);
         int dw = ww, dh = (int)(ww / aspect);
         if (dh > wh) { dh = wh; dw = (int)(wh * aspect); }
@@ -634,6 +634,9 @@ static void update_title(void) {
     SDL_SetWindowTitle(win, t);
 }
 static bool frame_black;   /* the picture just shown is black (fastload) */
+static uint32_t px_changes;    /* gpu_changes() when frame_px was converted */
+static int px_w, px_h;
+static bool px_valid, shown_last;   /* frame_px holds that picture; the last frame was shown */
 
 /* a coarse grid of the picture, all (nearly) black */
 static bool picture_black(const uint32_t *px, int w, int h) {
@@ -681,6 +684,9 @@ void place_thread(int which);       /* cpu_place.c */
 static int interp_worker(void *part) {
     int k = (int)(intptr_t)part;
     place_thread(1 + k);            /* a performance core of its own */
+    /* with few cores the workers share them with the game's thread: the game goes first, and an
+     * in-between picture not done in time is skipped (gpu_interp_late) */
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
     for (;;) {
         SDL_SemWait(interp_go[k]);
         gpu_interp_work(k);
@@ -720,6 +726,11 @@ void platform_frame(void) {
         while (SDL_PollEvent(&ev)) {
             switch (ev.type) {
             case SDL_QUIT: g_quit = 1; break;
+            case SDL_WINDOWEVENT:
+            case SDL_RENDER_TARGETS_RESET:
+            case SDL_RENDER_DEVICE_RESET:
+                px_valid = false;           /* the texture may have lost the picture: upload it again */
+                break;
             case SDL_CONTROLLERDEVICEADDED: open_pad(ev.cdevice.which); break;
             case SDL_AUDIODEVICEADDED: if (!ev.adevice.iscapture) open_audio(); break;
             case SDL_CONTROLLERDEVICEREMOVED:
@@ -739,7 +750,7 @@ void platform_frame(void) {
                     shot_request = 1;
                 } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
                            ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
-                    if (memcard_switch_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1, false)) update_title();
+                    if (memcard_select_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1)) update_title();
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F9 && g_cfg.interp && g_pgxp) {
                     g_interp = !g_interp;       /* compare: in-between pictures on/off */
                     LOGI("interp %s", g_interp ? "on" : "off");
@@ -764,7 +775,7 @@ void platform_frame(void) {
          * one), and an in-between picture has until then to be drawn */
         throttle();
     }
-    bool need_pixels = shown || shot || shot_request;
+    bool need_pixels = shown || shot || shot_request, same = false;
     if (need_pixels) {
         /* workers not done yet: no in-between picture this time, rather than holding the game up */
         while (interp_pending && SDL_SemTryWait(interp_done) == 0) interp_pending--;
@@ -772,8 +783,22 @@ void platform_frame(void) {
         /* an in-between picture (not at full speed): the frame on screen is still the last one,
          * so frame_black stays as it was */
         if (turbo() || !gpu_render_interp(frame_px, &w, &h)) {
-            gpu_render_display(frame_px, &w, &h);
-            frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
+            /* the game draws every other VBlank or less: a picture nothing changed since is
+             * in frame_px (and the texture) already */
+            if (px_valid && gpu_changes() == px_changes) {
+                w = px_w;
+                h = px_h;
+                same = true;
+            } else {
+                gpu_render_display(frame_px, &w, &h);
+                frame_black = g_cfg.fastload && picture_black(frame_px, w, h);
+                px_changes = gpu_changes();
+                px_w = w;
+                px_h = h;
+                px_valid = true;
+            }
+        } else {
+            px_valid = false;   /* an in-between picture in frame_px */
         }
         if (!interp_pending && !turbo() && gpu_interp_prepare()) interp_start();
     }
@@ -790,6 +815,7 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
-    if (shown) present(w, h, wide);
+    if (shown) present(w, h, wide, same && shown_last);
+    shown_last = shown;
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

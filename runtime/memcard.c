@@ -120,6 +120,9 @@ uint32_t memcard_slot_menu(uint32_t result, int loading) {
  * being accessed, fastcard runs the game at full speed, like holding Tab: the card itself
  * takes its time (one sector per frame, as on the console), so this shortens the wait. */
 static bool busy_text;
+/* after a card swap on a diary list, until the list is back: also full speed, so the swap
+ * feels instant (the screen re-reads the card and opens the list again, about a second) */
+static uint64_t relist_from = UINT64_MAX;
 
 /* "Memory card N" on a line of its own above the game's text (game encoding: A-Z = 0-25,
  * a-z = 0x20-0x39, digits = 0x40-0x49, space = 0FFD, new line = FFFE, end = FFFF) */
@@ -177,6 +180,7 @@ uint32_t memcard_text(uint32_t text) {
 }
 
 bool memcard_busy(void) {
+    if (relist_from != UINT64_MAX && frame_count() - relist_from < 300) return true;
     return g_cfg.fastcard && busy_text && last_access != UINT64_MAX && frame_count() - last_access <= 8;
 }
 
@@ -244,6 +248,21 @@ bool memcard_switch_bank(int b, bool force) {
  * for a button there, so the card can be swapped although it was read a moment ago. */
 #define SAVELOAD_STATE 0x80137584u
 
+/* F1-F4 on a diary list: the card is swapped by the list itself, like L1 / R1, so the list
+ * shows it (switching right away would leave the old card's diaries on screen) */
+static uint64_t diary_menu_frame = UINT64_MAX;   /* last frame a diary list was shown */
+static int requested_bank = -1;
+
+bool memcard_select_bank(int b) {
+    if (diary_menu_frame != UINT64_MAX && frame_count() - diary_menu_frame <= 2) {
+        if (b < 0 || b >= CARD_BANKS || b == bank) return false;
+        requested_bank = b;
+        return true;
+    }
+    requested_bank = -1;
+    return memcard_switch_bank(b, false);
+}
+
 /* the card file of bank b has a diary of this game */
 static bool bank_has_diary(int b) {
     uint8_t dir[16 * 128];
@@ -295,6 +314,12 @@ static void delete_diary(int n) {
     LOGI("memory card %d: diary %d deleted", bank + 1, n + 1);
 }
 
+/* the screen reads the card in slot 1 again and lists it */
+static void relist(void) {
+    MEM_W8(SAVELOAD_STATE, 4);
+    relist_from = frame_count();
+}
+
 #define DIARY_CURSOR   0x80137587u
 #define DELETE_HOLD    120   /* frames TRIANGLE is held to delete (2 s) */
 
@@ -304,6 +329,7 @@ uint32_t memcard_diary_menu(uint32_t result, int loading) {
     static bool wait_release;
     uint16_t pad = g_pad_buttons[0], down = (uint16_t)(pad & ~prev);
     prev = pad;
+    if (relist_from != UINT64_MAX && frame_count() > relist_from) relist_from = UINT64_MAX;   /* list is back */
     /* TRIANGLE held on a diary for DELETE_HOLD frames deletes it; the prompt says so meanwhile */
     int cur = MEM_R8(DIARY_CURSOR);
     if (!(pad & PAD_TRIANGLE)) wait_release = false;
@@ -318,15 +344,23 @@ uint32_t memcard_diary_menu(uint32_t result, int loading) {
             int b = bank_with_diary(bank, 1);
             if (b >= 0) memcard_switch_bank(b, true);
         }
-        MEM_W8(SAVELOAD_STATE, 4);   /* read the card and list it again */
+        relist();
         return 3;
     }
     deleting = -1;
+    diary_menu_frame = frame_count();
+    if (requested_bank >= 0 && (int32_t)result >= 3) {
+        int b = requested_bank;
+        requested_bank = -1;
+        if (!memcard_switch_bank(b, true)) return result;
+        relist();
+        return 3;
+    }
     int step = (down & PAD_R1) ? 1 : (down & PAD_L1) ? -1 : 0;
     if (!step || (int32_t)result < 3) return result;
     /* loading: only cards with something to load; saving: any card */
     int b = loading ? bank_with_diary(bank, step) : (bank + step + CARD_BANKS) % CARD_BANKS;
     if (b < 0 || !memcard_switch_bank(b, true)) return result;
-    MEM_W8(SAVELOAD_STATE, 4);
+    relist();
     return 3;
 }
