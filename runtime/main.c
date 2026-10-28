@@ -204,6 +204,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
     else if (!strcmp(key, "fastforward")) g_cfg.allow_fast_forward = atoi(val);
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
+    else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
 }
 
@@ -243,6 +244,9 @@ static void usage(void) {
            "  --card N              start with memory card N (1-4) in slot 1 (F1-F4 switch)\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
            "  --log N               log level 0..4\n"
+           "  --host [PORT]         online co-op: wait for a friend (default port 7845)\n"
+           "  --join ADDRESS[:PORT] online co-op: play on a friend's game\n"
+           "  --netdelay N          online co-op: input delay in frames (the host's counts, default 3)\n"
            "  --verify-data         check the game data pack against its checksums and exit\n"
            "testing options:\n"
            "  --headless --frames N --unthrottled --shots N --shotstart F --shotdir DIR --input SCRIPT|@FILE\n"
@@ -346,6 +350,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
         else if (!strcmp(a, "--scaling")) { set_scaling(nx); i++; }
         else if (!strcmp(a, "--log")) { g_log_level = atoi(nx); i++; }
+        else if (!strcmp(a, "--host")) { if (isdigit((unsigned char)nx[0])) { netplay_host(atoi(nx)); i++; } else netplay_host(0); }
+        else if (!strcmp(a, "--join")) { netplay_join(nx); i++; }
+        else if (!strcmp(a, "--netdelay")) { netplay_set_delay(atoi(nx)); i++; }
+        else if (!strcmp(a, "--p2")) g_p2_enabled = 1;
+        else if (!strcmp(a, "--p2demo")) g_p2_enabled = g_p2_demo = 1;
         else if (!strcmp(a, "--headless")) g_cfg.headless = 1;
         else if (!strcmp(a, "--verify-data")) { verify_data = 1; g_cfg.headless = 1; }
         else if (!strcmp(a, "--frames")) { g_cfg.max_frames = atoi(nx); i++; }
@@ -391,6 +400,7 @@ int main(int argc, char **argv) {
         log_file = fopen(lp, "w");
     }
     if (!g_cfg.screenshot_dir[0]) snprintf(g_cfg.screenshot_dir, sizeof g_cfg.screenshot_dir, "%sscreenshots", exe_dir);
+    if (netplay_role() == 2) { g_cfg.record = 0; g_cfg.record_path[0] = 0; }   /* the host's session is the one */
     if (g_cfg.record && !g_cfg.record_path[0] && !g_cfg.headless) {   /* recordings/session_<date>_<time>.txt */
         char d[1100];
         time_t now = time(NULL);
@@ -440,7 +450,23 @@ int main(int argc, char **argv) {
             LOGW("game folder is read-only; saving memory cards to %s", g_cfg.save_dir);
         }
     }
+    if (netplay_role() == 2) {          /* co-op guest: plays on copies of the host's cards */
+        char netdir[1200];
+        snprintf(netdir, sizeof netdir, "%s/netplay", g_cfg.save_dir);
+        mkdir_p(netdir);
+        if (!netplay_start(&card_bank, netdir)) {
+            if (!g_quit) fatal("%s", netplay_status(NULL));
+            return 0;
+        }
+    }
     memcard_open_banks(card_bank);
+    if (netplay_role() == 1) {          /* co-op host: sends its cards once the friend is in */
+        int b = memcard_bank();
+        if (!netplay_start(&b, NULL)) {
+            if (!g_quit) fatal("%s", netplay_status(NULL));
+            return 0;
+        }
+    }
     if (g_cfg.overclock < 100) g_cfg.overclock = 100;
     if (g_cfg.overclock > 400) g_cfg.overclock = 400;
     g_cycle_scale = 256u * 100u / (uint32_t)g_cfg.overclock;
@@ -501,6 +527,7 @@ int main(int argc, char **argv) {
     g_pad_connected[0] = true;
 
     load_exe();
+    netplay_quit();
     memcard_flush();
     platform_shutdown();
     return 0;

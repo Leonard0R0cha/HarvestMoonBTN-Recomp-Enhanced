@@ -62,6 +62,22 @@ last used is chosen again next time. If the game folder is not writable, the car
 are kept in
 %APPDATA%\HarvestMoonBTN (Windows) or ~/.local/share/HarvestMoonBTN (Linux).
 
+ONLINE CO-OP
+------------
+Two players, each on their own PC with their own copy of the game, play one game together.
+In launcher.pyw, page "Online co-op": one player hosts (waits for the friend), the other joins
+with the host's address (a VPN such as Radmin VPN or Tailscale gives both PCs an address; the
+page shows this PC's). By hand: HarvestMoonBTN --host [PORT] (default 7845) and
+HarvestMoonBTN --join ADDRESS[:PORT]; --netdelay N sets the input delay in frames (default 3).
+Both copies must be built from the same sources. The host sends its memory cards; the friend
+plays on copies of them (saves\netplay), so the friend's own cards are not touched. In co-op,
+Tab and F1-F4 are off and the window title shows the connection.
+Two farmers (experimental, "Two farmers" on the co-op page, or --p2 on one PC with a second
+controller or the numeric keypad: 8 4 5 6 move, 7 Square, 9 Cross, 1 Circle, 3 R1): the
+friend gets a farmer of their own, run by the game's own player routines. There is one of each
+tool: farmer 2 starts with none and takes them from the tool chest; the save and load screens
+put them back in the chest.
+
 NOTES
 -----
 * Video runs at the original NTSC rate (59.29 fps) with the original 320x240 picture, scaled up.

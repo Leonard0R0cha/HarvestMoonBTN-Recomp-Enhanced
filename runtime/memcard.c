@@ -92,6 +92,7 @@ static bool slot_answered;
 
 void memcard_slot_visit(void) {
     slot_answered = false;
+    p2_return_tools();
 }
 
 static bool bank_has_diary(int b);

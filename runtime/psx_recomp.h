@@ -240,6 +240,12 @@ void quick_text_walked(uint32_t next, uint32_t inserted);
 int quick_text_wait_kept(uint32_t ra);
 int quick_music_held(void);
 void quick_bag_filter(void);
+/* p2.c: a second farmer, drawn by the player's drawing routine */
+void p2_draw(CPU *c);
+void p2_tick(CPU *c);
+void p2_tick_begin(void);
+void p2_tick_end(void);
+int p2_drawing(void);
 void trace_func(CPU *c, uint32_t addr);
 
 #define EVCHK() do { if (UNLIKELY(c->cycles >= c->next_event)) events_run(c); } while (0)

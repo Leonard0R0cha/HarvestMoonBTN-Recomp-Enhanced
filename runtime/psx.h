@@ -140,7 +140,24 @@ void dump_backtrace(void);
 /* ---- platform (frontend) ---- */
 void platform_frame(void);        /* present + input + throttle; called once per vblank */
 void platform_audio_push(const int16_t *stereo, int frames);
+int platform_poll_quit(void);     /* handles window events; nonzero when the window was closed */
 extern volatile int g_quit;
+
+/* ---- second farmer (p2.c, prototype) ---- */
+extern int g_p2_enabled, g_p2_demo;
+extern uint16_t g_p2_buttons;
+void p2_return_tools(void);     /* the save / load screens: farmer 2's tools back in the chest */
+
+/* ---- online co-op (netplay.c) ---- */
+void netplay_host(int port);
+void netplay_join(const char *address);
+void netplay_set_delay(int frames);
+int netplay_role(void);           /* 0 off, 1 host, 2 guest */
+int netplay_active(void);
+int netplay_start(int *bank, const char *guest_dir);
+uint16_t netplay_frame(int frame, uint16_t local);
+const char *netplay_status(int *changed);
+void netplay_quit(void);
 
 /* ---- config ---- */
 typedef struct {

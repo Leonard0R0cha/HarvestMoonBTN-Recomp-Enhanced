@@ -30,7 +30,7 @@ TESTS = {
 def main():
     os.makedirs(OUT, exist_ok=True)
     everything = [f for f in sorted(glob.glob(os.path.join(RT, '*.c')))
-                  if os.path.basename(f) not in ('main.c', 'platform_sdl.c')]
+                  if os.path.basename(f) not in ('main.c', 'platform_sdl.c', 'netplay.c')]
     failed = []
     for name, deps in TESTS.items():
         srcs = [os.path.join(RT, 'tests', name + '.c')]

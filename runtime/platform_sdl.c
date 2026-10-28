@@ -440,15 +440,29 @@ void platform_audio_push(const int16_t *stereo, int frames) {
 }
 
 /* ------------------------------------------------------------------ per-frame */
+/* with a second farmer (--p2): the second controller and the numeric keypad are its pad (8 4 5 6
+ * the directions, 7 Square, 9 Cross, 1 Circle, 3 R1) */
+static uint16_t p2_pad;
+
 static uint16_t read_controllers(void) {
-    uint16_t b = 0;
+    uint16_t b = 0, p2 = 0;
     const Uint8 *ks = SDL_GetKeyboardState(NULL);
     for (int i = 0; i < 14; i++)
         for (int k = 0; k < MAX_BIND && key_codes[i][k] != SDL_SCANCODE_UNKNOWN; k++)
             if (ks[key_codes[i][k]]) b |= ps_buttons[i].bit;
+    if (ks[SDL_SCANCODE_KP_8]) p2 |= PAD_UP;
+    if (ks[SDL_SCANCODE_KP_5] || ks[SDL_SCANCODE_KP_2]) p2 |= PAD_DOWN;
+    if (ks[SDL_SCANCODE_KP_4]) p2 |= PAD_LEFT;
+    if (ks[SDL_SCANCODE_KP_6]) p2 |= PAD_RIGHT;
+    if (ks[SDL_SCANCODE_KP_7]) p2 |= PAD_SQUARE;
+    if (ks[SDL_SCANCODE_KP_9]) p2 |= PAD_CROSS;
+    if (ks[SDL_SCANCODE_KP_1]) p2 |= PAD_CIRCLE;
+    if (ks[SDL_SCANCODE_KP_3]) p2 |= PAD_R1;
     for (int p = 0; p < MAX_PADS; p++) {
         SDL_GameController *c = pads[p];
         if (!c) continue;
+        uint16_t mine = b;
+        if (g_p2_enabled && p == 1) b = p2;     /* this controller's buttons go to farmer 2 */
         for (int i = 0; i < 14; i++) {
             for (int k = 0; k < MAX_BIND && pad_codes[i][k] >= 0; k++) {
                 int code = pad_codes[i][k];
@@ -465,7 +479,9 @@ static uint16_t read_controllers(void) {
             if (ly < -dz) b |= PAD_UP;
             if (ly > dz) b |= PAD_DOWN;
         }
+        if (g_p2_enabled && p == 1) { p2 = b; b = mine; }
     }
+    p2_pad = p2;
     return b;
 }
 
@@ -629,9 +645,22 @@ static int fast_forward;
 
 /* the window title shows the memory card in slot 1 (F1-F4) */
 static void update_title(void) {
-    char t[96];
-    snprintf(t, sizeof t, "Harvest Moon: Back to Nature  [Memory card %d]", memcard_bank());
-    SDL_SetWindowTitle(win, t);
+    char t[200];
+    const char *net = netplay_status(NULL);
+    if (net) snprintf(t, sizeof t, "Harvest Moon: Back to Nature  [Memory card %d]  -  %s", memcard_bank(), net);
+    else snprintf(t, sizeof t, "Harvest Moon: Back to Nature  [Memory card %d]", memcard_bank());
+    if (win) SDL_SetWindowTitle(win, t);
+}
+
+/* window events while the co-op waits for the other side (the window stays responsive) */
+int platform_poll_quit(void) {
+    SDL_Event ev;
+    int changed;
+    netplay_status(&changed);
+    if (changed) update_title();
+    while (SDL_PollEvent(&ev))
+        if (ev.type == SDL_QUIT) return 1;
+    return 0;
 }
 static bool frame_black;   /* the picture just shown is black (fastload) */
 static uint32_t px_changes;    /* gpu_changes() when frame_px was converted */
@@ -748,7 +777,7 @@ void platform_frame(void) {
                     SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
                     shot_request = 1;
-                } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 &&
+                } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 && !netplay_active() &&   /* co-op: same card on both sides */
                            ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
                     if (memcard_select_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1)) update_title();
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F9 && g_cfg.interp && g_pgxp) {
@@ -766,7 +795,11 @@ void platform_frame(void) {
             fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
         }
         uint16_t b = read_controllers();
-        if (!(SDL_GetModState() & KMOD_ALT)) g_pad_buttons[0] = b | script_buttons((int)frame);
+        static uint16_t mine;           /* Alt held: keeps the buttons as they were */
+        if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);
+        g_p2_buttons = p2_pad;          /* co-op with two farmers: the guest's buttons instead */
+        g_pad_buttons[0] = netplay_frame((int)frame, mine);   /* co-op: with the other player's */
+        { int changed; netplay_status(&changed); if (changed) update_title(); }
         record_frame((int)frame, g_pad_buttons[0]);
         g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);   /* after recording: replays skip alike */
         { static int shown_bank; if (memcard_bank() != shown_bank) { shown_bank = memcard_bank(); update_title(); } }
@@ -807,7 +840,7 @@ void platform_frame(void) {
     if (shot) save_screenshot(frame_px, w, h, frame, wide);
 
     if (g_cfg.headless) {
-        g_pad_buttons[0] = script_buttons((int)frame);
+        g_pad_buttons[0] = netplay_frame((int)frame, script_buttons((int)frame));
         record_frame((int)frame, g_pad_buttons[0]);
         g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);
         if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
