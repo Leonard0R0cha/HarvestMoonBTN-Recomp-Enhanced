@@ -165,8 +165,8 @@ static int inf_stored(Inflate *s) {
     return 0;
 }
 
-/* inflate a zlib stream; returns decompressed size or -1 */
-static long zlib_inflate(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
+/* inflate a zlib stream; returns decompressed size or -1 (also used for PNG, texpack.c) */
+long zlib_inflate(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen) {
     if (inlen < 2 || (in[0] & 0x0F) != 8 || ((in[0] << 8) | in[1]) % 31 != 0) return -1;
     Inflate s = { in, inlen, 2, 0, 0, out, outlen, 0 };
     int last, err;
