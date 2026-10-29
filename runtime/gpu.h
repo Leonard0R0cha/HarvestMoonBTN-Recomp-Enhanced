@@ -80,11 +80,11 @@ extern int g_sprite_depth;        /* scale tagged sprites with depth (needs g_pg
 extern float g_sprite_ws;         /* horizontal squeeze of tagged sprites, 1 = none */
 /* s: depth scale for the anchor's own ground level, z: its depth; player: 1 = the anchor is the
  * player's, 2 = the player's at the projection centre (the camera follows it: its level is the
- * reference for every depth scale) */
+ * reference for every depth scale), 3 = the second farmer's (p2.c; only for what it holds) */
 void     gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player);
 void     gpu_sprite_begin(int x, int y);
 void     gpu_sprite_alias(int ax, int ay, int bx, int by);   /* point b uses anchor a (offset, scale, centre) */
-void     gpu_held_begin(int on);  /* tag what the player holds with the player's anchor (on = 0: drop) */
+void     gpu_held_begin(int on);  /* tag what the player holds with the player's anchor (on = 0: drop; 2: the second farmer's) */
 extern int g_held_call;           /* the player's held object is being drawn */
 extern int g_item_call;           /* an item on (or thrown to) the ground is being drawn */
 /* Widescreen: g_menu_tile is set while a full-screen menu's background is tiled; its tiles are
@@ -100,8 +100,47 @@ void     gpu_hud_begin(int on);
 extern int (*g_scene_3d)(void);
 extern int g_hud_call;            /* the HUD icon routine is calling the sprite builder */
 
-const uint16_t *gpu_vram(void);           /* 1024x512 16-bit VRAM (debug / screenshots) */
-uint32_t gpu_changes(void);       /* changes when anything that can alter the picture shown does */
+const uint16_t *gpu_vram(void);
+uint32_t gpu_changes(void);       /* changes when anything that can alter the picture shown does */           /* 1024x512 16-bit VRAM (debug / screenshots) */
+
+/* The second view (--p2, p2view.c): a second GPU (gpu_view2.c, the names above with view2_ before
+ * them) shown in a second window. g_gpu_route: 0 = what the GPU is sent goes to the GPU only, 1 = to
+ * both, 2 = to the second only. */
+extern int g_gpu_route;
+extern int (*g_view2_built)(void);   /* the second GPU will draw lists the second view's run built */
+extern uint32_t view2_g_gp0_addr;
+extern int view2_g_pgxp, view2_g_pgxp_persp, view2_g_sprite_tags, view2_g_sprite_depth;
+extern float view2_g_sprite_ws;
+extern int (*view2_g_scene_3d)(void);
+void     view2_gpu_init(void);
+void     view2_gpu_set_upscale(int n);
+int      view2_gpu_upscale(void);
+void     view2_gpu_set_threads(int n);
+extern int view2_g_interp;           /* its own in-between pictures (gpu_interp_*), on as the game's */
+void     view2_gpu_interp_enable(void);
+int      view2_gpu_render_interp(uint32_t *out, int *w, int *h);
+int      view2_gpu_interp_prepare(void);
+void     view2_gpu_interp_work(int part);
+void     view2_gpu_interp_late(void);
+void     view2_gpu_write_gp0(uint32_t v);
+void     view2_gpu_write_gp1(uint32_t v);
+uint32_t view2_gpu_read_data(void);
+uint32_t view2_gpu_read_status(void);
+void     view2_gpu_vblank(void);
+void     view2_gpu_set_line_parity(int odd);
+void     view2_gpu_get_display(GpuDisplay *d);
+void     view2_gpu_render_display(uint32_t *out, int *w, int *h);
+uint32_t view2_gpu_changes(void);
+int      view2_gpu_display_menu(void);
+void     view2_gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w);
+void     view2_gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player);
+void     view2_gpu_sprite_begin(int x, int y);
+void     view2_gpu_held_begin(int on);
+void     view2_gpu_menu_begin(void);
+void     view2_gpu_hud_begin(int on);
+void     view2_gpu_sprite_alias(int ax, int ay, int bx, int by);
+void     view2_gpu_sprite_tag(uint32_t addr, uint32_t value);
+void     view2_gpu_set_camera(const int16_t r[9], int32_t tx, int32_t ty, int32_t tz, uint32_t h, int32_t ofx, int32_t ofy);
 
 size_t   gpu_state_size(void);
 void     gpu_save_state(void *dst);

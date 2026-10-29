@@ -77,6 +77,18 @@ controller or the numeric keypad: 8 4 5 6 move, 7 Square, 9 Cross, 1 Circle, 3 R
 friend gets a farmer of their own, run by the game's own player routines. There is one of each
 tool: farmer 2 starts with none and takes them from the tool chest; the save and load screens
 put them back in the chest.
+With --p2 on one PC (launcher page "Local co-op") a second window follows farmer 2, at 60
+pictures a second like the game's (it runs the farm's frame once more with the view on farmer 2).
+Each window shows its own farmer's talks and menus. Farmer 2 also has its own stamina, can trade
+with the player (Cross facing them), open the rucksack, Start menu and map. [video] p2view_upscale
+(or --p2view-upscale N) gives that window a lower internal resolution, lighter for a slower PC;
+--p2view 0 turns it off.
+
+CHEATS
+------
+Launcher page "Cheats" (F5 in the game opens it over the game, changes apply at once): money,
+endless stamina, stop the clock, big rucksack, materials and tools at most. Saved games keep
+what they changed. In online co-op the host's count.
 
 NOTES
 -----

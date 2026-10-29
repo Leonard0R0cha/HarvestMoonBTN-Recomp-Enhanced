@@ -131,7 +131,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         if os.path.exists(obj) and os.path.exists(stamp):
             t = os.path.getmtime(obj)
             src_t = os.path.getmtime(src)
-            if os.path.basename(src).startswith(('gpu_replay', 'gpu_band')):    # include gpu.c
+            if os.path.basename(src).startswith(('gpu_replay', 'gpu_band', 'gpu_view2')):    # include gpu.c
                 src_t = max(src_t, os.path.getmtime(os.path.join(rt, 'gpu.c')))
             if t >= src_t and t >= hdr_t:
                 return obj, 0, ''

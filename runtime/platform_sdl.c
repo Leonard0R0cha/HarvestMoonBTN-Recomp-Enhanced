@@ -28,6 +28,14 @@ static uint32_t *frame_px;
 static int fullscreen;
 static uint64_t perf_next;
 static int shot_request;
+/* the second view (--p2 on one PC, p2view.c): a second window, following farmer 2 */
+static SDL_Window *win2;
+static SDL_Renderer *ren2;
+static uint32_t *v2i_px;            /* farmer 2's window's in-between picture, when v2i_shown */
+static int v2i_shown, v2i_w, v2i_h;
+static SDL_Texture *tex2;
+static uint32_t *frame2_px;
+static int fullscreen2;
 
 #define MAX_PADS 4
 static SDL_GameController *pads[MAX_PADS];
@@ -98,7 +106,12 @@ static void resolve_bindings(void) {
 }
 
 /* ------------------------------------------------------------------ input script (testing) */
-typedef struct { int frame, dur, end, period; uint16_t btn; } ScriptEv;
+typedef struct { int frame, dur, end, period, p2; uint16_t btn; } ScriptEv;   /* p2: farmer 2's buttons */
+/* the cheats changed while playing ("cheats@FRAME=money:stamina:clock:rucksack:materials:tools" in a
+ * recording; older ones have the first four) */
+#define CHEAT_EVENTS 256
+static struct { int frame, v[CHEATS]; } cheat_ev[CHEAT_EVENTS];
+static int n_cheat_ev;
 static ScriptEv *script;
 static int nscript, script_cap;
 
@@ -123,8 +136,8 @@ static uint16_t parse_buttons(const char *s) {
 }
 
 static void parse_script(const char *s) {
-    /* "frame:BUTTONS[:dur],..." or repeating "start-end/period:BUTTONS[:dur]";
-     * "@FILE" reads the events from a file, one per line (e.g. made with --record) */
+    /* "frame:BUTTONS[:dur],..." or repeating "start-end/period:BUTTONS[:dur]", farmer 2's (--p2)
+     * with "p2 " before; "@FILE" reads the events from a file, one per line (e.g. made with --record) */
     char *buf;
     if (s[0] == '@') {
         FILE *f = fopen(s + 1, "rb");
@@ -142,7 +155,8 @@ static void parse_script(const char *s) {
     }
     char *save = NULL;
     for (char *tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
-        ScriptEv e = { 0, 6, 0, 0, 0 };
+        ScriptEv e = { 0, 6, 0, 0, 0, 0 };
+        if (!strncmp(tok, "p2 ", 3)) { e.p2 = 1; tok += 3; }
         if (!strncmp(tok, "fastcd=", 7)) { g_cfg.fast_cd = atoi(tok + 7); continue; }   /* from --record */
         if (!strncmp(tok, "widescreen=", 11)) {     /* from --record: widescreen changes what the game does */
             if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
@@ -153,6 +167,18 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "skipscenes=", 11)) { g_cfg.skipscenes = atoi(tok + 11); continue; }
         if (!strncmp(tok, "textspeed=", 10)) { g_cfg.textspeed = atoi(tok + 10); continue; }
         if (!strncmp(tok, "emptybag=", 9)) { g_cfg.emptybag = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
+            int *v = cheat_ev[n_cheat_ev].v;
+            if (sscanf(tok + 7, "%d=%d:%d:%d:%d:%d:%d", &cheat_ev[n_cheat_ev].frame, &v[0], &v[1], &v[2], &v[3],
+                       &v[4], &v[5]) >= 5)
+                n_cheat_ev++;
+            continue;
+        }
+        if (!strncmp(tok, "cheats=", 7)) {      /* from --record: the cheats change what the game does */
+            sscanf(tok + 7, "%d:%d:%d:%d:%d:%d", &g_cfg.cheat_money, &g_cfg.cheat_stamina, &g_cfg.cheat_clock,
+                   &g_cfg.cheat_bag, &g_cfg.cheat_items, &g_cfg.cheat_tools);
+            continue;
+        }
         if (!strncmp(tok, "overclock=", 10)) { g_cfg.overclock = atoi(tok + 10); g_cycle_scale = 256u * 100u / (uint32_t)(g_cfg.overclock < 100 ? 100 : g_cfg.overclock); continue; }
         char *c1 = strchr(tok, ':');
         if (!c1) continue;
@@ -172,43 +198,68 @@ static void parse_script(const char *s) {
     free(buf);
 }
 
-/* testing: --record FILE writes each run of identical pad state as "frame:BUTTONS:frames",
- * which --input @FILE replays (the emulation is deterministic, so the replay is the session).
- * The first line is the fast-CD setting, which changes the game's timing. */
+/* testing: --record FILE writes each run of identical pad state as "frame:BUTTONS:frames"
+ * (farmer 2's, with --p2, as "p2 frame:BUTTONS:frames"), which --input @FILE replays (the
+ * emulation is deterministic, so the replay is the session). The first lines are the settings
+ * that change what the game does. */
 static FILE *rec_file;
-static uint16_t rec_btn;
-static int rec_start, rec_last;
+static struct { uint16_t btn; int start, last; } rec[2];   /* the player's, farmer 2's */
 
-static void rec_write(int end) {
+static void rec_write(int who, int end) {
     uint16_t done = 0;
-    if (!rec_btn) return;
-    fprintf(rec_file, "%d:", rec_start);
+    if (!rec[who].btn) return;
+    fprintf(rec_file, "%s%d:", who ? "p2 " : "", rec[who].start);
     for (size_t i = 0; i < sizeof names / sizeof *names; i++)
-        if ((rec_btn & names[i].b) && !(done & names[i].b)) {
+        if ((rec[who].btn & names[i].b) && !(done & names[i].b)) {
             fprintf(rec_file, "%s%s", done ? "+" : "", names[i].n);
             done |= names[i].b;
         }
-    fprintf(rec_file, ":%d\n", end - rec_start);
+    fprintf(rec_file, ":%d\n", end - rec[who].start);
     fflush(rec_file);
 }
 
-static void record_frame(int frame, uint16_t b) {
+static void record_pad(int who, int frame, uint16_t b) {
     if (!rec_file) return;
-    rec_last = frame;
-    if (b == rec_btn) return;
-    rec_write(frame);
-    rec_btn = b;
-    rec_start = frame;
+    rec[who].last = frame;
+    if (b == rec[who].btn) return;
+    rec_write(who, frame);
+    rec[who].btn = b;
+    rec[who].start = frame;
+}
+
+/* the cheats at a frame boundary: a recording's changes, or (playing) the ini's when the F5 page
+ * saved it, which go into the recording */
+static void cheat_events(int frame) {
+    for (int i = 0; i < n_cheat_ev; i++)
+        if (cheat_ev[i].frame == frame) cheats_set(cheat_ev[i].v);
+    int v[CHEATS];
+    if (g_cfg.headless || g_cfg.input_script[0] || netplay_active() || frame % 30 || !config_cheats(v)) return;
+    if (v[0] == g_cfg.cheat_money && v[1] == g_cfg.cheat_stamina && v[2] == g_cfg.cheat_clock && v[3] == g_cfg.cheat_bag &&
+        v[4] == g_cfg.cheat_items && v[5] == g_cfg.cheat_tools)
+        return;
+    cheats_set(v);
+    LOGI("cheats: money %d, stamina %d, clock %d, rucksack %d, materials %d, tools %d", v[0], v[1], v[2], v[3], v[4], v[5]);
+    if (rec_file) {
+        fprintf(rec_file, "cheats@%d=%d:%d:%d:%d:%d:%d\n", frame, v[0], v[1], v[2], v[3], v[4], v[5]);
+        fflush(rec_file);
+    }
+}
+
+static void record_frame(int frame, uint16_t b) {
+    record_pad(0, frame, b);
+    if (g_p2_enabled) record_pad(1, frame, g_p2_buttons);
 }
 
 static void record_close(void) {
     if (!rec_file) return;
-    rec_write(rec_last + 1);
+    rec_write(0, rec[0].last + 1);
+    rec_write(1, rec[1].last + 1);
     fclose(rec_file);
     rec_file = NULL;
 }
 
 static uint16_t script_buttons(int frame);
+static uint16_t script_pad(int frame, int p2);
 /* testing: pseudo-random button presses that still let the game make progress */
 static uint16_t fuzz_buttons(int frame) {
     static uint32_t rng;
@@ -233,9 +284,14 @@ static uint16_t fuzz_buttons(int frame) {
 }
 
 static uint16_t script_buttons(int frame) {
-    uint16_t b = fuzz_buttons(frame);
+    return (uint16_t)(fuzz_buttons(frame) | script_pad(frame, 0));
+}
+
+static uint16_t script_pad(int frame, int p2) {
+    uint16_t b = 0;
     for (int i = 0; i < nscript; i++) {
         const ScriptEv *e = &script[i];
+        if (e->p2 != p2) continue;
         if (e->period > 0) {
             if (frame >= e->frame && frame <= e->end && (frame - e->frame) % e->period < e->dur) b |= e->btn;
         } else if (frame >= e->frame && frame < e->frame + e->dur) {
@@ -296,7 +352,7 @@ static uint32_t *widen(const uint32_t *px, int w, int h, int *ow) {
     return out;
 }
 
-static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, int wide) {
+static void save_screenshot_as(const char *name, const uint32_t *px, int w, int h, uint64_t frame, int wide) {
     char path[1400];
     uint32_t *wpx = wide ? widen(px, w, h, &w) : NULL;
 #ifdef _WIN32
@@ -304,10 +360,25 @@ static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, in
 #else
     mkdir(g_cfg.screenshot_dir, 0755);
 #endif
-    snprintf(path, sizeof path, "%s/frame_%06llu.bmp", g_cfg.screenshot_dir, (unsigned long long)frame);
+    snprintf(path, sizeof path, "%s/%s_%06llu.bmp", g_cfg.screenshot_dir, name, (unsigned long long)frame);
     write_bmp(path, wpx ? wpx : px, w, h);
     free(wpx);
     LOGI("screenshot %s (%dx%d)", path, w, h);
+}
+
+static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, int wide) {
+    save_screenshot_as("frame", px, w, h, frame, wide);
+    if (g_view2 > 0) {                  /* and farmer 2's window: frame2_... */
+        static uint32_t *px2;
+        static int w2, h2;
+        int up = gpu_upscale();
+        if (!px2) px2 = calloc((size_t)1024 * 512 * up * up, sizeof(uint32_t));
+        if (!px2) return;
+        if (p2view_swapped()) gpu_render_display(px2, &w2, &h2);              /* as the window */
+        else if (v2i_shown) { memcpy(px2, v2i_px, (size_t)v2i_w * v2i_h * 4); w2 = v2i_w; h2 = v2i_h; }
+        else if (!w2 || !p2view_held()) view2_gpu_render_display(px2, &w2, &h2);
+        save_screenshot_as("frame2", px2, w2, h2, frame, wide);
+    }
 }
 
 /* ------------------------------------------------------------------ init */
@@ -362,6 +433,8 @@ int platform_init(void) {
             fprintf(rec_file, "textspeed=%d\n", g_cfg.textspeed);
             fprintf(rec_file, "overclock=%d\n", g_cfg.overclock);
             fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
+            fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
+                    g_cfg.cheat_bag, g_cfg.cheat_items, g_cfg.cheat_tools);
             atexit(record_close);
         }
         else LOGE("cannot write %s", g_cfg.record_path);
@@ -385,6 +458,25 @@ int platform_init(void) {
     win = SDL_CreateWindow("Harvest Moon: Back to Nature", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            win_w, 240 * sc, SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!win) { fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError()); return 1; }
+    if (g_view2 > 0) {
+        /* farmer 2's window: the two side by side when they fit */
+        SDL_Rect r;
+        int x2 = SDL_WINDOWPOS_UNDEFINED, y2 = SDL_WINDOWPOS_UNDEFINED;
+        if (SDL_GetDisplayUsableBounds(0, &r) == 0 && 2 * win_w + 16 <= r.w) {
+            int x1 = r.x + (r.w - 2 * win_w - 16) / 2;
+            y2 = r.y + (r.h - 240 * sc) / 2;
+            SDL_SetWindowPosition(win, x1, y2);
+            x2 = x1 + win_w + 16;
+        }
+        win2 = SDL_CreateWindow("Harvest Moon: Back to Nature  -  farmer 2", x2, y2, win_w, 240 * sc,
+                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        if (win2) ren2 = SDL_CreateRenderer(win2, -1, SDL_RENDERER_ACCELERATED);
+        if (win2 && !ren2) ren2 = SDL_CreateRenderer(win2, -1, SDL_RENDERER_SOFTWARE);
+        if (ren2) tex2 = SDL_CreateTexture(ren2, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 1024 * up, 512 * up);
+        frame2_px = calloc((size_t)1024 * 512 * up * up, sizeof(uint32_t));
+        if (!tex2 || !frame2_px) LOGW("second view: no window (%s)", SDL_GetError());
+        SDL_RaiseWindow(win);
+    }
     update_title();
     ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
     if (!ren) ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
@@ -441,7 +533,8 @@ void platform_audio_push(const int16_t *stereo, int frames) {
 
 /* ------------------------------------------------------------------ per-frame */
 /* with a second farmer (--p2): the second controller and the numeric keypad are its pad (8 4 5 6
- * the directions, 7 Square, 9 Cross, 1 Circle, 3 R1) */
+ * the directions, 7 Square, 9 Cross, 1 Circle, 3 R1, + R2, / L1, * L2, 0 Triangle, Enter Start,
+ * . Select) */
 static uint16_t p2_pad;
 
 static uint16_t read_controllers(void) {
@@ -458,6 +551,12 @@ static uint16_t read_controllers(void) {
     if (ks[SDL_SCANCODE_KP_9]) p2 |= PAD_CROSS;
     if (ks[SDL_SCANCODE_KP_1]) p2 |= PAD_CIRCLE;
     if (ks[SDL_SCANCODE_KP_3]) p2 |= PAD_R1;
+    if (ks[SDL_SCANCODE_KP_0]) p2 |= PAD_TRIANGLE;
+    if (ks[SDL_SCANCODE_KP_PLUS]) p2 |= PAD_R2;
+    if (ks[SDL_SCANCODE_KP_DIVIDE]) p2 |= PAD_L1;
+    if (ks[SDL_SCANCODE_KP_MULTIPLY]) p2 |= PAD_L2;
+    if (ks[SDL_SCANCODE_KP_ENTER]) p2 |= PAD_START;
+    if (ks[SDL_SCANCODE_KP_PERIOD]) p2 |= PAD_SELECT;
     for (int p = 0; p < MAX_PADS; p++) {
         SDL_GameController *c = pads[p];
         if (!c) continue;
@@ -612,6 +711,65 @@ static void present(int w, int h, int wide, bool same) {
     }
 }
 
+/* farmer 2's window: the second GPU's picture, scaled smoothly (or sharply) to fit. A picture kept
+ * (the player's menu) keeps the shape it was made with: a full-screen menu is not widened, and the
+ * kept picture was stretched to its shape. Shown again only when it changed (the game draws every
+ * other VBlank) or the window did (win2_due) */
+static int win2_due = 1;            /* 2: the texture may have lost the picture too */
+static void present2(int wide_now) {
+    static uint32_t changes;
+    static int w, h, valid, wide;
+    int ww, wh, fresh = win2_due;
+    if (!tex2) return;
+    win2_due = 0;
+    if (p2view_swapped()) {             /* farmer 2 has the game: the game's picture is farmer 2's */
+        gpu_render_display(frame2_px, &w, &h);
+        wide = wide_now;
+        valid = 0;
+        fresh = 1;
+        if (w > 0 && h > 0) {
+            SDL_Rect src = { 0, 0, w, h };
+            SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
+        }
+    } else if (v2i_shown && v2i_w > 0 && v2i_h > 0) {     /* an in-between picture */
+        w = v2i_w;
+        h = v2i_h;
+        wide = wide_now;
+        valid = 0;                      /* the next one is the frame's own again */
+        fresh = 1;
+        SDL_Rect src = { 0, 0, w, h };
+        SDL_UpdateTexture(tex2, &src, v2i_px, w * 4);
+    } else if (!valid || (view2_gpu_changes() != changes && !p2view_held())) {
+        view2_gpu_render_display(frame2_px, &w, &h);
+        changes = view2_gpu_changes();
+        wide = wide_now;
+        valid = 1;
+        fresh = 1;
+        if (w > 0 && h > 0) {
+            SDL_Rect src = { 0, 0, w, h };
+            SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
+        }
+    }
+    if (!fresh) return;
+    if (fresh == 2 && w > 0 && h > 0) {
+        SDL_Rect src = { 0, 0, w, h };
+        SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
+    }
+    SDL_GetRendererOutputSize(ren2, &ww, &wh);
+    SDL_SetRenderDrawColor(ren2, 0, 0, 0, 255);
+    SDL_RenderClear(ren2);
+    if (w > 0 && h > 0) {
+        SDL_Rect src = { 0, 0, w, h };
+        double aspect = display_aspect(w, h, wide);
+        int dw = ww, dh = (int)(ww / aspect);
+        if (dh > wh) { dh = wh; dw = (int)(wh * aspect); }
+        SDL_Rect dst = { (ww - dw) / 2, (wh - dh) / 2, dw, dh };
+        SDL_SetTextureScaleMode(tex2, g_cfg.scaling == SCALING_SHARP ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
+        SDL_RenderCopy(ren2, tex2, &src, &dst);
+    }
+    SDL_RenderPresent(ren2);
+}
+
 static void dump_ram(uint64_t frame) {
     for (int k = 0; k < 8; k++) {
         if (g_cfg.dump_frame[k] && (uint64_t)g_cfg.dump_frame[k] == frame) {
@@ -708,7 +866,13 @@ static void throttle(void) {
 static SDL_Thread *interp_thread[INTERP_WORKERS];
 static SDL_sem *interp_go[INTERP_WORKERS], *interp_done;
 static int interp_pending;          /* workers still drawing */
+static int interp_jobs;             /* 1: the game's in-between picture, 2: farmer 2's window's, 3: both */
 void place_thread(int which);       /* cpu_place.c */
+
+static void interp_work(int k) {
+    if (interp_jobs & 1) gpu_interp_work(k);
+    if (interp_jobs & 2) view2_gpu_interp_work(k);
+}
 
 static int interp_worker(void *part) {
     int k = (int)(intptr_t)part;
@@ -718,14 +882,15 @@ static int interp_worker(void *part) {
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
     for (;;) {
         SDL_SemWait(interp_go[k]);
-        gpu_interp_work(k);
+        interp_work(k);
         SDL_SemPost(interp_done);
     }
     return 0;
 }
 
-/* The in-between picture for the next VBlank, drawn while the game goes on */
-static void interp_start(void) {
+/* The in-between pictures for the next VBlank (jobs: interp_jobs), drawn while the game goes on */
+static void interp_start(int jobs) {
+    interp_jobs = jobs;
     if (!interp_thread[0] && (!g_cfg.headless || getenv("HMBTN_INTERP_THREAD"))) {   /* headless: SDL may be absent */
         place_thread(0);            /* the game's thread: the other performance cores */
         interp_done = SDL_CreateSemaphore(0);
@@ -738,7 +903,7 @@ static void interp_start(void) {
         interp_pending = INTERP_WORKERS;
         for (int k = 0; k < INTERP_WORKERS; k++) SDL_SemPost(interp_go[k]);
     } else {
-        for (int k = 0; k < INTERP_WORKERS; k++) gpu_interp_work(k);
+        for (int k = 0; k < INTERP_WORKERS; k++) interp_work(k);
     }
 }
 
@@ -756,9 +921,13 @@ void platform_frame(void) {
             switch (ev.type) {
             case SDL_QUIT: g_quit = 1; break;
             case SDL_WINDOWEVENT:
+                if (ev.window.event == SDL_WINDOWEVENT_CLOSE) g_quit = 1;   /* either of two windows */
+                if (win2 && ev.window.windowID == SDL_GetWindowID(win2)) win2_due = 1;   /* shown, resized, ... */
+                /* fall through */
             case SDL_RENDER_TARGETS_RESET:
             case SDL_RENDER_DEVICE_RESET:
                 px_valid = false;           /* the texture may have lost the picture: upload it again */
+                if (ev.type != SDL_WINDOWEVENT) win2_due = 2;
                 break;
             case SDL_CONTROLLERDEVICEADDED: open_pad(ev.cdevice.which); break;
             case SDL_AUDIODEVICEADDED: if (!ev.adevice.iscapture) open_audio(); break;
@@ -773,6 +942,11 @@ void platform_frame(void) {
                 if (ev.key.repeat) break;
                 if (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
                     (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT))) {
+                    if (win2 && ev.key.windowID == SDL_GetWindowID(win2)) {
+                        fullscreen2 = !fullscreen2;
+                        SDL_SetWindowFullscreen(win2, fullscreen2 ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                        break;
+                    }
                     fullscreen = !fullscreen;
                     SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F12) {
@@ -780,8 +954,11 @@ void platform_frame(void) {
                 } else if (ev.key.keysym.scancode >= SDL_SCANCODE_F1 && !netplay_active() &&   /* co-op: same card on both sides */
                            ev.key.keysym.scancode < SDL_SCANCODE_F1 + CARD_BANKS) {
                     if (memcard_select_bank(ev.key.keysym.scancode - SDL_SCANCODE_F1)) update_title();
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F5 && !netplay_active()) {
+                    open_cheats_window();       /* co-op: the cheats are the host's from the start */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F9 && g_cfg.interp && g_pgxp) {
                     g_interp = !g_interp;       /* compare: in-between pictures on/off */
+                    view2_g_interp = g_interp;
                     LOGI("interp %s", g_interp ? "on" : "off");
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
@@ -797,7 +974,8 @@ void platform_frame(void) {
         uint16_t b = read_controllers();
         static uint16_t mine;           /* Alt held: keeps the buttons as they were */
         if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);
-        g_p2_buttons = p2_pad;          /* co-op with two farmers: the guest's buttons instead */
+        cheat_events((int)frame);
+        g_p2_buttons = p2_pad | script_pad((int)frame, 1);   /* co-op with two farmers: the guest's buttons instead */
         g_pad_buttons[0] = netplay_frame((int)frame, mine);   /* co-op: with the other player's */
         { int changed; netplay_status(&changed); if (changed) update_title(); }
         record_frame((int)frame, g_pad_buttons[0]);
@@ -809,10 +987,27 @@ void platform_frame(void) {
         throttle();
     }
     bool need_pixels = shown || shot || shot_request, same = false;
-    if (need_pixels) {
+    /* farmer 2's talk or menu: this window keeps the player's picture (farmer 2's shows the game's) */
+    bool keep = p2view_swapped();
+    if (keep) {
+        w = px_w;
+        h = px_h;
+    } else if (need_pixels) {
         /* workers not done yet: no in-between picture this time, rather than holding the game up */
         while (interp_pending && SDL_SemTryWait(interp_done) == 0) interp_pending--;
-        if (interp_pending) gpu_interp_late();
+        if (interp_pending) {
+            gpu_interp_late();
+            view2_gpu_interp_late();
+        }
+        /* farmer 2's window has in-between pictures of its own, while it shows its own farm frames */
+        int v2 = g_view2 > 0 && !turbo() && !p2view_held();
+        if (v2) {
+            int up = gpu_upscale();
+            if (!v2i_px) v2i_px = malloc((size_t)1024 * 512 * up * up * sizeof(uint32_t));
+            v2i_shown = v2i_px && view2_gpu_render_interp(v2i_px, &v2i_w, &v2i_h);
+        } else {
+            v2i_shown = 0;
+        }
         /* an in-between picture (not at full speed): the frame on screen is still the last one,
          * so frame_black stays as it was */
         if (turbo() || !gpu_render_interp(frame_px, &w, &h)) {
@@ -833,13 +1028,18 @@ void platform_frame(void) {
         } else {
             px_valid = false;   /* an in-between picture in frame_px */
         }
-        if (!interp_pending && !turbo() && gpu_interp_prepare()) interp_start();
+        if (!interp_pending && !turbo()) {
+            int jobs = gpu_interp_prepare() | (v2 && view2_gpu_interp_prepare()) << 1;
+            if (jobs) interp_start(jobs);
+        }
     }
     quick_hold_music(quick_loading(frame_black));   /* for the frame run next */
     int wide = display_wide();
     if (shot) save_screenshot(frame_px, w, h, frame, wide);
 
     if (g_cfg.headless) {
+        cheat_events((int)frame);
+        g_p2_buttons = script_pad((int)frame, 1);
         g_pad_buttons[0] = netplay_frame((int)frame, script_buttons((int)frame));
         record_frame((int)frame, g_pad_buttons[0]);
         g_pad_buttons[0] = quick_skip(g_pad_buttons[0]);
@@ -848,7 +1048,8 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
-    if (shown) present(w, h, wide, same && shown_last);
+    if (shown && !keep) present(w, h, wide, same && shown_last);
+    if (shown && win2) present2(wide);
     shown_last = shown;
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

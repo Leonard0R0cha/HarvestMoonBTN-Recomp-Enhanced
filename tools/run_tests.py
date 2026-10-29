@@ -21,7 +21,9 @@ else:
 TESTS = {
     'gte_test': ['gte.c'],
     'gpu_test': ['gpu.c', 'gpu_replay.c', 'gpu_replay2.c', 'gpu_replay3.c',
-                 'gpu_band1.c', 'gpu_band2.c', 'gpu_band3.c', 'gpu_band4.c', 'workers.c', 'cpu_place.c'],
+                 'gpu_band1.c', 'gpu_band2.c', 'gpu_band3.c', 'gpu_band4.c', 'gpu_view2.c',
+                 'gpu_view2_band1.c', 'gpu_view2_band2.c', 'gpu_view2_band3.c', 'gpu_view2_band4.c',
+                 'gpu_view2_replay1.c', 'gpu_view2_replay2.c', 'gpu_view2_replay3.c', 'workers.c', 'cpu_place.c'],
     'spu_test': ['spu.c'],
     'memcard_fs_test': None,
 }

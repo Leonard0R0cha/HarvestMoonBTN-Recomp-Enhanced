@@ -43,6 +43,7 @@ static uint32_t io_read(uint32_t p, int width) {
         return spu_read16(p - 0x1F801C00);
     }
     if (p >= 0x1F801800 && p < 0x1F801804) {
+        if (g_view2_run) p2view_abort();
         uint32_t v = cdrom_read8(p & 3);
         if (width >= 2) v |= (uint32_t)cdrom_read8(p & 3) << 8;
         if (width == 4) { v |= (uint32_t)cdrom_read8(p & 3) << 16; v |= (uint32_t)cdrom_read8(p & 3) << 24; }
@@ -64,7 +65,10 @@ static uint32_t io_read(uint32_t p, int width) {
         uint32_t v = (p & 4) ? g_imask : g_istat;
         return v >> ((p & 3) * 8);
     }
-    if (p >= 0x1F801040 && p < 0x1F801060) return sio_read(p - 0x1F801040, width);
+    if (p >= 0x1F801040 && p < 0x1F801060) {
+        if (g_view2_run) p2view_abort();
+        return sio_read(p - 0x1F801040, width);
+    }
     if (p >= 0x1F801000 && p < 0x1F801040) return memctrl[(p >> 2) & 15] >> ((p & 3) * 8);
     if (p >= 0x1F801060 && p < 0x1F801064) return ram_size_reg;
     if (p >= 0x1F801820 && p < 0x1F801828) {
@@ -85,6 +89,7 @@ static uint32_t io_read(uint32_t p, int width) {
 /* ---------------------------------------------------------------- I/O writes */
 static void io_write(uint32_t p, uint32_t v, int width) {
     if (p >= 0x1F801C00 && p < 0x1F802000) {
+        if (g_view2_run) return;        /* the second view's run (p2view.c): no sound */
         spu_catch_up();
         if (width == 4) {
             spu_write16(p - 0x1F801C00, (uint16_t)v);
@@ -99,7 +104,11 @@ static void io_write(uint32_t p, uint32_t v, int width) {
         }
         return;
     }
-    if (p >= 0x1F801800 && p < 0x1F801804) { cdrom_write8(p & 3, (uint8_t)v); return; }
+    if (p >= 0x1F801800 && p < 0x1F801804) {
+        if (g_view2_run) p2view_abort();
+        cdrom_write8(p & 3, (uint8_t)v);
+        return;
+    }
     if (p == 0x1F801810) { gpu_write_gp0(v); return; }
     if (p == 0x1F801814) { gpu_write_gp1(v); return; }
     if (p >= 0x1F801080 && p < 0x1F801100) {
@@ -117,7 +126,11 @@ static void io_write(uint32_t p, uint32_t v, int width) {
         else irq_write_stat(v);
         return;
     }
-    if (p >= 0x1F801040 && p < 0x1F801060) { sio_write(p - 0x1F801040, v, width); return; }
+    if (p >= 0x1F801040 && p < 0x1F801060) {
+        if (g_view2_run) p2view_abort();
+        sio_write(p - 0x1F801040, v, width);
+        return;
+    }
     if (p >= 0x1F801000 && p < 0x1F801040) { memctrl[(p >> 2) & 15] = v; return; }
     if (p >= 0x1F801060 && p < 0x1F801064) { ram_size_reg = v; return; }
     if (p >= 0x1F801820 && p < 0x1F801828) { LOGD("MDEC write %08X=%08X", p, v); return; }

@@ -163,6 +163,7 @@ static void send_msg(int type, uint16_t buttons, uint32_t frame, uint32_t value)
 static void drop(const char *why) {
     if (sock != INVALID_SOCKET) close_sock(sock);
     sock = INVALID_SOCKET;
+    if (active && role == 1) p2_leave();    /* the friend's farmer goes, its tools back in the chest */
     active = 0;
     set_status(why);
 }
@@ -190,16 +191,18 @@ static const char *card_name(char *out, size_t n, const char *dir, int b) {
 /* the settings that change what the game does: both sides must use the host's */
 static void settings_line(char *s, size_t n) {
     snprintf(s, n, "fastcd=%d autoslot=%d quickui=%d ws=%d:%d skipscenes=%d textspeed=%d overclock=%d emptybag=%d "
-             "fastcard=%d fastload=%d p2=%d\n", g_cfg.fast_cd, g_cfg.autoslot, g_cfg.quickui, g_cfg.ws_w, g_cfg.ws_h,
-             g_cfg.skipscenes, g_cfg.textspeed, g_cfg.overclock, g_cfg.emptybag, g_cfg.fastcard, g_cfg.fastload,
-             g_p2_enabled);
+             "fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.fast_cd, g_cfg.autoslot, g_cfg.quickui,
+             g_cfg.ws_w, g_cfg.ws_h, g_cfg.skipscenes, g_cfg.textspeed, g_cfg.overclock, g_cfg.emptybag, g_cfg.fastcard,
+             g_cfg.fastload, g_p2_enabled, g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock, g_cfg.cheat_bag,
+             g_cfg.cheat_items, g_cfg.cheat_tools);
 }
 
 static void apply_settings(const char *s) {
     sscanf(s, "fastcd=%d autoslot=%d quickui=%d ws=%d:%d skipscenes=%d textspeed=%d overclock=%d emptybag=%d "
-           "fastcard=%d fastload=%d p2=%d", &g_cfg.fast_cd, &g_cfg.autoslot, &g_cfg.quickui, &g_cfg.ws_w, &g_cfg.ws_h,
-           &g_cfg.skipscenes, &g_cfg.textspeed, &g_cfg.overclock, &g_cfg.emptybag, &g_cfg.fastcard, &g_cfg.fastload,
-           &g_p2_enabled);
+           "fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d", &g_cfg.fast_cd, &g_cfg.autoslot, &g_cfg.quickui,
+           &g_cfg.ws_w, &g_cfg.ws_h, &g_cfg.skipscenes, &g_cfg.textspeed, &g_cfg.overclock, &g_cfg.emptybag,
+           &g_cfg.fastcard, &g_cfg.fastload, &g_p2_enabled, &g_cfg.cheat_money, &g_cfg.cheat_stamina,
+           &g_cfg.cheat_clock, &g_cfg.cheat_bag, &g_cfg.cheat_items, &g_cfg.cheat_tools);
     g_p2_demo = 0;
 }
 

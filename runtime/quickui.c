@@ -82,6 +82,8 @@ static bool plain_char(uint16_t ch) {
 }
 
 static bool text_added;
+int quick_state(void) { return text_added; }       /* the second view's run (p2view.c) puts it back */
+void quick_set_state(int s) { text_added = s; }
 
 void quick_text(void) {
     text_added = true;

@@ -146,7 +146,42 @@ extern volatile int g_quit;
 /* ---- second farmer (p2.c, prototype) ---- */
 extern int g_p2_enabled, g_p2_demo;
 extern uint16_t g_p2_buttons;
-void p2_return_tools(void);     /* the save / load screens: farmer 2's tools back in the chest */
+void p2_return_tools(void);     /* the save / load screens: farmer 2's things into the storages */
+void p2_take_back(void);        /* ... and takes them back if no diary was loaded */
+void cheats_tick(void);         /* cheats.c: each farm tick */
+#define CHEATS 6                /* money, stamina, clock, rucksack, materials, tools */
+void cheats_set(const int v[CHEATS]);   /* ... changed while the game runs */
+int config_cheats(int v[CHEATS]);       /* main.c: the ini's cheats, if it changed */
+void open_cheats_window(void);  /* main.c: F5, the launcher's Cheats page */
+void p2_cheats(int rest, int bag, int tools);   /* ... farmer 2's stamina, rucksack and tools */
+void p2_leave(void);            /* farmer 2's player left: its things into the storages, farmer 2 gone */
+size_t p2_state_size(void);
+void p2_save_state(void *dst);
+void p2_load_state(const void *src);
+void p2_aim_view(void);         /* the second view: the view on the other farmer */
+int p2_owner(void);             /* farmer 2 has the game: the windows are swapped */
+int p2_menu(void);              /* whose talk or menu is open: 0 the player's, 1 farmer 2's, -1 none */
+int p2view_swapped(void);       /* farmer 2's menu: the game's picture goes to farmer 2's window */
+
+/* ---- the second view (p2view.c): a second window that follows farmer 2 ---- */
+extern int g_view2;               /* on (--p2 on this PC, or --p2view 1) */
+extern int g_view2_run;           /* the farm's frame is being run once more for it */
+void p2view_init(void);
+#if defined(__GNUC__)
+__attribute__((noreturn))
+#endif
+void p2view_abort(void);          /* that run did what it can't (CD, pad, ...): drop it */
+void p2view_events(CPU *c);       /* events_run during that run: none, and a time limit */
+const uint8_t *p2view_ram(void);  /* the RAM the second view's frame was built in (NULL: held) */
+int p2view_held(void);             /* the last run was dropped: the second window keeps its picture */
+size_t dma_state_size(void);
+void dma_save_state(void *dst);
+void dma_load_state(const void *src);
+size_t sched_state_size(void);
+void sched_save_state(void *dst);
+void sched_load_state(const void *src);
+int quick_state(void);
+void quick_set_state(int s);
 
 /* ---- online co-op (netplay.c) ---- */
 void netplay_host(int port);
@@ -166,6 +201,7 @@ typedef struct {
     int  scale;                 /* window scale */
     int  upscale;               /* internal resolution multiplier 1..4 (1 = original) */
     int  draw_threads;          /* threads drawing the upscaled polygons: -1 = by processor, 0 = none */
+    int  p2view_upscale;        /* farmer 2's window: internal resolution, lower = lighter (0 = the game's) */
     int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
@@ -190,6 +226,12 @@ typedef struct {
     int  textspeed;             /* characters typed per step of the text printer (1 = original) */
     int  overclock;             /* CPU speed in percent of the console's (100 = original) */
     int  emptybag;              /* R1 / R2 do nothing with no tool / item to switch to */
+    int  cheat_money;           /* cheats (cheats.c): the money on the farm the first time (0 = off) */
+    int  cheat_stamina;         /* the farmers never tire */
+    int  cheat_clock;           /* the clock stands still */
+    int  cheat_bag;             /* the biggest rucksack */
+    int  cheat_items;           /* lumber, fodder, fish food and chicken feed at 999 */
+    int  cheat_tools;           /* the tools' levels at their most */
     int  scaling;               /* SCALING_*: how the picture is scaled to the window */
     int  aspect_4_3;
     int  allow_fast_forward;     /* hold Tab to run unthrottled */

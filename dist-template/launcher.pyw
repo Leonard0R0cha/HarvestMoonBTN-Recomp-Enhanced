@@ -44,7 +44,10 @@ OPTIONS = [
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
-     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]
+     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4')] \
+  + [('cheats', 'cheats', 'cheat_money', 'edit:0|10000|100000|1000000|9999999'), ('cheats', 'cheats', 'cheat_stamina', 'bool'),
+     ('cheats', 'cheats', 'cheat_clock', 'bool'), ('cheats', 'cheats', 'cheat_bag', 'bool'),
+     ('cheats', 'cheats', 'cheat_items', 'bool'), ('cheats', 'cheats', 'cheat_tools', 'bool')]
 COOP_PORT = '7845'
 
 # Video presets by processor: the picture is drawn by the processor (no graphics card needed), and
@@ -111,8 +114,19 @@ TEXT = {
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
+        'p2view_upscale': ('Farmer 2\'s window resolution', 'auto = the same as the game\'s window. 1 is the '
+                           'lightest (original 320x240), for a slower PC, but at 30 pictures a second; above the '
+                           'game\'s does nothing.'),
         'coop_delay': ('Controls delay', 'In frames (1 = 17 ms). Higher if the game stutters on a slow '
                        'connection; the host\'s counts.'),
+        'cheat_money': ('Money', 'Your money when you reach the farm, once each time the game opens; '
+                        'then it changes as usual. Changed here with F5 in the game: at once. 0 = off; up to 9999999.'),
+        'cheat_stamina': ('Endless stamina', 'The farmers never get tired and never faint.'),
+        'cheat_clock': ('Stop the clock', 'Time stands still (shops and nightfall too). Sleeping still starts the next day.'),
+        'cheat_bag': ('Big rucksack', 'The biggest rucksack (8 places) from the start, for both farmers.'),
+        'cheat_items': ('Materials at most', 'Lumber, fodder, fish food and chicken feed always at 999.'),
+        'cheat_tools': ('Tools at most', 'Sickle, hoe, axe, hammer and watering can at their highest level, for '
+                        'both farmers.'),
         'coop_p2': ('Two farmers (experimental)', 'The friend gets a farmer of their own, who walks with a pose '
                     'of their own (stops at walls, fences and water; no tools yet). The host\'s choice counts.'),
     },
@@ -157,8 +171,19 @@ TEXT = {
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
+        'p2view_upscale': ('Resolução da janela do fazendeiro 2', 'auto = a mesma da janela do jogo. 1 é a mais '
+                           'leve (original 320x240), para PC mais fraco, mas a 30 imagens por segundo; acima da do '
+                           'jogo não muda nada.'),
         'coop_delay': ('Atraso dos controles', 'Em quadros (1 = 17 ms). Aumente se o jogo engasgar com internet '
                        'lenta; vale o do anfitrião.'),
+        'cheat_money': ('Dinheiro', 'O dinheiro da fazenda ao entrar nela, uma vez a cada vez que o jogo abre; '
+                        'depois ele muda normalmente. Mudado aqui pelo F5 no jogo: na hora. 0 = desligado; até 9999999.'),
+        'cheat_stamina': ('Estamina infinita', 'Os fazendeiros nunca cansam e nunca desmaiam.'),
+        'cheat_clock': ('Parar o relógio', 'O tempo não passa (lojas e noite também). Dormir ainda começa o dia seguinte.'),
+        'cheat_bag': ('Mochila grande', 'A maior mochila (8 lugares) desde o começo, para os dois fazendeiros.'),
+        'cheat_items': ('Materiais no máximo', 'Madeira, feno, comida de peixe e ração de galinha sempre em 999.'),
+        'cheat_tools': ('Ferramentas no máximo', 'Foice, enxada, machado, marreta e regador no nível mais alto, para '
+                        'os dois fazendeiros.'),
         'coop_p2': ('Dois fazendeiros (experimental)', 'O amigo ganha um fazendeiro próprio, que anda com pose '
                     'própria (para em paredes, cercas e água; ainda sem ferramentas). Vale a escolha do anfitrião.'),
     },
@@ -205,8 +230,19 @@ TEXT = {
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
+        'p2view_upscale': ('Resolución de la ventana del granjero 2', 'auto = la misma que la ventana del juego. 1 '
+                           'es la más ligera (original 320x240), para un PC más lento, pero a 30 imágenes por segundo; '
+                           'más que la del juego no cambia nada.'),
         'coop_delay': ('Retraso de los controles', 'En fotogramas (1 = 17 ms). Más alto si el juego se traba '
                        'con internet lenta; vale el del anfitrión.'),
+        'cheat_money': ('Dinero', 'El dinero de la granja al llegar a ella, una vez cada vez que se abre el '
+                        'juego; después cambia como siempre. Cambiado aquí con F5 en el juego: al momento. 0 = desactivado; hasta 9999999.'),
+        'cheat_stamina': ('Energía infinita', 'Los granjeros nunca se cansan ni se desmayan.'),
+        'cheat_clock': ('Parar el reloj', 'El tiempo no pasa (tiendas y noche también). Dormir sigue empezando el día siguiente.'),
+        'cheat_bag': ('Mochila grande', 'La mochila más grande (8 huecos) desde el principio, para los dos granjeros.'),
+        'cheat_items': ('Materiales al máximo', 'Madera, forraje, comida de peces y pienso de gallina siempre en 999.'),
+        'cheat_tools': ('Herramientas al máximo', 'Hoz, azada, hacha, martillo y regadera en su nivel más alto, para '
+                        'los dos granjeros.'),
         'coop_p2': ('Dos granjeros (experimental)', 'Tu amigo tiene su propio granjero, que camina con pose '
                     'propia (se detiene en paredes, vallas y agua; aún sin herramientas). Vale lo que elija el anfitrión.'),
     },
@@ -244,6 +280,7 @@ UI = {
             ('Triangle (hold)', 'On a diary list: hold 2 seconds to delete that diary'),
             ('START (hold)', 'Fast-forward a cutscene'),
             ('Tab (hold)', 'Fast-forward the game'),
+            ('F5', 'Cheats, while playing'),
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
             ('F12', 'Screenshot (screenshots folder)')],
@@ -266,6 +303,23 @@ UI = {
         'join': 'Join', 'join_d': 'Your friend\'s farm. Fill in their address below. Your own saves are not '
         'touched (co-op saves go to saves\\netplay).',
         'host_btn': 'Host and play', 'join_btn': 'Join and play',
+        'cheats': 'Cheats', 'cheats_sub': 'Changes to the game itself. What you save with them stays in the '
+        'save. In co-op, the host\'s cheats count for both.',
+        'p2': 'Local co-op', 'p2_sub': 'Two farmers on this PC, no internet: you play the game\'s farmer and a '
+        'second player gets a farmer of their own, with a window of their own (experimental).',
+        'local': 'Two farmers on this PC', 'local_d': 'Farmer 1 plays with the keyboard or the first controller; '
+        'farmer 2 with the second controller or the numeric keypad.',
+        'local_btn': 'Play with two farmers',
+        'p2_keys': 'Farmer 2\'s controls', 'p2_head': ('', 'Controller 2', 'Numeric keypad'), 'p2_list': [
+            ('Walk', 'D-pad', '8  4  5  6'), ('Use the tool', 'Square', '7'),
+            ('Look, talk, open, trade', 'Cross', '9'), ('Run', 'Circle', '1'), ('Change tools', 'R1', '3'),
+            ('Put away / change the item', 'R2', '+'), ('Whistle', 'L1 / L2', '/   *'),
+            ('Rucksack', 'Triangle', '0'), ('Menu', 'Start', 'Enter'), ('Map', 'Select', '.')],
+        'p2_tips': 'Good to know', 'p2_tips_list': [
+            ('\u21c4', 'Trading: stand in front of the other farmer, close, and press Cross (9). First the tools, '
+                        'then the items, as many as the other\'s rucksack holds.'),
+            ('!', 'There is one of each tool: farmer 2 starts with nothing and takes tools from the tool chest.'),
+            ('!', 'Only what farmer 1 carries is saved: when saving, farmer 2\'s tools go back to the chest.')],
         'my_ip': 'Addresses of this PC (give one to your friend): %s',
         'need_addr': 'Fill in the host address first.',
         'how': 'How to connect', 'how_list': [
@@ -298,6 +352,7 @@ UI = {
             ('Triângulo (segurar)', 'Na lista de diários: segure 2 segundos para apagar o diário'),
             ('START (segurar)', 'Acelera uma cena'),
             ('Tab (segurar)', 'Acelera o jogo'),
+            ('F5', 'Cheats, durante o jogo'),
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
             ('F12', 'Captura de tela (pasta screenshots)')],
@@ -320,6 +375,24 @@ UI = {
         'join': 'Entrar', 'join_d': 'A fazenda do amigo. Preencha o endereço dele abaixo. Seus saves não são '
         'tocados (o que salvar no coop vai para saves\\netplay).',
         'host_btn': 'Hospedar e jogar', 'join_btn': 'Entrar e jogar',
+        'cheats': 'Cheats', 'cheats_sub': 'Mudam o próprio jogo. O que você salvar com eles fica no save. No '
+        'coop, valem os cheats do anfitrião para os dois.',
+        'p2': 'Coop local', 'p2_sub': 'Dois fazendeiros neste PC, sem internet: você joga com o fazendeiro do '
+        'jogo e outra pessoa ganha um fazendeiro próprio, com uma janela só dele (experimental).',
+        'local': 'Dois fazendeiros neste PC', 'local_d': 'O fazendeiro 1 joga com o teclado ou o primeiro '
+        'controle; o fazendeiro 2, com o segundo controle ou o teclado numérico.',
+        'local_btn': 'Jogar com dois fazendeiros',
+        'p2_keys': 'Controles do fazendeiro 2', 'p2_head': ('', 'Controle 2', 'Teclado numérico'), 'p2_list': [
+            ('Andar', 'Direcional', '8  4  5  6'), ('Usar a ferramenta', 'Quadrado', '7'),
+            ('Olhar, falar, abrir, trocar', 'X', '9'), ('Correr', 'Círculo', '1'),
+            ('Trocar de ferramenta', 'R1', '3'), ('Guardar / trocar o item', 'R2', '+'),
+            ('Assobiar', 'L1 / L2', '/   *'), ('Mochila', 'Triângulo', '0'), ('Menu', 'Start', 'Enter'),
+            ('Mapa', 'Select', '.')],
+        'p2_tips': 'Bom saber', 'p2_tips_list': [
+            ('\u21c4', 'Troca: fique de frente para o outro fazendeiro, bem perto, e aperte X (9). Primeiro as '
+                        'ferramentas, depois os itens, até onde cabe na mochila do outro.'),
+            ('!', 'Há uma de cada ferramenta: o fazendeiro 2 começa sem nada e pega no baú de ferramentas.'),
+            ('!', 'Só o que o fazendeiro 1 carrega é salvo: ao salvar, as ferramentas do 2 voltam para o baú.')],
         'my_ip': 'Endereços deste PC (passe um para o amigo): %s',
         'need_addr': 'Preencha o endereço do anfitrião primeiro.',
         'how': 'Como conectar', 'how_list': [
@@ -352,6 +425,7 @@ UI = {
             ('Triángulo (mantener)', 'En la lista de diarios: mantén 2 segundos para borrar ese diario'),
             ('START (mantener)', 'Acelera una escena'),
             ('Tab (mantener)', 'Acelera el juego'),
+            ('F5', 'Trucos, durante el juego'),
             ('F9', 'Activa / desactiva la cámara a 60 fps'),
             ('F11  /  Alt+Enter', 'Pantalla completa'),
             ('F12', 'Captura de pantalla (carpeta screenshots)')],
@@ -374,6 +448,24 @@ UI = {
         'join': 'Entrar', 'join_d': 'La granja de tu amigo. Escribe su dirección abajo. Tus partidas no se tocan '
         '(lo que guardes en el coop va a saves\\netplay).',
         'host_btn': 'Ser anfitrión y jugar', 'join_btn': 'Entrar y jugar',
+        'cheats': 'Trucos', 'cheats_sub': 'Cambian el juego en sí. Lo que guardes con ellos queda en la partida. '
+        'En el coop valen los trucos del anfitrión para los dos.',
+        'p2': 'Coop local', 'p2_sub': 'Dos granjeros en este PC, sin internet: tú juegas con el granjero del '
+        'juego y otra persona tiene su propio granjero, con una ventana propia (experimental).',
+        'local': 'Dos granjeros en este PC', 'local_d': 'El granjero 1 juega con el teclado o el primer mando; '
+        'el granjero 2, con el segundo mando o el teclado numérico.',
+        'local_btn': 'Jugar con dos granjeros',
+        'p2_keys': 'Controles del granjero 2', 'p2_head': ('', 'Mando 2', 'Teclado numérico'), 'p2_list': [
+            ('Caminar', 'Cruceta', '8  4  5  6'), ('Usar la herramienta', 'Cuadrado', '7'),
+            ('Mirar, hablar, abrir, intercambiar', 'X', '9'), ('Correr', 'Círculo', '1'),
+            ('Cambiar de herramienta', 'R1', '3'), ('Guardar / cambiar el objeto', 'R2', '+'),
+            ('Silbar', 'L1 / L2', '/   *'), ('Mochila', 'Triángulo', '0'), ('Menú', 'Start', 'Enter'),
+            ('Mapa', 'Select', '.')],
+        'p2_tips': 'Bueno saber', 'p2_tips_list': [
+            ('\u21c4', 'Intercambio: ponte delante del otro granjero, muy cerca, y pulsa X (9). Primero las '
+                        'herramientas, después los objetos, hasta lo que cabe en la mochila del otro.'),
+            ('!', 'Hay una de cada herramienta: el granjero 2 empieza sin nada y las toma del baúl.'),
+            ('!', 'Solo se guarda lo que lleva el granjero 1: al guardar, las herramientas del 2 vuelven al baúl.')],
         'my_ip': 'Direcciones de este PC (pásale una a tu amigo): %s',
         'need_addr': 'Escribe primero la dirección del anfitrión.',
         'how': 'Cómo conectarse', 'how_list': [
@@ -576,7 +668,11 @@ def main():
     text = open(INI, encoding='utf-8').read() if os.path.exists(INI) else ''
     loaded, active = read_ini(text)
     cores, threads = cpu_cores()
-    state = {'lang': language(), 'page': 'start', 'dirty': False, 'note': ''}
+    # --page NAME opens that page; --live (F5 in the game): the game is running, every change is saved
+    # at once and the game takes it up (the cheats), and there is no Play
+    live = '--live' in sys.argv
+    first = sys.argv[sys.argv.index('--page') + 1] if '--page' in sys.argv[:-1] else 'start'
+    state = {'lang': language(), 'page': first, 'dirty': False, 'note': ''}
 
     if os.name == 'nt':             # sharp text on scaled screens (Tk then sizes fonts for the DPI)
         try:
@@ -589,6 +685,8 @@ def main():
         except Exception:
             pass
     root = tk.Tk()
+    if live:                                        # over the game's window
+        root.attributes('-topmost', True)
     k = max(1.0, root.winfo_fpixels('1i') / 96.0)     # pixel sizes below are for 96 DPI
 
     def px(n):
@@ -681,6 +779,8 @@ def main():
     def changed(*_):
         state['dirty'] = True
         state['note'] = ''
+        if live:
+            save()
         refresh()
 
     # ---- widgets ----
@@ -1012,8 +1112,8 @@ def main():
         row = tk.Frame(parent, bg=BG)
         row.pack(fill='x', padx=24, pady=(0, 12))
         for i, (name, cmd) in enumerate((('host', coop_host), ('join', coop_join))):
-            row.columnconfigure(i, weight=1, uniform='c')
             outer, f = raised(row, WOOD)
+            row.columnconfigure(i, weight=1, uniform='c')
             outer.grid(row=0, column=i, sticky='nsew', padx=(0 if i == 0 else 8, 0))
             f.configure(padx=14, pady=12)
             labs = [tk.Label(f, text=T(name), font=F['h2'], bg=WOOD, fg=BLUE, anchor='w', justify='left'),
@@ -1037,6 +1137,36 @@ def main():
             w = tk.Label(c, text=what.replace('%s', val('coop_port') or COOP_PORT), font=F['n'], bg=CARD,
                          fg=BLUE, anchor='w', justify='left', wraplength=px(560))
             w.grid(row=i, column=1, sticky='w', padx=(14, 0), pady=2)
+
+    def p2_page(parent):
+        page_head(parent, T('p2'), T('p2_sub'))
+        c = card(parent, wood=True)
+        labs = [tk.Label(c, text=T('local'), font=F['h2'], bg=WOOD, fg=BLUE, anchor='w', justify='left'),
+                tk.Label(c, text=T('local_d'), font=F['s'], bg=WOOD, fg=TEXT_C, anchor='w', justify='left')]
+        labs[0].pack(fill='x')
+        labs[1].pack(fill='x', pady=(4, 10))
+        c.bind('<Configure>', lambda e: [l.configure(wraplength=max(px(80), e.width - px(34))) for l in labs])
+        button(c, T('local_btn'), lambda: play(['--p2']), accent=True, small=True).pack(anchor='w')
+        tk.Frame(parent, bg=BG, height=12).pack()
+        options_page(parent, 'p2')
+        section(parent, T('p2_keys'))
+        tk.Frame(parent, bg=BG, height=6).pack()
+        c = card(parent)
+        for k, h in enumerate(T('p2_head')):
+            tk.Label(c, text=h, font=F['s'], bg=CARD, fg=MUTED, anchor='w').grid(row=0, column=k, sticky='w',
+                                                                                 padx=(0 if k == 0 else 18, 0))
+        for i, row in enumerate(T('p2_list')):
+            for k, what in enumerate(row):
+                tk.Label(c, text=what, font=F['n'] if k == 0 else F['b'], bg=CARD, fg=BLUE, anchor='w').grid(
+                    row=i + 1, column=k, sticky='w', padx=(0 if k == 0 else 18, 0), pady=2)
+        section(parent, T('p2_tips'))
+        tk.Frame(parent, bg=BG, height=6).pack()
+        c = card(parent)
+        c.columnconfigure(1, weight=1)
+        for i, (n, what) in enumerate(T('p2_tips_list')):
+            tk.Label(c, text=n, font=F['b'], bg=CARD, fg=RED, anchor='nw').grid(row=i, column=0, sticky='nw', pady=2)
+            tk.Label(c, text=what, font=F['n'], bg=CARD, fg=BLUE, anchor='w', justify='left',
+                     wraplength=px(560)).grid(row=i, column=1, sticky='w', padx=(14, 0), pady=2)
 
     # ---- window ----
     body = tk.Frame(root, bg=BG)
@@ -1070,7 +1200,10 @@ def main():
         if not os.path.exists(EXE):
             messagebox.showerror('Harvest Moon', T('missing') % EXE)
             return
-        subprocess.Popen([EXE, *args], cwd=HERE)
+        # the game opens this launcher again with F5: it must not inherit this one's PyInstaller
+        # variables (its files are gone by then: "Failed to load Python DLL")
+        env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1')
+        subprocess.Popen([EXE, *args], cwd=HERE, env=env)
         root.destroy()
 
     def coop_port():
@@ -1144,7 +1277,7 @@ def main():
         holder.place(x=2 * m + sw, y=m + px(8), relwidth=1, width=-(3 * m + sw), relheight=1,
                      height=-(2 * m + px(8)))
         pages, navs = {}, {}
-        for name in ('start', 'video', 'game', 'keyboard', 'controller', 'coop'):
+        for name in ('start', 'video', 'game', 'keyboard', 'controller', 'p2', 'coop', 'cheats'):
             # a nav-link; the mouse pointer is already the game's glove
             n = tk.Label(side, text=T(name), font=F['nav'], bg=WOOD, fg=NAV_C, anchor='w', padx=px(10),
                          pady=px(6), cursor=cursor)
@@ -1157,6 +1290,8 @@ def main():
                 start_page(inner)
             elif name == 'coop':
                 coop_page(inner)
+            elif name == 'p2':
+                p2_page(inner)
             else:
                 page_head(inner, T(name), T(name + '_sub'))
                 options_page(inner, name)
@@ -1164,8 +1299,9 @@ def main():
         state['pages'], state['navs'] = pages, navs
         # footer
         status.pack(side='left', padx=16)
-        button(foot, T('play'), play, accent=True).pack(side='right', padx=(6, 16), pady=10)
-        button(foot, T('save'), save).pack(side='right', padx=6, pady=10)
+        if not live:
+            button(foot, T('play'), play, accent=True).pack(side='right', padx=(6, 16), pady=10)
+            button(foot, T('save'), save).pack(side='right', padx=6, pady=10)
         button(foot, T('close'), close).pack(side='right', padx=6, pady=10)
         show(state['page'])
         refresh()

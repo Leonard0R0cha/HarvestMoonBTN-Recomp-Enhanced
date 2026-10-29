@@ -160,12 +160,30 @@ static inline int band_row(int32_t y)
  * in S.cmd. */
 int g_pgxp, g_pgxp_persp;
 uint32_t g_gp0_addr = 0xFFFFFFFFu;
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND) && !defined(GPU_VIEW2)
+/* The second view (p2view.c): what the GPU is sent goes to its copy (gpu_view2.c) too
+ * (g_gpu_route 1), or only there (2: the farm's frame run once more for the second view) */
+#define GPU_ROUTED 1
+int g_gpu_route;
+#define ROUTE(call) do { if (g_gpu_route) { view2_##call; if (g_gpu_route == 2) return; } } while (0)
+/* What a frame's build tells the GPU about its lists (PGXP words, sprite tags and anchors, the
+ * camera): when the second GPU draws lists its own run built (g_view2_built), the game's build of
+ * the same RAM must not overwrite them (its vertices are the first view's: seams) */
+int (*g_view2_built)(void);
+#define ROUTE_BUILD(call) do { if (g_gpu_route == 2 || (g_gpu_route && !(g_view2_built && g_view2_built()))) \
+                                   view2_##call; \
+                               if (g_gpu_route == 2) return; } while (0)
+#else
+#define ROUTE(call) ((void)0)
+#define ROUTE_BUILD(call) ((void)0)
+#endif
 typedef struct { uint32_t value; float x, y, w; int16_t cx, cy; float z; } PgxpWord;   /* z: sprite anchor depth */
 static PgxpWord pgxp_mem[0x200000 / 4];
 static uint32_t cmd_addr[16];
 
 void gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w)
 {
+    ROUTE_BUILD(gpu_pgxp_store(addr, value, ok, x, y, w));
     uint32_t i = (addr & 0x1FFFFCu) >> 2;
     pgxp_mem[i].value = value;
     pgxp_mem[i].x = x;
@@ -202,6 +220,9 @@ static float ref_z;
 static SpriteMap player_map;        /* the player's anchor (its own level), for what it holds */
 static float player_zc;             /* ... the depth of its level, and when it was projected */
 static uint32_t player_gen;
+static SpriteMap farmer2_map;       /* the same for the second farmer (p2.c), drawn by the player's routine */
+static float farmer2_zc;
+static uint32_t farmer2_gen;
 static int32_t sprite_ox, sprite_oy;
 static float line_sq = 1.0f;        /* HUD line in widescreen: squeezed by line_sq about line_c */
 static int32_t line_c;
@@ -232,8 +253,15 @@ static void anchor_set(int x, int y, const SpriteMap *m)
 
 void gpu_sprite_anchor(int x, int y, float dx, float dy, float s, float z, int player)
 {
+    ROUTE_BUILD(gpu_sprite_anchor(x, y, dx, dy, s, z, player));
     SpriteMap m = { dx, dy, s, z, (int16_t)x, (int16_t)y };
-    if (player) {
+    if (player == 3) {                  /* the second farmer: only for what it holds */
+        if (farmer2_gen != anchor_gen || z * s < farmer2_zc) {
+            farmer2_map = m;
+            farmer2_zc = z * s;
+            farmer2_gen = anchor_gen;
+        }
+    } else if (player) {
         if (player_gen != anchor_gen || z * s < player_zc) {    /* the player, not its shadow */
             player_map = m;
             player_zc = z * s;
@@ -260,15 +288,24 @@ static void begin_map(const SpriteMap *m)
 
 void gpu_sprite_begin(int x, int y)
 {
+    ROUTE_BUILD(gpu_sprite_begin(x, y));
     uint32_t i = anchor_slot(x, y);
     g_sprite_on = anchors[i].gen + 1 >= anchor_gen && anchors[i].x == x && anchors[i].y == y;
     begin_map(&anchors[i].m);
 }
 
 /* What the player holds above its head is drawn at the player's position plus an offset: it is
- * placed, scaled and squeezed with the player's anchor, like the player (on = 0: drop old tags). */
+ * placed, scaled and squeezed with the player's anchor, like the player (on = 0: drop old tags;
+ * 2: what the second farmer holds, with its own anchor: with the player's it was squeezed about
+ * the player and came out stretched) */
 void gpu_held_begin(int on)
 {
+    ROUTE_BUILD(gpu_held_begin(on));
+    if (on == 2) {
+        g_sprite_on = farmer2_gen + 1 >= anchor_gen;
+        begin_map(&farmer2_map);
+        return;
+    }
     g_sprite_on = on && player_gen + 1 >= anchor_gen;
     begin_map(&player_map);
 }
@@ -297,6 +334,7 @@ int gpu_display_menu(void)
 void gpu_menu_begin(void)
 {
     static const SpriteMap menu = { 0.0f, 0.0f, 1.0f, 0.0f, MENU_CX, 0 };
+    ROUTE_BUILD(gpu_menu_begin());
     g_sprite_on = 1;
     sprite_map = menu;
 }
@@ -304,12 +342,14 @@ void gpu_menu_begin(void)
 void gpu_hud_begin(int on)
 {
     static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, 0.0f, HUD_CX, 0 };
+    ROUTE_BUILD(gpu_hud_begin(on));
     g_sprite_on = on;
     sprite_map = hud;
 }
 
 void gpu_sprite_alias(int ax, int ay, int bx, int by)
 {
+    ROUTE_BUILD(gpu_sprite_alias(ax, ay, bx, by));
     uint32_t i = anchor_slot(ax, ay);
     if ((ax == bx && ay == by) || anchors[i].gen + 1 < anchor_gen || anchors[i].x != ax || anchors[i].y != ay)
         return;
@@ -318,6 +358,7 @@ void gpu_sprite_alias(int ax, int ay, int bx, int by)
 
 void gpu_sprite_tag(uint32_t addr, uint32_t value)
 {
+    ROUTE_BUILD(gpu_sprite_tag(addr, value));
     uint32_t i = (addr & 0x1FFFFCu) >> 2;
     if (!g_sprite_on) {                     /* built without a known anchor: drop an old sprite tag */
         if (pgxp_mem[i].w < 0.0f)
@@ -1175,6 +1216,14 @@ void GPU_BAND_RUN(const BandItem *ring, uint64_t from, uint64_t to, const Target
 
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
 typedef void (*BandRun)(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
+#ifdef GPU_VIEW2
+/* the second view's GPU has band workers of its own (gpu_view2_band1.c ...): the game's draw the
+ * game's queue at the same time */
+#define band1_run view2_band1_run
+#define band2_run view2_band2_run
+#define band3_run view2_band3_run
+#define band4_run view2_band4_run
+#endif
 void band1_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
 void band2_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
 void band3_run(const BandItem *, uint64_t, uint64_t, const Target *, uint32_t, const uint16_t *, int, int);
@@ -2230,6 +2279,16 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
 void gpu_replay_run(const InterpJob *j, int32_t y0, int32_t y1);      /* gpu_replay.c */
 void gpu_replay_run2(const InterpJob *j, int32_t y0, int32_t y1);     /* gpu_replay2.c */
 void gpu_replay_run3(const InterpJob *j, int32_t y0, int32_t y1);     /* gpu_replay3.c */
+#ifdef GPU_VIEW2
+/* the second view's GPU redraws its in-between pictures with copies of its own (gpu_view2_replay1.c
+ * ...): the game's may be drawing the game's at the same time */
+void view2_replay_run1(const InterpJob *j, int32_t y0, int32_t y1);
+void view2_replay_run2(const InterpJob *j, int32_t y0, int32_t y1);
+void view2_replay_run3(const InterpJob *j, int32_t y0, int32_t y1);
+#define gpu_replay_run view2_replay_run1
+#define gpu_replay_run2 view2_replay_run2
+#define gpu_replay_run3 view2_replay_run3
+#endif
 
 static FrameRec *frec;              /* [2] */
 static Camera cam_cur;
@@ -2254,11 +2313,20 @@ static void frame_record(const uint32_t *p, uint32_t op)
         r->cam = cam_cur;
         if (anchor_gen - cam_cur.gen > 3)
             r->cam.gen = 0;
+#ifdef GPU_VIEW2
+        /* the second view follows the second farmer: its half step, not the player's */
+        r->player = farmer2_gen + 3 >= anchor_gen;
+        r->pcx = farmer2_map.cx;
+        r->pcy = farmer2_map.cy;
+        r->px = (float)farmer2_map.cx + farmer2_map.dx;
+        r->py = (float)farmer2_map.cy + farmer2_map.dy;
+#else
         r->player = player_gen + 3 >= anchor_gen;
         r->pcx = player_map.cx;
         r->pcy = player_map.cy;
         r->px = (float)player_map.cx + player_map.dx;
         r->py = (float)player_map.cy + player_map.dy;
+#endif
     }
     r->last = anchor_gen;
     len = gp0_cmd_len(op);
@@ -2278,6 +2346,7 @@ static void frame_record(const uint32_t *p, uint32_t op)
 
 void gpu_set_camera(const int16_t r[9], int32_t tx, int32_t ty, int32_t tz, uint32_t h, int32_t ofx, int32_t ofy)
 {
+    ROUTE_BUILD(gpu_set_camera(r, tx, ty, tz, h, ofx, ofy));
     int k;
     for (k = 0; k < 9; k++)
         cam_cur.r[k] = (float)r[k] / 4096.0f;
@@ -2400,7 +2469,9 @@ int gpu_interp_prepare(void)
     job->ofy = cur->cam.ofy;
     job->ws = g_sprite_ws;
     job->pcx = INT16_MIN + 2;
-    if (cur->player && prev->player) {
+    /* the player's own half step; not when "the player" jumped (farmer 2 took the player's place
+     * for its menu, and back: its sprite was drawn halfway to the player's) */
+    if (cur->player && prev->player && fabsf(prev->px - cur->px) + fabsf(prev->py - cur->py) < 24.0f) {
         job->pcx = cur->pcx;
         job->pcy = cur->pcy;
         job->pdx = 0.5f * (prev->px - cur->px);
@@ -2453,6 +2524,14 @@ uint32_t gpu_changes(void)
 
 void gpu_write_gp0(uint32_t w)
 {
+#ifdef GPU_ROUTED
+    if (g_gpu_route) {
+        view2_g_gp0_addr = g_gp0_addr;
+        view2_gpu_write_gp0(w);
+        if (g_gpu_route == 2)
+            return;
+    }
+#endif
     changes++;
     switch (S.gp0_state) {
     case GP0_STATE_VRAM_WRITE:
@@ -2484,6 +2563,12 @@ void gpu_dma_write(const uint32_t *src, int words)
 
 uint32_t gpu_read_data(void)
 {
+#ifdef GPU_ROUTED
+    if (g_gpu_route == 2)
+        return view2_gpu_read_data();
+    if (g_gpu_route)
+        view2_gpu_read_data();
+#endif
     if (S.rd_active) {
         uint32_t v = 0;
         int i;
@@ -2555,6 +2640,7 @@ static void soft_reset(void)
 
 void gpu_write_gp1(uint32_t v)
 {
+    ROUTE(gpu_write_gp1(v));
     changes++;
     uint32_t cmd = (v >> 24) & 0x3Fu;
     if (cmd <= 0x01)            /* resets */
@@ -2628,6 +2714,10 @@ void gpu_write_gp1(uint32_t v)
 uint32_t gpu_read_status(void)
 {
     uint32_t s = 0;
+#ifdef GPU_ROUTED
+    if (g_gpu_route == 2)
+        return view2_gpu_read_status();
+#endif
     int interlaced = (S.disp_mode & 0x20u) != 0;
 
     s |= (S.tp_x / 64u) & 0xFu;
@@ -2677,6 +2767,7 @@ uint32_t gpu_read_status(void)
 
 void gpu_vblank(void)
 {
+    ROUTE(gpu_vblank());
     hud_after = 0;
     anchor_gen++;
     if (S.disp_mode & 0x20u)
@@ -2687,6 +2778,7 @@ void gpu_vblank(void)
 
 void gpu_set_line_parity(int odd)
 {
+    ROUTE(gpu_set_line_parity(odd));
     S.line_parity = odd ? 1u : 0u;
 }
 

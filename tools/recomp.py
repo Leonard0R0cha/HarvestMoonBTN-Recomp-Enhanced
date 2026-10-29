@@ -400,7 +400,7 @@ def R(n):
 # builds each tile with the sprite builder. Those tiles are tagged, so the GPU knows which picture
 # is a menu and the frontend shows it at 4:3, from its first frame and with or without a black
 # screen before it.
-SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u && !p2_drawing());',
+SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u ? (p2_drawing() ? 3 : 1) : 0);',
               0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
               0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
               0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
@@ -468,7 +468,10 @@ MODULE_SITE_HOOKS = {
     # 801231F4, newly pressed to 801231F8 (800C41C0 / its jal's delay slot 800C41C8);
     # quick_bag_filter drops R1 / R2 there when there is nothing to switch to.
     # the farm's tick (800C162C) ends at 800C1874: a second farmer's menu turn ends (runtime/p2.c)
-    'GF_FARM': {0x800C41C8: 'quick_bag_filter();', 0x800C1874: 'p2_tick_end();'},
+    # the X action's target (800C7AC0: v1 = its kind - 1, a jump table of 49): farmer 2 does not
+    # open the whole game's things (runtime/p2.c)
+    'GF_FARM': {0x800C41C8: 'quick_bag_filter();', 0x800C1874: 'p2_tick_end();',
+                0x800C7B70: 'R[3] = p2_x_target(R[3]);'},
     'saveload': {0x8012EF28: 'R[3] = memcard_slot_menu(R[3], 0);',
                  0x80130678: 'R[3] = memcard_slot_menu(R[3], 1);',
                  0x80131654: 'R[3] = memcard_slot_menu(R[3], 1);',
@@ -485,8 +488,19 @@ MODULE_SITE_HOOKS = {
 MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] = 2; return; }'},
                       # the player's drawing routine (a0 = its position): a second farmer is drawn
                       # by it first (runtime/p2.c)
-                      # and its turn is taken once more by a second farmer after the player's
-                      'GF_FARM': {0x800CA24C: 'p2_draw(c);', 0x800DB5CC: 'p2_tick(c);', 0x800C162C: 'p2_tick_begin();'}}
+                      # and its turn is taken once more by a second farmer after the player's;
+                      # the faint (tiredness 100) is the whole game's, not the second farmer's
+                      # the farm's frame (tick, drawing, HUD) is run once more first for the
+                      # second farmer's window (runtime/p2view.c)
+                      'GF_FARM': {0x800CA24C: 'p2_draw(c);', 0x800DB5CC: 'p2_tick(c);', 0x800C162C: 'cheats_tick(); p2_tick_begin();',
+                                  0x800C14A0: 'p2view_frame(c);',
+                                  0x800DE3A0: 'if (p2_faint_skipped()) return;',
+                                  0x800CC0F8: 'if (p2_thrown(c)) return;',
+                                  # trading between the farmers in the storage menus (runtime/p2.c)
+                                  0x800F7D34: 'if (p2_trade_move(c)) return;',
+                                  0x800D57A4: 'if (p2_trade_kind(c)) return;',
+                                  # what bumps into the player (animals) bumps into the second farmer too
+                                  0x800BE4A8: 'if (p2_bump(c)) return;'}}
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
