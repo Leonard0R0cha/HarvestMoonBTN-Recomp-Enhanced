@@ -867,7 +867,7 @@ static SDL_Thread *interp_thread[INTERP_WORKERS];
 static SDL_sem *interp_go[INTERP_WORKERS], *interp_done;
 static int interp_pending;          /* workers still drawing */
 static int interp_jobs;             /* 1: the game's in-between picture, 2: farmer 2's window's, 3: both */
-void place_thread(int which);       /* cpu_place.c */
+void place_thread(int which, int nbands);   /* cpu_place.c */
 
 static void interp_work(int k) {
     if (interp_jobs & 1) gpu_interp_work(k);
@@ -876,7 +876,7 @@ static void interp_work(int k) {
 
 static int interp_worker(void *part) {
     int k = (int)(intptr_t)part;
-    place_thread(1 + k);            /* a performance core of its own */
+    place_thread(1 + k, gpu_threads());     /* a performance core of its own */
     /* with few cores the workers share them with the game's thread: the game goes first, and an
      * in-between picture not done in time is skipped (gpu_interp_late) */
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
@@ -892,7 +892,7 @@ static int interp_worker(void *part) {
 static void interp_start(int jobs) {
     interp_jobs = jobs;
     if (!interp_thread[0] && (!g_cfg.headless || getenv("HMBTN_INTERP_THREAD"))) {   /* headless: SDL may be absent */
-        place_thread(0);            /* the game's thread: the other performance cores */
+        place_thread(0, gpu_threads());     /* the game's thread: the other performance cores */
         interp_done = SDL_CreateSemaphore(0);
         for (int k = 0; k < INTERP_WORKERS; k++) {
             interp_go[k] = SDL_CreateSemaphore(0);
