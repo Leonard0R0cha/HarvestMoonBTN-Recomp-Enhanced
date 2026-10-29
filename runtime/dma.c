@@ -32,6 +32,24 @@ static void finish(int n) {
 
 static uint32_t tmpbuf[0x10000 * 2];
 
+static void gpu_list(uint32_t addr, const uint8_t *ram) {
+    int guard = 0;
+    for (;;) {
+        uint32_t hdr, w;
+        memcpy(&hdr, ram + (addr & 0x1FFFFC), 4);
+        uint32_t cnt = hdr >> 24;
+        for (uint32_t k = 0; k < cnt; k++) {
+            g_gp0_addr = (addr + 4 + k * 4) & 0x1FFFFC;   /* for PGXP */
+            memcpy(&w, ram + g_gp0_addr, 4);
+            gpu_write_gp0(w);
+        }
+        if (hdr & 0x800000) break;
+        addr = hdr & 0x1FFFFC;
+        if (++guard > 0x100000) { LOGE("GPU DMA linked list loop"); break; }
+    }
+    g_gp0_addr = 0xFFFFFFFFu;
+}
+
 static void run_channel(int n) {
     DmaChan *d = &ch[n];
     uint32_t chcr = d->chcr;
@@ -41,20 +59,17 @@ static void run_channel(int n) {
     uint32_t addr = d->madr & 0x1FFFFC;
 
     if (n == 2 && sync == 2) {
-        /* GPU linked list (ordering table) */
-        int guard = 0;
-        for (;;) {
-            uint32_t hdr = ram_r32(addr);
-            uint32_t cnt = hdr >> 24;
-            for (uint32_t k = 0; k < cnt; k++) {
-                g_gp0_addr = (addr + 4 + k * 4) & 0x1FFFFC;   /* for PGXP */
-                gpu_write_gp0(ram_r32(g_gp0_addr));
-            }
-            if (hdr & 0x800000) break;
-            addr = hdr & 0x1FFFFC;
-            if (++guard > 0x100000) { LOGE("GPU DMA linked list loop"); break; }
+        /* GPU linked list (ordering table); the second view's GPU walks it in the RAM its own
+         * frame was built in (p2view.c) */
+        int route = g_gpu_route;
+        if (route == 1) g_gpu_route = 0;
+        gpu_list(addr, g_ram);
+        const uint8_t *ram2 = route == 1 ? p2view_ram() : NULL;
+        if (ram2) {
+            g_gpu_route = 2;
+            gpu_list(addr, ram2);
         }
-        g_gp0_addr = 0xFFFFFFFFu;
+        if (route == 1) g_gpu_route = 1;
         d->madr = 0x00FFFFFF;
         finish(n);
         return;
@@ -89,10 +104,12 @@ static void run_channel(int n) {
         }
         break;
     case 3: /* CDROM -> RAM */
+        if (g_view2_run) p2view_abort();
         cdrom_dma_read(tmpbuf, (int)words);
         for (uint32_t k = 0; k < words; k++) ram_w32((addr + (uint32_t)step * k) & 0x1FFFFC, tmpbuf[k]);
         break;
     case 4: /* SPU */
+        if (g_view2_run) break;         /* the farm's frame run again for the second view: no sound */
         spu_catch_up();
         if (from_ram) {
             for (uint32_t k = 0; k < words; k++) tmpbuf[k] = ram_r32((addr + (uint32_t)step * k) & 0x1FFFFC);
@@ -126,6 +143,21 @@ uint32_t dma_read(uint32_t off) {
     if (off == 0x70) return dpcr;
     if (off == 0x74) return dicr;
     return 0;
+}
+
+/* the second view (p2view.c) runs the farm's frame once more and puts everything back */
+size_t dma_state_size(void) { return sizeof ch + sizeof dpcr + sizeof dicr; }
+void dma_save_state(void *dst) {
+    uint8_t *o = dst;
+    memcpy(o, ch, sizeof ch);
+    memcpy(o + sizeof ch, &dpcr, sizeof dpcr);
+    memcpy(o + sizeof ch + sizeof dpcr, &dicr, sizeof dicr);
+}
+void dma_load_state(const void *src) {
+    const uint8_t *i = src;
+    memcpy(ch, i, sizeof ch);
+    memcpy(&dpcr, i + sizeof ch, sizeof dpcr);
+    memcpy(&dicr, i + sizeof ch + sizeof dpcr, sizeof dicr);
 }
 
 void dma_write(uint32_t off, uint32_t v) {

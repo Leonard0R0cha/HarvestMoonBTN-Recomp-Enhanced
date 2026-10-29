@@ -78,6 +78,7 @@ static inline void MEM_W32(uint32_t a, uint32_t v) {
     mem_write32_slow(a, v);
 }
 
+int p2_drawing(void);
 /* PGXP for 2D sprites placed at GTE-projected points (hooks emitted by tools/recomp.py for the
  * object projection and the sprite builders): remember the anchor's sub-pixel offset, look it
  * up when a sprite is built at that anchor, and tag the words the builder writes. */
@@ -86,9 +87,9 @@ static inline void SPRITE_ANCHOR(uint32_t x, uint32_t y, int player) {
     if (g_sprite_tags && gte_sxy_precise(14, &px, &py, &w)) {
         float s = gte_ground_scale(px, py);
         float cx = px - (float)(int32_t)gte_read_ctrl(24) / 65536.0f, cy = py - (float)(int32_t)gte_read_ctrl(25) / 65536.0f;
-        if (player && cx > -2.0f && cx < 2.0f && cy > -2.0f && cy < 2.0f)
+        if (player == 1 && cx > -2.0f && cx < 2.0f && cy > -2.0f && cy < 2.0f)
             player = 2;                 /* at the projection centre: the camera follows the player */
-        if (player && g_interp) {       /* the camera of this frame: the GTE matrix projecting the player */
+        if ((player == 1 || player == 2) && g_interp) {       /* the camera of this frame: the GTE matrix projecting the player */
             int16_t r[9];
             for (int k = 0; k < 4; k++) {
                 uint32_t m = gte_read_ctrl(k);
@@ -138,7 +139,7 @@ static inline void ITEM_BEGIN(uint32_t x, uint32_t y) {
     if (g_item_call && g_sprite_tags) gpu_sprite_begin((int16_t)x, (int16_t)y);
 }
 static inline void HELD_BEGIN(void) {
-    if (g_sprite_tags && !g_item_call) gpu_held_begin(g_held_call);
+    if (g_sprite_tags && !g_item_call) gpu_held_begin(g_held_call ? 1 + p2_drawing() : 0);
 }
 static inline void SPRITE_ALIAS(uint32_t ax, uint32_t ay, uint32_t bx, uint32_t by) {
     if (g_sprite_tags) gpu_sprite_alias((int16_t)ax, (int16_t)ay, (int16_t)bx, (int16_t)by);
@@ -240,6 +241,19 @@ void quick_text_walked(uint32_t next, uint32_t inserted);
 int quick_text_wait_kept(uint32_t ra);
 int quick_music_held(void);
 void quick_bag_filter(void);
+/* p2.c: a second farmer, drawn by the player's drawing routine */
+void p2_draw(CPU *c);
+void p2_tick(CPU *c);
+void p2view_frame(CPU *c);      /* entry of the farm's frame: run once more for farmer 2's window (p2view.c) */
+void p2_tick_begin(void);
+void cheats_tick(void);
+void p2_tick_end(void);
+int p2_faint_skipped(void);
+int p2_thrown(CPU *c);
+int p2_trade_move(CPU *c);
+int p2_trade_kind(CPU *c);
+int p2_bump(CPU *c);
+uint32_t p2_x_target(uint32_t kind);
 void trace_func(CPU *c, uint32_t addr);
 
 #define EVCHK() do { if (UNLIKELY(c->cycles >= c->next_event)) events_run(c); } while (0)

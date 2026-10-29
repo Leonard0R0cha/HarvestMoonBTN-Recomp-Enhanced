@@ -37,7 +37,7 @@ void irq_write_stat(uint32_t v) {
 }
 void irq_write_mask(uint32_t v) { g_imask = v & 0x7FF; g_cpu.next_event = 0; }
 void irq_check(CPU *c) {
-    if (g_in_exception) return;
+    if (g_in_exception || g_view2_run) return;
     if ((g_istat & g_imask) && (c->sr & 1) && (c->sr & 0x400))
         bios_exception_irq(c);
 }
@@ -69,6 +69,7 @@ static uint64_t spu_cycle;
 static int16_t spu_buf[4096 * 2];
 
 void spu_catch_up(void) {
+    if (g_view2_run) return;        /* no sound from the second view's run (p2view.c) */
     uint64_t now = g_cpu.cycles;
     if (now <= spu_cycle) return;
     uint64_t n = (now - spu_cycle) / CYCLES_PER_SAMPLE;
@@ -83,7 +84,9 @@ void spu_catch_up(void) {
 
 void spu_irq_callback(void) { irq_raise(IRQ_SPU); }
 
-/* ------------------------------------------------------------------------- timers */
+/* ------------------------------------------------------------------------- state */
+/* the second view (p2view.c) runs the farm's frame once more and puts everything back: the
+ * events and timers, which reading a timer moves on */
 typedef struct {
     uint32_t mode;
     uint32_t target;
@@ -92,6 +95,24 @@ typedef struct {
     int fired;             /* one-shot mode: IRQ already delivered */
 } Timer;
 static Timer tm[3];
+
+size_t sched_state_size(void) { return sizeof ev_time + sizeof tm + 2 * sizeof(uint32_t); }
+void sched_save_state(void *dst) {
+    uint8_t *o = dst;
+    memcpy(o, ev_time, sizeof ev_time);
+    memcpy(o + sizeof ev_time, tm, sizeof tm);
+    memcpy(o + sizeof ev_time + sizeof tm, &g_istat, 4);
+    memcpy(o + sizeof ev_time + sizeof tm + 4, &g_imask, 4);
+}
+void sched_load_state(const void *src) {
+    const uint8_t *i = src;
+    memcpy(ev_time, i, sizeof ev_time);
+    memcpy(tm, i + sizeof ev_time, sizeof tm);
+    memcpy(&g_istat, i + sizeof ev_time + sizeof tm, 4);
+    memcpy(&g_imask, i + sizeof ev_time + sizeof tm + 4, 4);
+}
+
+/* ------------------------------------------------------------------------- timers */
 
 static int dot_divider(void) {
     uint32_t st = gpu_read_status();
@@ -285,6 +306,7 @@ static void on_vblank(void) {
 static int in_events;
 
 void events_run(CPU *c) {
+    if (g_view2_run) { p2view_events(c); return; }
     in_events++;
     for (;;) {
         uint64_t now = c->cycles;

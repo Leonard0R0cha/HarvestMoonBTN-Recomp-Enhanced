@@ -3,11 +3,11 @@
 
 Needs Python 3 with tkinter (part of the python.org installer). Double-click it, or run
 "python launcher.pyw". Only options you change are written; comments in hmbtn.ini stay.
-English or Portuguese, as the system (PT / EN switches).
+English, Portuguese or Spanish, as the system (the flags in the header switch).
 """
 import os, re, struct, subprocess, sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))  # also as Launcher.exe
 INI = os.path.join(HERE, 'hmbtn.ini')
 EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMoonBTN')
 
@@ -44,7 +44,13 @@ OPTIONS = [
     ('game', 'behaviour', 'record', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
-  + [('controller', 'controller', 'stick_as_dpad', 'bool')]
+  + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
+  + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
+     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4')] \
+  + [('cheats', 'cheats', 'cheat_money', 'edit:0|10000|100000|1000000|9999999'), ('cheats', 'cheats', 'cheat_stamina', 'bool'),
+     ('cheats', 'cheats', 'cheat_clock', 'bool'), ('cheats', 'cheats', 'cheat_bag', 'bool'),
+     ('cheats', 'cheats', 'cheat_items', 'bool'), ('cheats', 'cheats', 'cheat_tools', 'bool')]
+COOP_PORT = '7845'
 
 # Video presets by processor: the picture is drawn by the processor (no graphics card needed), and
 # the internal resolution is what costs. Every effect stays on; only the resolution changes.
@@ -113,6 +119,24 @@ TEXT = {
                      'accident.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
+        'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
+                         '26.12.34.56:7845).'),
+        'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
+        'p2view_upscale': ('Farmer 2\'s window resolution', 'auto = the same as the game\'s window. 1 is the '
+                           'lightest (original 320x240), for a slower PC, but at 30 pictures a second; above the '
+                           'game\'s does nothing.'),
+        'coop_delay': ('Controls delay', 'In frames (1 = 17 ms). Higher if the game stutters on a slow '
+                       'connection; the host\'s counts.'),
+        'cheat_money': ('Money', 'Your money when you reach the farm, once each time the game opens; '
+                        'then it changes as usual. Changed here with F5 in the game: at once. 0 = off; up to 9999999.'),
+        'cheat_stamina': ('Endless stamina', 'The farmers never get tired and never faint.'),
+        'cheat_clock': ('Stop the clock', 'Time stands still (shops and nightfall too). Sleeping still starts the next day.'),
+        'cheat_bag': ('Big rucksack', 'The biggest rucksack (8 places) from the start, for both farmers.'),
+        'cheat_items': ('Materials at most', 'Lumber, fodder, fish food and chicken feed always at 999.'),
+        'cheat_tools': ('Tools at most', 'Sickle, hoe, axe, hammer and watering can at their highest level, for '
+                        'both farmers.'),
+        'coop_p2': ('Two farmers (experimental)', 'The friend gets a farmer of their own, who walks with a pose '
+                    'of their own (stops at walls, fences and water; no tools yet). The host\'s choice counts.'),
     },
     'pt': {
         'upscale': ('Resolução interna', 'Desenha o 3D 2, 3 ou 4 vezes maior que o original 320x240, com bordas '
@@ -156,6 +180,87 @@ TEXT = {
         'emptybag': ('Mochila vazia: R1 / R2 não fazem nada', 'Para não parar de correr ao apertar sem querer.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
+        'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
+                         '26.12.34.56 ou 26.12.34.56:7845).'),
+        'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
+        'p2view_upscale': ('Resolução da janela do fazendeiro 2', 'auto = a mesma da janela do jogo. 1 é a mais '
+                           'leve (original 320x240), para PC mais fraco, mas a 30 imagens por segundo; acima da do '
+                           'jogo não muda nada.'),
+        'coop_delay': ('Atraso dos controles', 'Em quadros (1 = 17 ms). Aumente se o jogo engasgar com internet '
+                       'lenta; vale o do anfitrião.'),
+        'cheat_money': ('Dinheiro', 'O dinheiro da fazenda ao entrar nela, uma vez a cada vez que o jogo abre; '
+                        'depois ele muda normalmente. Mudado aqui pelo F5 no jogo: na hora. 0 = desligado; até 9999999.'),
+        'cheat_stamina': ('Estamina infinita', 'Os fazendeiros nunca cansam e nunca desmaiam.'),
+        'cheat_clock': ('Parar o relógio', 'O tempo não passa (lojas e noite também). Dormir ainda começa o dia seguinte.'),
+        'cheat_bag': ('Mochila grande', 'A maior mochila (8 lugares) desde o começo, para os dois fazendeiros.'),
+        'cheat_items': ('Materiais no máximo', 'Madeira, feno, comida de peixe e ração de galinha sempre em 999.'),
+        'cheat_tools': ('Ferramentas no máximo', 'Foice, enxada, machado, marreta e regador no nível mais alto, para '
+                        'os dois fazendeiros.'),
+        'coop_p2': ('Dois fazendeiros (experimental)', 'O amigo ganha um fazendeiro próprio, que anda com pose '
+                    'própria (para em paredes, cercas e água; ainda sem ferramentas). Vale a escolha do anfitrião.'),
+    },
+    'es': {
+        'upscale': ('Resolución interna', 'Dibuja el 3D 2, 3 o 4 veces más grande que el original 320x240, con '
+                    'bordes más suaves (1 = original). Dibuja el procesador, así que cada nivel cuesta mucho más: '
+                    '2 para 2 núcleos, 3 para 4 núcleos, 4 para 6 o más.'),
+        'widescreen': ('Pantalla panorámica', 'Muestra más de la granja y del pueblo a los lados. Título, menús y '
+                       'vídeos siguen en 4:3. Con resolución 2 o más, las personas y el HUD mantienen su forma.'),
+        'pgxp': ('3D preciso (PGXP)', 'Se acabaron los polígonos temblorosos, el temblor típico de PlayStation.'),
+        'perspective': ('Texturas con perspectiva correcta', 'Sin deformación en suelos y paredes grandes. Cuesta '
+                        'algo de velocidad.'),
+        'sprite_depth': ('Los objetos se achican con la distancia', 'Tocones, rocas y personas se ven más '
+                         'pequeños a lo lejos, como el suelo bajo ellos.'),
+        'interp': ('Cámara a 60 fps', 'La cámara y el escenario se mueven 60 veces por segundo (el juego sigue a '
+                   '30). Usa núcleos libres del procesador; F9 lo alterna durante el juego.'),
+        'texturepack': ('Paquete de texturas', 'Dibuja personas, animales, objetos del campo, texto y el HUD con las '
+                        'imágenes de la carpeta textures (no el mundo 3D). Ver docs/GRAPHICS.md.'),
+        'dumptextures': ('Exportar texturas', 'Guarda cada textura de sprite que el juego muestra en textures/dump, '
+                         'para crear un paquete de texturas.'),
+        'drawthreads': ('Hilos de dibujo', 'Hilos del procesador que dibujan el 3D juntos, cada uno una parte de '
+                        'la imagen (la imagen es la misma). auto = según el procesador; 0 = solo el del juego.'),
+        'scale': ('Tamaño de la ventana', 'Múltiplo de 320x240, fuera de pantalla completa.'),
+        'fullscreen': ('Empezar en pantalla completa', 'F11 o Alt+Enter la alterna en cualquier momento.'),
+        'scaling': ('Ajuste a la pantalla', 'sharp-bilinear: píxeles nítidos y parejos (recomendado). sharp: '
+                    'píxel más cercano. smooth: suave.'),
+        'aspect43': ('Imagen 4:3', 'Como en un televisor de tubo. Apagado: píxeles cuadrados.'),
+        'disc': ('Disco del juego', 'Tu copia del juego: imagen .cue/.bin o paquete .pak. Vacío: la carpeta disc '
+                 'o el HarvestMoonBTN.pak junto al juego.'),
+        'savedir': ('Carpeta de memory cards', 'Donde se guardan las memory cards (card1.mcd ... card1_4.mcd). '
+                    'Vacío: la carpeta saves.'),
+        'autoslot': ('Usar directamente la ranura 1', 'Guardar y cargar sin preguntar la ranura de la memory '
+                     'card.'),
+        'fastcard': ('Memory card rápida', 'Sin esperas mientras la tarjeta se busca, se lee o se escribe.'),
+        'quickui': ('Menús rápidos', 'Las ventanas se abren al instante, transiciones más cortas.'),
+        'fastload': ('Carga rápida', 'Velocidad máxima en "Now Loading" y al cruzar puertas.'),
+        'fastcd': ('Velocidad del disco', 'Pausas de carga más cortas: 0 = original, 1 = 4x, 8 = 8x, 16 = 16x. '
+                   'La música no se ve afectada.'),
+        'textspeed': ('Velocidad del texto', 'Qué tan rápido aparece el diálogo: 1 = original, hasta 16.'),
+        'skipscenes': ('Acelerar escenas', 'Mantén START durante una escena.'),
+        'fastforward': ('Acelerar con Tab', 'Mantén Tab para que el juego corra a velocidad máxima.'),
+        'overclock': ('Velocidad del procesador', 'En porcentaje: 100 = la PlayStation original (se ralentiza en '
+                      'escenas cargadas), 200 = sin ralentizaciones.'),
+        'emptybag': ('Mochila vacía: R1 / R2 no hacen nada', 'Para no dejar de correr si los pulsas sin querer.'),
+        'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
+                   'errores.'),
+        'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),
+        'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
+                         '26.12.34.56 o 26.12.34.56:7845).'),
+        'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
+        'p2view_upscale': ('Resolución de la ventana del granjero 2', 'auto = la misma que la ventana del juego. 1 '
+                           'es la más ligera (original 320x240), para un PC más lento, pero a 30 imágenes por segundo; '
+                           'más que la del juego no cambia nada.'),
+        'coop_delay': ('Retraso de los controles', 'En fotogramas (1 = 17 ms). Más alto si el juego se traba '
+                       'con internet lenta; vale el del anfitrión.'),
+        'cheat_money': ('Dinero', 'El dinero de la granja al llegar a ella, una vez cada vez que se abre el '
+                        'juego; después cambia como siempre. Cambiado aquí con F5 en el juego: al momento. 0 = desactivado; hasta 9999999.'),
+        'cheat_stamina': ('Energía infinita', 'Los granjeros nunca se cansan ni se desmayan.'),
+        'cheat_clock': ('Parar el reloj', 'El tiempo no pasa (tiendas y noche también). Dormir sigue empezando el día siguiente.'),
+        'cheat_bag': ('Mochila grande', 'La mochila más grande (8 huecos) desde el principio, para los dos granjeros.'),
+        'cheat_items': ('Materiales al máximo', 'Madera, forraje, comida de peces y pienso de gallina siempre en 999.'),
+        'cheat_tools': ('Herramientas al máximo', 'Hoz, azada, hacha, martillo y regadera en su nivel más alto, para '
+                        'los dos granjeros.'),
+        'coop_p2': ('Dos granjeros (experimental)', 'Tu amigo tiene su propio granjero, que camina con pose '
+                    'propia (se detiene en paredes, vallas y agua; aún sin herramientas). Vale lo que elija el anfitrión.'),
     },
 }
 BUTTON_NAMES = {
@@ -164,6 +269,9 @@ BUTTON_NAMES = {
            'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
     'pt': {'up': 'Cima', 'down': 'Baixo', 'left': 'Esquerda', 'right': 'Direita', 'cross': 'Xis (X)',
            'circle': 'Círculo (O)', 'square': 'Quadrado', 'triangle': 'Triângulo', 'l1': 'L1', 'r1': 'R1',
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+    'es': {'up': 'Arriba', 'down': 'Abajo', 'left': 'Izquierda', 'right': 'Derecha', 'cross': 'Equis (X)',
+           'circle': 'Círculo (O)', 'square': 'Cuadrado', 'triangle': 'Triángulo', 'l1': 'L1', 'r1': 'R1',
            'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
 }
 UI = {
@@ -188,6 +296,7 @@ UI = {
             ('Triangle (hold)', 'On a diary list: hold 2 seconds to delete that diary'),
             ('START (hold)', 'Fast-forward a cutscene'),
             ('Tab (hold)', 'Fast-forward the game'),
+            ('F5', 'Cheats, while playing'),
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
             ('F12', 'Screenshot (screenshots folder)')],
@@ -202,6 +311,41 @@ UI = {
         'close': 'Close', 'save': 'Save', 'play': 'Save and play',
         'unsaved': 'Unsaved changes', 'saved': 'Saved', 'ask_save': 'Save your changes?',
         'missing': '%s is missing.',
+        'coop': 'Online co-op',
+        'coop_sub': 'Play with a friend over the internet: each one runs the game on their own PC and both '
+        'control the same farmer. Your normal game is not affected.',
+        'host': 'Host', 'host_d': 'Your farm: your memory cards and settings. Your friend joins you. Saving '
+        'in co-op writes to your memory cards.',
+        'join': 'Join', 'join_d': 'Your friend\'s farm. Fill in their address below. Your own saves are not '
+        'touched (co-op saves go to saves\\netplay).',
+        'host_btn': 'Host and play', 'join_btn': 'Join and play',
+        'cheats': 'Cheats', 'cheats_sub': 'Changes to the game itself. What you save with them stays in the '
+        'save. In co-op, the host\'s cheats count for both.',
+        'p2': 'Local co-op', 'p2_sub': 'Two farmers on this PC, no internet: you play the game\'s farmer and a '
+        'second player gets a farmer of their own, with a window of their own (experimental).',
+        'local': 'Two farmers on this PC', 'local_d': 'Farmer 1 plays with the keyboard or the first controller; '
+        'farmer 2 with the second controller or the numeric keypad.',
+        'local_btn': 'Play with two farmers',
+        'p2_keys': 'Farmer 2\'s controls', 'p2_head': ('', 'Controller 2', 'Numeric keypad'), 'p2_list': [
+            ('Walk', 'D-pad', '8  4  5  6'), ('Use the tool', 'Square', '7'),
+            ('Look, talk, open, trade', 'Cross', '9'), ('Run', 'Circle', '1'), ('Change tools', 'R1', '3'),
+            ('Put away / change the item', 'R2', '+'), ('Whistle', 'L1 / L2', '/   *'),
+            ('Rucksack', 'Triangle', '0'), ('Menu', 'Start', 'Enter'), ('Map', 'Select', '.')],
+        'p2_tips': 'Good to know', 'p2_tips_list': [
+            ('\u21c4', 'Trading: stand in front of the other farmer, close, and press Cross (9). First the tools, '
+                        'then the items, as many as the other\'s rucksack holds.'),
+            ('!', 'There is one of each tool: farmer 2 starts with nothing and takes tools from the tool chest.'),
+            ('!', 'Only what farmer 1 carries is saved: when saving, farmer 2\'s tools go back to the chest.')],
+        'my_ip': 'Addresses of this PC (give one to your friend): %s',
+        'need_addr': 'Fill in the host address first.',
+        'how': 'How to connect', 'how_list': [
+            ('1', 'Both need this same game folder version (the same HarvestMoonBTN.exe).'),
+            ('2', 'Easiest: both install Radmin VPN or ZeroTier and join the same network; the host gives the '
+                  'address it shows there (26.x.x.x).'),
+            ('3', 'Or the host opens TCP port %s in the router and gives the internet address.'),
+            ('4', 'The host presses Host and play first, then the friend presses Join and play. If Windows asks '
+                  'about the firewall, allow it.'),
+            ('!', 'Tab and F1-F4 are off in co-op; the window title shows the connection.')],
     },
     'pt': {
         'subtitle': 'Configurações do port para PC', 'start': 'Início', 'video': 'Vídeo', 'game': 'Jogo',
@@ -224,6 +368,7 @@ UI = {
             ('Triângulo (segurar)', 'Na lista de diários: segure 2 segundos para apagar o diário'),
             ('START (segurar)', 'Acelera uma cena'),
             ('Tab (segurar)', 'Acelera o jogo'),
+            ('F5', 'Cheats, durante o jogo'),
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
             ('F12', 'Captura de tela (pasta screenshots)')],
@@ -238,6 +383,115 @@ UI = {
         'close': 'Fechar', 'save': 'Salvar', 'play': 'Salvar e jogar',
         'unsaved': 'Alterações não salvas', 'saved': 'Salvo', 'ask_save': 'Salvar as alterações?',
         'missing': '%s não foi encontrado.',
+        'coop': 'Coop online',
+        'coop_sub': 'Jogue com um amigo pela internet: cada um roda o jogo no próprio PC e os dois controlam o '
+        'mesmo fazendeiro. O seu jogo normal não muda.',
+        'host': 'Hospedar', 'host_d': 'A sua fazenda: seus memory cards e configurações. O amigo entra no seu '
+        'jogo. Salvar no coop grava nos seus memory cards.',
+        'join': 'Entrar', 'join_d': 'A fazenda do amigo. Preencha o endereço dele abaixo. Seus saves não são '
+        'tocados (o que salvar no coop vai para saves\\netplay).',
+        'host_btn': 'Hospedar e jogar', 'join_btn': 'Entrar e jogar',
+        'cheats': 'Cheats', 'cheats_sub': 'Mudam o próprio jogo. O que você salvar com eles fica no save. No '
+        'coop, valem os cheats do anfitrião para os dois.',
+        'p2': 'Coop local', 'p2_sub': 'Dois fazendeiros neste PC, sem internet: você joga com o fazendeiro do '
+        'jogo e outra pessoa ganha um fazendeiro próprio, com uma janela só dele (experimental).',
+        'local': 'Dois fazendeiros neste PC', 'local_d': 'O fazendeiro 1 joga com o teclado ou o primeiro '
+        'controle; o fazendeiro 2, com o segundo controle ou o teclado numérico.',
+        'local_btn': 'Jogar com dois fazendeiros',
+        'p2_keys': 'Controles do fazendeiro 2', 'p2_head': ('', 'Controle 2', 'Teclado numérico'), 'p2_list': [
+            ('Andar', 'Direcional', '8  4  5  6'), ('Usar a ferramenta', 'Quadrado', '7'),
+            ('Olhar, falar, abrir, trocar', 'X', '9'), ('Correr', 'Círculo', '1'),
+            ('Trocar de ferramenta', 'R1', '3'), ('Guardar / trocar o item', 'R2', '+'),
+            ('Assobiar', 'L1 / L2', '/   *'), ('Mochila', 'Triângulo', '0'), ('Menu', 'Start', 'Enter'),
+            ('Mapa', 'Select', '.')],
+        'p2_tips': 'Bom saber', 'p2_tips_list': [
+            ('\u21c4', 'Troca: fique de frente para o outro fazendeiro, bem perto, e aperte X (9). Primeiro as '
+                        'ferramentas, depois os itens, até onde cabe na mochila do outro.'),
+            ('!', 'Há uma de cada ferramenta: o fazendeiro 2 começa sem nada e pega no baú de ferramentas.'),
+            ('!', 'Só o que o fazendeiro 1 carrega é salvo: ao salvar, as ferramentas do 2 voltam para o baú.')],
+        'my_ip': 'Endereços deste PC (passe um para o amigo): %s',
+        'need_addr': 'Preencha o endereço do anfitrião primeiro.',
+        'how': 'Como conectar', 'how_list': [
+            ('1', 'Os dois precisam desta mesma versão do jogo (o mesmo HarvestMoonBTN.exe).'),
+            ('2', 'Mais fácil: os dois instalam o Radmin VPN ou o ZeroTier e entram na mesma rede; o anfitrião '
+                  'passa o endereço que aparece lá (26.x.x.x).'),
+            ('3', 'Ou o anfitrião abre a porta TCP %s no roteador e passa o endereço da internet.'),
+            ('4', 'O anfitrião clica em Hospedar e jogar primeiro; depois o amigo clica em Entrar e jogar. Se o '
+                  'Windows perguntar sobre o firewall, permita.'),
+            ('!', 'No coop, Tab e F1-F4 ficam desligados; o título da janela mostra a conexão.')],
+    },
+    'es': {
+        'subtitle': 'Ajustes del port para PC', 'start': 'Inicio', 'video': 'Vídeo', 'game': 'Juego',
+        'keyboard': 'Teclado', 'controller': 'Mando',
+        'welcome': '¡Bienvenido a la granja!', 'welcome_sub': 'Elige la configuración de tu PC y pulsa Jugar. '
+        'Todo se puede ajustar en las otras páginas.',
+        'data_ok': 'Juego encontrado: %s', 'data_missing': 'No se encontró el disco del juego. Pon el .cue/.bin '
+        'en la carpeta disc o elígelo en la página Juego.',
+        'pc': 'Este PC: %d núcleos, %d hilos. No hace falta tarjeta gráfica: el procesador dibuja la imagen.',
+        'quick': 'Configuración rápida', 'quick_sub': 'Todos los efectos siguen activos (3D preciso, '
+        'perspectiva, cámara a 60 fps); solo cambia la resolución.',
+        'preset2': 'PC con 2 núcleos', 'preset4': 'PC con 4 núcleos', 'preset6': 'PC con 6 o más núcleos',
+        'preset2_d': 'Resolución 2 (640x480). Fluido en procesadores sencillos o antiguos.',
+        'preset4_d': 'Resolución 3 (960x720). Nítido y fluido en la mayoría de PCs.',
+        'preset6_d': 'Resolución 4 (1280x960). La más nítida; necesita un procesador potente.',
+        'use': 'Usar este', 'in_use': 'En uso', 'recommended': 'Recomendado para este PC',
+        'keys': 'Teclas útiles', 'keys_list': [
+            ('F1 - F4', 'Memory card 1 - 4 en la ranura 1 (se ve en el título de la ventana)'),
+            ('L1 / R1  (Q / W)', 'En la lista de diarios: memory card anterior / siguiente'),
+            ('Triángulo (mantener)', 'En la lista de diarios: mantén 2 segundos para borrar ese diario'),
+            ('START (mantener)', 'Acelera una escena'),
+            ('Tab (mantener)', 'Acelera el juego'),
+            ('F5', 'Trucos, durante el juego'),
+            ('F9', 'Activa / desactiva la cámara a 60 fps'),
+            ('F11  /  Alt+Enter', 'Pantalla completa'),
+            ('F12', 'Captura de pantalla (carpeta screenshots)')],
+        'applied': '%s elegido. Guarda para conservarlo.',
+        'video_sub': 'La imagen la dibuja el procesador: la resolución es lo que más cuesta.',
+        'game_sub': 'Archivos del juego, memory cards y atajos que ahorran tiempo.',
+        'keyboard_sub': 'Nombres de teclas separados por comas (p. ej. X,Space,K). Vacío: el predeterminado.',
+        'controller_sub': 'Botones del mando: a b x y back start leftshoulder rightshoulder lefttrigger '
+        'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Vacío: el predeterminado.',
+        'need_up2': 'Necesita resolución 2 o más', 'need_pgxp': 'Necesita el 3D preciso (PGXP)',
+        'on': 'Activado', 'off': 'Desactivado', 'browse': 'Buscar...', 'default': 'predeterminado: %s',
+        'close': 'Cerrar', 'save': 'Guardar', 'play': 'Guardar y jugar',
+        'unsaved': 'Cambios sin guardar', 'saved': 'Guardado', 'ask_save': '¿Guardar los cambios?',
+        'missing': 'No se encontró %s.',
+        'coop': 'Coop en línea',
+        'coop_sub': 'Juega con un amigo por internet: cada uno corre el juego en su PC y los dos controlan al '
+        'mismo granjero. Tu juego normal no cambia.',
+        'host': 'Ser anfitrión', 'host_d': 'Tu granja: tus memory cards y ajustes. Tu amigo entra en tu juego. '
+        'Guardar en el coop escribe en tus memory cards.',
+        'join': 'Entrar', 'join_d': 'La granja de tu amigo. Escribe su dirección abajo. Tus partidas no se tocan '
+        '(lo que guardes en el coop va a saves\\netplay).',
+        'host_btn': 'Ser anfitrión y jugar', 'join_btn': 'Entrar y jugar',
+        'cheats': 'Trucos', 'cheats_sub': 'Cambian el juego en sí. Lo que guardes con ellos queda en la partida. '
+        'En el coop valen los trucos del anfitrión para los dos.',
+        'p2': 'Coop local', 'p2_sub': 'Dos granjeros en este PC, sin internet: tú juegas con el granjero del '
+        'juego y otra persona tiene su propio granjero, con una ventana propia (experimental).',
+        'local': 'Dos granjeros en este PC', 'local_d': 'El granjero 1 juega con el teclado o el primer mando; '
+        'el granjero 2, con el segundo mando o el teclado numérico.',
+        'local_btn': 'Jugar con dos granjeros',
+        'p2_keys': 'Controles del granjero 2', 'p2_head': ('', 'Mando 2', 'Teclado numérico'), 'p2_list': [
+            ('Caminar', 'Cruceta', '8  4  5  6'), ('Usar la herramienta', 'Cuadrado', '7'),
+            ('Mirar, hablar, abrir, intercambiar', 'X', '9'), ('Correr', 'Círculo', '1'),
+            ('Cambiar de herramienta', 'R1', '3'), ('Guardar / cambiar el objeto', 'R2', '+'),
+            ('Silbar', 'L1 / L2', '/   *'), ('Mochila', 'Triángulo', '0'), ('Menú', 'Start', 'Enter'),
+            ('Mapa', 'Select', '.')],
+        'p2_tips': 'Bueno saber', 'p2_tips_list': [
+            ('\u21c4', 'Intercambio: ponte delante del otro granjero, muy cerca, y pulsa X (9). Primero las '
+                        'herramientas, después los objetos, hasta lo que cabe en la mochila del otro.'),
+            ('!', 'Hay una de cada herramienta: el granjero 2 empieza sin nada y las toma del baúl.'),
+            ('!', 'Solo se guarda lo que lleva el granjero 1: al guardar, las herramientas del 2 vuelven al baúl.')],
+        'my_ip': 'Direcciones de este PC (pásale una a tu amigo): %s',
+        'need_addr': 'Escribe primero la dirección del anfitrión.',
+        'how': 'Cómo conectarse', 'how_list': [
+            ('1', 'Los dos necesitan esta misma versión del juego (el mismo HarvestMoonBTN.exe).'),
+            ('2', 'Lo más fácil: los dos instalan Radmin VPN o ZeroTier y entran en la misma red; el anfitrión '
+                  'pasa la dirección que aparece ahí (26.x.x.x).'),
+            ('3', 'O el anfitrión abre el puerto TCP %s en el router y pasa la dirección de internet.'),
+            ('4', 'El anfitrión pulsa Ser anfitrión y jugar primero; luego el amigo pulsa Entrar y jugar. Si '
+                  'Windows pregunta por el firewall, permítelo.'),
+            ('!', 'En el coop, Tab y F1-F4 están desactivados; el título de la ventana muestra la conexión.')],
     },
 }
 
@@ -294,6 +548,12 @@ def selftest():
     assert read_ini(set_ini(t, 'keyboard', 'key_up', 'W'))[0]['key_up'] == 'W'
     assert cpu_cores()[0] >= 1 and language() in UI and preset_for(2) == 0 and preset_for(8) == 2
     assert all(set(TEXT[l]) == set(TEXT['en']) and set(UI[l]) == set(UI['en']) for l in UI)
+    assert mix('#000000', '#ffffff', 0.5) == '#808080'
+    import tempfile
+    cur = os.path.join(tempfile.gettempdir(), 'hmbtn_selftest.cur')
+    write_cursor(cur, [[(255, 255, 255), None]] * 29, (1, 0))
+    assert os.path.getsize(cur) == 22 + 40 + 32 * 32 * 4 + 32 * 4
+    os.remove(cur)
     print('selftest ok')
 
 
@@ -340,10 +600,10 @@ def language():
     try:
         if os.name == 'nt':
             import ctypes
-            return 'pt' if ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x16 else 'en'
+            return {0x16: 'pt', 0x0A: 'es'}.get(ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF, 'en')
         import locale
-        lang = locale.getlocale()[0] or os.environ.get('LANG', '')
-        return 'pt' if lang.lower().startswith('pt') else 'en'
+        lang = (locale.getlocale()[0] or os.environ.get('LANG', '')).lower()[:2]
+        return lang if lang in ('pt', 'es') else 'en'
     except Exception:
         return 'en'
 
@@ -365,21 +625,70 @@ def game_data(disc):
     return None
 
 
-# colours: a farm in the morning
-BG, CARD, LINE_C = '#f5efe0', '#fffdf7', '#e3d8bd'
-GREEN, GREEN_HI, GREEN_LO = '#2f5d3a', '#3f7a4d', '#24482d'
-ACCENT, ACCENT_HI = '#e08a2e', '#c97520'
-TEXT_C, MUTED, WARN, OK = '#2b2a26', '#6e685a', '#b5651d', '#2e7d32'
+# looks: harvestmoonbtn.com.br, which dresses like the game's menus. Colours from its stylesheet, pictures
+# from its assets (launcher-assets next to this file; without them the launcher still works, plainer).
+def local_ips():
+    """this PC's IPv4 addresses a friend could reach (LAN, Radmin VPN, ZeroTier...), main one first"""
+    import socket
+    ips = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))                    # sends nothing: only picks the outgoing interface
+        ips.append(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        ips += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    return [ip for i, ip in enumerate(ips) if ip not in ips[:i] and not ip.startswith('127.')]
+
+
+ASSETS = os.path.join(HERE, 'launcher-assets')
+BG, CARD, LINE_C = '#ffffff', '#ffffff', '#e6d7b8'
+# .game-box: a pale-to-golden gradient in a 4px frame, light above and left, brown right and below.
+# WOOD marks the widgets that take the gradient's colour at their height.
+WOOD, WOOD_TOP, WOOD_BOT, WOOD_HI = '#f4d6a3', '#f2debb', '#f6cd8b', '#ecc07c'
+BOX_LIGHT, BOX_DARK = '#fcebd0', '#b38c47'
+SITE_BG = '#cfdcf2'                                 # under the tiled background, until it is drawn
+TEXT_C, MUTED, WARN, OK = '#212529', '#0000ff', '#b5651d', '#2e7d32'
+RED, BLUE, NAV_C, SWITCH = '#ff0000', '#0000ff', '#343a40', '#3b4b95'
+
+
+def mix(a, b, t):
+    """the colour a fraction t of the way from a to b"""
+    a, b = [int(a[i:i + 2], 16) for i in (1, 3, 5)], [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return '#%02x%02x%02x' % tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+
+
+def write_cursor(path, rows, hotspot):
+    """a Windows .cur file from rows of (r, g, b) or None (see-through), at most 64x64"""
+    n = 32 if max(len(rows), max(len(r) for r in rows)) <= 32 else 64
+    rows = [list(r) + [None] * (n - len(r)) for r in rows] + [[None] * n] * (n - len(rows))
+    pix, mask = b'', b''
+    for row in reversed(rows):                          # bottom-up, as bitmaps are
+        for c in row:
+            pix += bytes([c[2], c[1], c[0], 255]) if c else b'\0\0\0\0'
+        mask += int(''.join('1' if c is None else '0' for c in row), 2).to_bytes(n // 8, 'big')
+    img = struct.pack('<IiiHHIIiiII', 40, n, 2 * n, 1, 32, 0, len(pix) + len(mask), 0, 0, 0, 0) + pix + mask
+    with open(path, 'wb') as f:
+        f.write(struct.pack('<HHH', 0, 2, 1) + struct.pack('<BBBBHHII', n % 256, n % 256, 0, 0, hotspot[0],
+                                                           hotspot[1], len(img), 22) + img)
 
 
 def main():
     import tkinter as tk
-    from tkinter import ttk, filedialog, messagebox
+    from tkinter import ttk, filedialog, messagebox, font as tkfont
 
     text = open(INI, encoding='utf-8').read() if os.path.exists(INI) else ''
     loaded, active = read_ini(text)
     cores, threads = cpu_cores()
-    state = {'lang': language(), 'page': 'start', 'dirty': False, 'note': ''}
+    # --page NAME opens that page; --live (F5 in the game): the game is running, every change is saved
+    # at once and the game takes it up (the cheats), and there is no Play
+    live = '--live' in sys.argv
+    first = sys.argv[sys.argv.index('--page') + 1] if '--page' in sys.argv[:-1] else 'start'
+    state = {'lang': language(), 'page': first, 'dirty': False, 'note': ''}
 
     if os.name == 'nt':             # sharp text on scaled screens (Tk then sizes fonts for the DPI)
         try:
@@ -387,26 +696,74 @@ def main():
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except Exception:
             pass
+        try:                        # its own taskbar button, with the port's icon instead of Python's
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('HarvestMoonBTN.Launcher')
+        except Exception:
+            pass
     root = tk.Tk()
+    if live:                                        # over the game's window
+        root.attributes('-topmost', True)
     k = max(1.0, root.winfo_fpixels('1i') / 96.0)     # pixel sizes below are for 96 DPI
 
     def px(n):
         return int(n * k)
+    zoom = 2 if k >= 1.5 else 1                       # the site's little pictures, doubled on scaled screens
+
+    def picture(name, big=True, **kw):
+        """a picture from launcher-assets (doubled with zoom if big), or None"""
+        try:
+            im = tk.PhotoImage(file=os.path.join(ASSETS, name), **kw)
+        except Exception:
+            return None
+        return im.zoom(zoom) if big and zoom > 1 else im
+    P = {'pointer': picture('game-pointer.png'), 'heart': picture('heart-level.png'),
+         'click': picture('game-click-icon.png'), 'tile': picture('background.png', False),
+         'header': picture('header-%d.png' % min((420, 520, 640), key=lambda w: abs(w - px(420))), False),
+         'flag_en': picture('flag-en.png'), 'flag_es': picture('flag-es.png'), 'flag_pt': picture('flag-pt.png'),
+         'dialog': [picture('dialog-end.gif', format='gif -index %d' % i) for i in (0, 1)]}
+
+    cursor = 'hand2'               # all over the window: the game's glove, if Windows takes it
+    if os.name == 'nt' and P['pointer']:
+        try:
+            import tempfile
+            im = P['pointer']
+            rows = [[None if im.transparency_get(x, y) else im.get(x, y) for x in range(im.width())]
+                    for y in range(im.height())]
+            tip = next((max(x for x, c in enumerate(r) if c), y) for y, r in enumerate(rows) if any(r))
+            cur = os.path.join(tempfile.gettempdir(), 'hmbtn_pointer.cur')
+            write_cursor(cur, rows, tip)
+            root.configure(cursor='@' + cur.replace('\\', '/').replace(' ', '\\ '))
+            cursor = root.cget('cursor')
+        except Exception:
+            pass
+    root.configure(cursor=cursor)  # inherited by every widget; text fields keep their I-beam
+    root.option_add('*Toplevel.cursor', cursor)
+    root.option_add('*TCombobox*Listbox.cursor', cursor)
     root.title('Harvest Moon: Back to Nature')
+    try:                           # the port's icon, the same one as in HarvestMoonBTN.exe
+        if os.name == 'nt':
+            root.iconbitmap(default=os.path.join(ASSETS, 'icon.ico'))
+        else:
+            root.iconphoto(True, tk.PhotoImage(file=os.path.join(ASSETS, 'icon.png')))
+    except Exception:
+        pass
     root.geometry('%dx%d' % (px(940), px(700)))
     root.minsize(px(780), px(560))
     root.configure(bg=BG)
     fam = 'Segoe UI' if os.name == 'nt' else 'TkDefaultFont'
-    F = {'h1': (fam, 18, 'bold'), 'h2': (fam, 13, 'bold'), 'b': (fam, 10, 'bold'), 'n': (fam, 10),
-         's': (fam, 9), 'nav': (fam, 11)}
+    # the site's sizes: 20px titles, 16px menu, 14px text
+    F = {'h1': (fam, 15), 'h2': (fam, 14, 'bold'), 'b': (fam, 10, 'bold'), 'n': (fam, 10),
+         's': (fam, 10), 'nav': (fam, 12), 'navb': (fam, 12, 'bold')}
 
     st = ttk.Style(root)
     st.theme_use('clam')
-    st.configure('TCombobox', fieldbackground='white', background=CARD, arrowcolor=GREEN, padding=4)
+    st.configure('TCombobox', fieldbackground='white', background=WOOD_TOP, arrowcolor=SWITCH, padding=4,
+                 bordercolor=BOX_DARK)
     st.map('TCombobox', fieldbackground=[('readonly', 'white'), ('disabled', '#eee9dc')])
-    st.configure('TEntry', fieldbackground='white', padding=4)
-    st.configure('TSpinbox', fieldbackground='white', arrowcolor=GREEN, padding=4)
-    st.configure('Vertical.TScrollbar', background=LINE_C, troughcolor=BG, bordercolor=BG, arrowcolor=GREEN)
+    st.configure('TEntry', fieldbackground='white', padding=4, bordercolor=BOX_DARK)
+    st.configure('TSpinbox', fieldbackground='white', arrowcolor=SWITCH, padding=4, bordercolor=BOX_DARK)
+    st.configure('Vertical.TScrollbar', background=WOOD_TOP, troughcolor=BG, bordercolor=BOX_DARK,
+                 arrowcolor=BOX_DARK)
     root.option_add('*TCombobox*Listbox.font', F['n'])
 
     def T(k):
@@ -438,32 +795,99 @@ def main():
     def changed(*_):
         state['dirty'] = True
         state['note'] = ''
+        if live:
+            save()
         refresh()
 
     # ---- widgets ----
+    def raised(parent, bg=WOOD, d=4):
+        """the site's .game-box: a 4px frame, light above and left, brown right and below; a WOOD one also
+        gets its gradient. Returns (outer, inner)."""
+        outer = tk.Frame(parent, bg=BOX_DARK)
+        rim = tk.Frame(outer, bg=BOX_LIGHT)
+        rim.pack(fill='both', expand=True, padx=(0, px(d)), pady=(0, px(d)))
+        inner = tk.Frame(rim, bg=bg)
+        inner.pack(fill='both', expand=True, padx=(px(d), 0), pady=(px(d), 0))
+        if bg == WOOD:
+            inner.grad = tk.Label(inner, bd=0, bg=WOOD, anchor='nw')
+            inner.bind('<Configure>', lambda e: inner.after_idle(shade, inner), add='+')
+            windows.append(inner)
+        return outer, inner
+    windows = []
+
+    def shade_all():
+        windows[:] = [w for w in windows if w.winfo_exists()]
+        for w in windows:
+            shade(w)
+
+    def shade(win):
+        """paint the gradient behind a window, and give each WOOD widget in it the colour at its height
+        (Tk widgets can't be see-through)"""
+        if not win.winfo_exists():
+            return
+        w, h = max(1, win.winfo_width()), max(1, win.winfo_height())
+        span = max(h, px(160))           # a small box gets only the top of the gradient (labels can't blend)
+        if getattr(win, 'size', None) != (w, h):
+            win.size = (w, h)
+            img = tk.PhotoImage(width=1, height=h)
+            img.put(' '.join('{%s}' % mix(WOOD_TOP, WOOD_BOT, y / span) for y in range(h)))
+            win.img = img.zoom(w, 1)
+            win.grad.configure(image=win.img)
+            # place() counts from inside the padding; the gradient goes under the padding too
+            win.grad.place(x=-int(str(win.cget('padx'))), y=-int(str(win.cget('pady'))), width=w, height=h)
+            win.grad.lower()
+
+        def walk(parent, top):
+            for c in parent.winfo_children():
+                if c is win.grad or not c.winfo_exists():
+                    continue
+                y = top + c.winfo_y()
+                if getattr(c, 'tint', None) or (c.winfo_class() in ('Label', 'Frame', 'Canvas')
+                                                and str(c.cget('bg')) == WOOD):
+                    c.tint = mix(WOOD_TOP, WOOD_BOT, min(1, max(0, (y + c.winfo_height() / 2) / span)))
+                    c.configure(bg=c.tint)
+                walk(c, y)
+        walk(win, 0)
+
     def button(parent, label, cmd, accent=False, small=False):
-        bg, hi = (ACCENT, ACCENT_HI) if accent else (CARD, '#efe7d2')
-        b = tk.Label(parent, text=label, bg=bg, fg='white' if accent else TEXT_C, cursor='hand2',
-                     font=F['b'] if accent else F['n'], padx=10 if small else 16, pady=4 if small else 7,
-                     highlightthickness=0 if accent else 1, highlightbackground=LINE_C)
+        """a .game-box button; the main one bold, with the game's 'press' arrow"""
+        f, inner = raised(parent, WOOD_TOP, 3)
+        b = tk.Label(inner, text=label, bg=WOOD_TOP, fg=TEXT_C, cursor=cursor, font=F['b'] if accent else F['n'],
+                     padx=10 if small else 16, pady=4 if small else 7)
+        if accent and P['click']:
+            b.configure(image=P['click'], compound='right')
+        b.pack()
         b.bind('<Button-1>', lambda e: cmd())
-        b.bind('<Enter>', lambda e: b.configure(bg=hi))
-        b.bind('<Leave>', lambda e: b.configure(bg=bg))
-        return b
+        b.bind('<Enter>', lambda e: b.configure(bg=WOOD_HI))
+        b.bind('<Leave>', lambda e: b.configure(bg=WOOD_TOP))
+        return f
+
+    def plaque(parent, label, font, bg=BG):
+        """the site's .box-title: a title on a .game-box"""
+        fnt = tkfont.Font(root, font=font)
+        w, h, d = fnt.measure(label) + px(80), fnt.metrics('linespace') + px(20), px(4)
+        c = tk.Canvas(parent, width=w, height=h, bg=bg, highlightthickness=0)
+        for y in range(h):
+            c.create_line(0, y, w, y, fill=mix(WOOD_TOP, WOOD_BOT, y / max(1, h - 1)))
+        c.create_rectangle(0, 0, w, d, width=0, fill=BOX_LIGHT)
+        c.create_rectangle(0, 0, d, h, width=0, fill=BOX_LIGHT)
+        c.create_polygon(w, 0, w, h, 0, h, d, h - d, w - d, h - d, w - d, d, width=0, fill=BOX_DARK)
+        c.create_text(w / 2, h / 2, text=label, font=font, fill=TEXT_C)
+        return c
 
     def toggle(parent, var):
         """an on/off switch for a '1'/'0' variable"""
         f = tk.Frame(parent, bg=CARD)
-        c = tk.Canvas(f, width=px(46), height=px(24), bg=CARD, highlightthickness=0, cursor='hand2')
+        c = tk.Canvas(f, width=px(46), height=px(24), bg=CARD, highlightthickness=0, cursor=cursor)
         c.pack(side='left')
-        lab = tk.Label(f, bg=CARD, font=F['s'], fg=MUTED, width=9, anchor='w')
+        lab = tk.Label(f, bg=CARD, font=F['s'], fg=TEXT_C, width=11, anchor='w')
         lab.pack(side='left', padx=(6, 0))
         en = [True]
 
         def draw(*_):
             on = var.get() == '1'
             c.delete('all')
-            col = (GREEN_HI if on else '#c9bfa6') if en[0] else '#e2dccb'
+            col = (SWITCH if on else '#c9bfa6') if en[0] else '#e2dccb'
             c.create_oval(px(1), px(1), px(23), px(23), fill=col, outline=col)
             c.create_oval(px(23), px(1), px(45), px(23), fill=col, outline=col)
             c.create_rectangle(px(12), px(1), px(34), px(23), fill=col, outline=col)
@@ -480,9 +904,46 @@ def main():
 
         def enable(ok):
             en[0] = ok
-            c.configure(cursor='hand2' if ok else 'arrow')
+            c.configure(cursor=cursor)
             draw()
         return f, enable
+
+    def flag(parent, lang, bg):
+        """the flag pictures (drawn plainly if one is missing)"""
+        im = P.get('flag_' + lang)
+        if im:
+            return tk.Label(parent, image=im, bg=bg, bd=0, cursor=cursor)
+        w, h = 32 * zoom, 32 * zoom
+        c = tk.Canvas(parent, width=w, height=h, highlightthickness=0, cursor=cursor, bg=bg)
+        y0, y1 = 4 * zoom, 29 * zoom                      # the site's flags fill rows 4 to 28
+        if lang == 'pt':                                  # Brazil: green, yellow diamond, blue globe
+            c.create_rectangle(0, y0, w, y1, width=0, fill='#009c3b')
+            c.create_polygon(w / 2, y0 + 2 * zoom, w - 3 * zoom, (y0 + y1) / 2, w / 2, y1 - 2 * zoom, 3 * zoom,
+                             (y0 + y1) / 2, fill='#ffdf00')
+            r = (y1 - y0) * 0.24
+            c.create_oval(w / 2 - r, (y0 + y1) / 2 - r, w / 2 + r, (y0 + y1) / 2 + r, width=0, fill='#002776')
+            c.create_rectangle(0, y0, w, y0 + 3 * zoom, width=0, fill='#40b46c')      # the site's shine on top
+        else:                                             # a picture missing: its colours, plainly
+            c.create_rectangle(0, y0, w, y1, width=0, fill='#c60b1e' if lang == 'es' else '#012169')
+        return c
+
+    def draw_header(c, w, h):
+        """the site's banner, centred over its background"""
+        c.delete('art')
+        tile(c, w, h)
+        if P['header']:
+            c.create_image(w // 2, 0, image=P['header'], anchor='n', tags='art')
+        c.coords('langs', w - px(14), px(12))
+
+    def tile(c, w, h):
+        """the site's background picture, repeated"""
+        c.delete('tile')
+        im = P['tile']
+        if im:
+            for y in range(0, h, im.height()):
+                for x in range(0, w, im.width()):
+                    c.create_image(x, y, image=im, anchor='nw', tags=('tile', 'art'))
+        c.tag_lower('tile')
 
     def scroll_page(parent):
         """a page that scrolls; returns its inner frame"""
@@ -504,16 +965,33 @@ def main():
         cv.bind('<Leave>', lambda e: root.unbind_all('<MouseWheel>'))
         return outer, inner
 
-    def card(parent, pad=16):
-        f = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=LINE_C, padx=pad, pady=pad - 4)
-        f.pack(fill='x', padx=24, pady=(0, 12))
+    def card(parent, pad=16, wood=False):
+        """a white box, or (wood) a wooden note like the site's"""
+        if wood:
+            outer, f = raised(parent, WOOD)
+            f.configure(padx=pad, pady=pad - 4)
+        else:
+            outer = f = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=LINE_C, padx=pad,
+                                 pady=pad - 4)
+        outer.pack(fill='x', padx=24, pady=(0, 12))
         return f
 
+    hearts = None
+    if P['heart']:                                       # .heart-level.lv3: the heart repeated three times
+        hearts = tk.PhotoImage(width=P['heart'].width() * 3, height=P['heart'].height())
+        hearts.tk.call(hearts, 'copy', P['heart'], '-to', 0, 0, hearts.width(), hearts.height())
+
+    def section(parent, title, sub=''):
+        tk.Label(parent, text=title, font=F['h2'], bg=BG, fg=RED, anchor='w').pack(fill='x', padx=24,
+                                                                                  pady=(10, 0))
+        if sub:
+            tk.Label(parent, text=sub, font=F['s'], bg=BG, fg=MUTED, anchor='w', justify='left',
+                     wraplength=px(700)).pack(fill='x', padx=24, pady=(0, 8))
+
     def page_head(parent, title, sub):
-        tk.Label(parent, text=title, font=F['h1'], bg=BG, fg=GREEN, anchor='w').pack(fill='x', padx=24,
-                                                                                    pady=(20, 0))
-        tk.Label(parent, text=sub, font=F['n'], bg=BG, fg=MUTED, anchor='w', justify='left',
-                 wraplength=px(640)).pack(fill='x', padx=24, pady=(2, 14))
+        plaque(parent, title, F['h1']).pack(pady=(18, 0))
+        tk.Label(parent, text=sub, font=F['n'], bg=BG, fg=BLUE, justify='center',
+                 wraplength=px(640)).pack(fill='x', padx=24, pady=(10, 14))
 
     def option_row(parent, key, kind, title, desc, first):
         if not first:
@@ -523,7 +1001,7 @@ def main():
         row.columnconfigure(0, weight=1)
         txt = tk.Frame(row, bg=CARD)
         txt.grid(row=0, column=0, sticky='w')
-        tk.Label(txt, text=title, font=F['b'], bg=CARD, fg=TEXT_C, anchor='w').pack(fill='x')
+        tk.Label(txt, text=title, font=F['b'], bg=CARD, fg=BLUE, anchor='w').pack(fill='x')
         if desc:
             d = tk.Label(txt, text=desc, font=F['s'], bg=CARD, fg=MUTED, anchor='w', justify='left',
                          wraplength=px(430))
@@ -577,40 +1055,55 @@ def main():
 
     def start_page(parent):
         page_head(parent, T('welcome'), T('welcome_sub'))
-        c = card(parent)
+        c = card(parent, wood=True)
         data = game_data(val('disc'))
         if data and os.path.abspath(data).startswith(os.path.abspath(HERE)):
             data = os.path.relpath(data, HERE)
-        tk.Label(c, text=('\u2714  ' + T('data_ok') % data) if data else ('\u26a0  ' + T('data_missing')),
-                 font=F['n'], bg=CARD, fg=OK if data else WARN, anchor='w', justify='left',
-                 wraplength=px(800)).pack(fill='x')
-        tk.Label(c, text='\U0001f5a5  ' + T('pc') % (cores, threads), font=F['n'], bg=CARD, fg=TEXT_C,
-                 anchor='w', justify='left', wraplength=px(800)).pack(fill='x', pady=(6, 0))
+        first = tk.Label(c, text=('\u2714  ' + T('data_ok') % data) if data else ('\u26a0  ' + T('data_missing')),
+                         font=F['n'], bg=WOOD, fg=OK if data else WARN, anchor='w', justify='left')
+        first.pack(fill='x')
+        last = tk.Frame(c, bg=WOOD)
+        last.pack(fill='x', pady=(6, 0))
+        pc = tk.Label(last, text='\U0001f5a5  ' + T('pc') % (cores, threads), font=F['n'], bg=WOOD, fg=TEXT_C,
+                      anchor='w', justify='left')
+        pc.pack(side='left')
+        # lines break at the box's width, leaving room for the arrow
+        c.bind('<Configure>', lambda e: [first.configure(wraplength=max(px(200), e.width - px(36))),
+                                         pc.configure(wraplength=max(px(200), e.width - px(60)))])
+        if all(P['dialog']):                              # the game's blinking "more" arrow, as on the site
+            arrow = tk.Label(last, image=P['dialog'][0], bg=WOOD, bd=0)
+            arrow.pack(side='right', anchor='s')
 
-        tk.Label(parent, text=T('quick'), font=F['h2'], bg=BG, fg=GREEN, anchor='w').pack(fill='x', padx=24,
-                                                                                         pady=(8, 0))
-        tk.Label(parent, text=T('quick_sub'), font=F['s'], bg=BG, fg=MUTED, anchor='w', justify='left',
-                 wraplength=px(800)).pack(fill='x', padx=24, pady=(0, 8))
+            def blink(i=0):
+                if arrow.winfo_exists():
+                    arrow.configure(image=P['dialog'][i])
+                    arrow.after(450, blink, 1 - i)
+            blink()
+
+        section(parent, T('quick'), T('quick_sub'))
         row = tk.Frame(parent, bg=BG)
         row.pack(fill='x', padx=24)
         rec = preset_for(cores)
         for i, (name, vals) in enumerate(PRESETS):
             row.columnconfigure(i, weight=1, uniform='p')
             in_use = all(val(k) == v for k, v in {**PRESET_ALL, **vals}.items())
-            f = tk.Frame(row, bg=CARD, highlightthickness=2 if i == rec else 1,
-                         highlightbackground=ACCENT if i == rec else LINE_C, padx=14, pady=12)
-            f.grid(row=0, column=i, sticky='nsew', padx=(0 if i == 0 else 6, 0))
-            tk.Label(f, text=T('recommended') if i == rec else ' ', font=F['s'], bg=CARD,
-                     fg=ACCENT_HI, anchor='w').pack(fill='x')
-            labs = [tk.Label(f, text=T(name), font=F['h2'], bg=CARD, fg=TEXT_C, anchor='w', justify='left'),
-                    tk.Label(f, text=T(name + '_d'), font=F['s'], bg=CARD, fg=MUTED, anchor='w', justify='left')]
+            outer, f = raised(row, WOOD)
+            outer.grid(row=0, column=i, sticky='nsew', padx=(0 if i == 0 else 8, 0))
+            f.configure(padx=14, pady=12)
+            if i == rec and hearts:                       # the recommended one: three of the game's hearts
+                tk.Label(f, image=hearts, bg=WOOD, bd=0, anchor='w').pack(fill='x')
+            r = tk.Label(f, text=T('recommended') if i == rec else ' ', font=F['s'], bg=WOOD, fg=RED, anchor='w',
+                         justify='left')
+            r.pack(fill='x')
+            labs = [tk.Label(f, text=T(name), font=F['h2'], bg=WOOD, fg=BLUE, anchor='w', justify='left'),
+                    tk.Label(f, text=T(name + '_d'), font=F['s'], bg=WOOD, fg=TEXT_C, anchor='w', justify='left')]
             labs[0].pack(fill='x')
             labs[1].pack(fill='x', pady=(4, 10))
             # lines break at the card's width, whatever the window's
-            f.bind('<Configure>', lambda e, labs=labs: [l.configure(wraplength=max(px(80), e.width - px(34)))
-                                                         for l in labs])
+            f.bind('<Configure>', lambda e, labs=labs + [r]: [l.configure(wraplength=max(px(80), e.width - px(34)))
+                                                               for l in labs])
             if in_use:
-                tk.Label(f, text='\u2714 ' + T('in_use'), font=F['b'], bg=CARD, fg=OK, anchor='w').pack(fill='x')
+                tk.Label(f, text='\u2714 ' + T('in_use'), font=F['b'], bg=WOOD, fg=OK, anchor='w').pack(fill='x')
             else:
                 def use(name=name, vals=vals):
                     for k, v in {**PRESET_ALL, **vals}.items():
@@ -620,21 +1113,83 @@ def main():
                     refresh()
                 button(f, T('use'), use, accent=i == rec, small=True).pack(anchor='w')
 
-        tk.Label(parent, text=T('keys'), font=F['h2'], bg=BG, fg=GREEN, anchor='w').pack(fill='x', padx=24,
-                                                                                        pady=(18, 8))
+        tk.Frame(parent, bg=BG, height=8).pack()
+        section(parent, T('keys'))
+        tk.Frame(parent, bg=BG, height=6).pack()
         c = card(parent)
         for i, (key, what) in enumerate(T('keys_list')):
-            tk.Label(c, text=key, font=F['b'], bg=CARD, fg=GREEN, anchor='w').grid(row=i, column=0, sticky='w',
+            tk.Label(c, text=key, font=F['b'], bg=CARD, fg=BLUE, anchor='w').grid(row=i, column=0, sticky='w',
                                                                                   pady=2)
-            tk.Label(c, text=what, font=F['n'], bg=CARD, fg=TEXT_C, anchor='w').grid(row=i, column=1, sticky='w',
+            tk.Label(c, text=what, font=F['n'], bg=CARD, fg=BLUE, anchor='w').grid(row=i, column=1, sticky='w',
                                                                                     padx=(18, 0), pady=2)
+
+    def coop_page(parent):
+        page_head(parent, T('coop'), T('coop_sub'))
+        row = tk.Frame(parent, bg=BG)
+        row.pack(fill='x', padx=24, pady=(0, 12))
+        for i, (name, cmd) in enumerate((('host', coop_host), ('join', coop_join))):
+            outer, f = raised(row, WOOD)
+            row.columnconfigure(i, weight=1, uniform='c')
+            outer.grid(row=0, column=i, sticky='nsew', padx=(0 if i == 0 else 8, 0))
+            f.configure(padx=14, pady=12)
+            labs = [tk.Label(f, text=T(name), font=F['h2'], bg=WOOD, fg=BLUE, anchor='w', justify='left'),
+                    tk.Label(f, text=T(name + '_d'), font=F['s'], bg=WOOD, fg=TEXT_C, anchor='w', justify='left')]
+            labs[0].pack(fill='x')
+            labs[1].pack(fill='x', pady=(4, 10))
+            f.bind('<Configure>', lambda e, labs=labs: [l.configure(wraplength=max(px(80), e.width - px(34)))
+                                                        for l in labs])
+            button(f, T(name + '_btn'), cmd, accent=True, small=True).pack(anchor='w')
+        ips = local_ips()
+        if ips:
+            tk.Label(parent, text=T('my_ip') % '   '.join(ips), font=F['b'], bg=BG, fg=BLUE, anchor='w',
+                     justify='left', wraplength=px(640)).pack(fill='x', padx=24, pady=(0, 10))
+        options_page(parent, 'coop')
+        section(parent, T('how'))
+        tk.Frame(parent, bg=BG, height=6).pack()
+        c = card(parent)
+        c.columnconfigure(1, weight=1)
+        for i, (n, what) in enumerate(T('how_list')):
+            tk.Label(c, text=n, font=F['b'], bg=CARD, fg=RED, anchor='nw').grid(row=i, column=0, sticky='nw', pady=2)
+            w = tk.Label(c, text=what.replace('%s', val('coop_port') or COOP_PORT), font=F['n'], bg=CARD,
+                         fg=BLUE, anchor='w', justify='left', wraplength=px(560))
+            w.grid(row=i, column=1, sticky='w', padx=(14, 0), pady=2)
+
+    def p2_page(parent):
+        page_head(parent, T('p2'), T('p2_sub'))
+        c = card(parent, wood=True)
+        labs = [tk.Label(c, text=T('local'), font=F['h2'], bg=WOOD, fg=BLUE, anchor='w', justify='left'),
+                tk.Label(c, text=T('local_d'), font=F['s'], bg=WOOD, fg=TEXT_C, anchor='w', justify='left')]
+        labs[0].pack(fill='x')
+        labs[1].pack(fill='x', pady=(4, 10))
+        c.bind('<Configure>', lambda e: [l.configure(wraplength=max(px(80), e.width - px(34))) for l in labs])
+        button(c, T('local_btn'), lambda: play(['--p2']), accent=True, small=True).pack(anchor='w')
+        tk.Frame(parent, bg=BG, height=12).pack()
+        options_page(parent, 'p2')
+        section(parent, T('p2_keys'))
+        tk.Frame(parent, bg=BG, height=6).pack()
+        c = card(parent)
+        for k, h in enumerate(T('p2_head')):
+            tk.Label(c, text=h, font=F['s'], bg=CARD, fg=MUTED, anchor='w').grid(row=0, column=k, sticky='w',
+                                                                                 padx=(0 if k == 0 else 18, 0))
+        for i, row in enumerate(T('p2_list')):
+            for k, what in enumerate(row):
+                tk.Label(c, text=what, font=F['n'] if k == 0 else F['b'], bg=CARD, fg=BLUE, anchor='w').grid(
+                    row=i + 1, column=k, sticky='w', padx=(0 if k == 0 else 18, 0), pady=2)
+        section(parent, T('p2_tips'))
+        tk.Frame(parent, bg=BG, height=6).pack()
+        c = card(parent)
+        c.columnconfigure(1, weight=1)
+        for i, (n, what) in enumerate(T('p2_tips_list')):
+            tk.Label(c, text=n, font=F['b'], bg=CARD, fg=RED, anchor='nw').grid(row=i, column=0, sticky='nw', pady=2)
+            tk.Label(c, text=what, font=F['n'], bg=CARD, fg=BLUE, anchor='w', justify='left',
+                     wraplength=px(560)).grid(row=i, column=1, sticky='w', padx=(14, 0), pady=2)
 
     # ---- window ----
     body = tk.Frame(root, bg=BG)
     body.pack(fill='both', expand=True)
-    foot = tk.Frame(root, bg=CARD, highlightthickness=1, highlightbackground=LINE_C)
-    foot.pack(fill='x', side='bottom')
-    status = tk.Label(foot, text='', font=F['n'], bg=CARD, anchor='w')
+    foot_o, foot = raised(root, WOOD)
+    foot_o.pack(fill='x', side='bottom')
+    status = tk.Label(foot, text='', font=F['b'], bg=WOOD, anchor='w')
 
     def save():
         nonlocal text
@@ -656,13 +1211,33 @@ def main():
         state['note'] = '\u2714 ' + T('saved')
         refresh()
 
-    def play():
+    def play(args=()):
         save()
         if not os.path.exists(EXE):
             messagebox.showerror('Harvest Moon', T('missing') % EXE)
             return
-        subprocess.Popen([EXE], cwd=HERE)
+        # the game opens this launcher again with F5: it must not inherit this one's PyInstaller
+        # variables (its files are gone by then: "Failed to load Python DLL")
+        env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1')
+        subprocess.Popen([EXE, *args], cwd=HERE, env=env)
         root.destroy()
+
+    def coop_port():
+        p = val('coop_port')
+        return p if p.isdigit() else COOP_PORT
+
+    def coop_host():
+        play(['--host', coop_port(), '--netdelay', val('coop_delay') or '3'] + (['--p2'] if val('coop_p2') == '1' else []))
+
+    def coop_join():
+        a = val('coop_address')
+        if not a:
+            messagebox.showwarning('Harvest Moon', T('need_addr'))
+            show('coop')
+            return
+        if a.count(':') != 1 and not a.startswith('['):   # no port given (IPv6 needs [addr]:port)
+            a = ('[%s]' % a if ':' in a else a) + ':' + coop_port()
+        play(['--join', a])
 
     def close():
         if state['dirty']:
@@ -678,36 +1253,50 @@ def main():
         for w in body.winfo_children():
             w.destroy()
         for w in foot.winfo_children():
-            w.destroy() if w is not status else w.pack_forget()
+            if w is status:
+                w.pack_forget()
+            elif w is not foot.grad:
+                w.destroy()
         widgets.clear()
-        # header
-        head = tk.Frame(body, bg=GREEN, padx=24, pady=12)
+        # header: the site's banner, the flags on a little .game-box
+        hh = P['header'].height() if P['header'] else px(110)
+        head = tk.Canvas(body, height=hh, highlightthickness=0, bg=SITE_BG)
         head.pack(fill='x')
-        tk.Label(head, text='\U0001f33e  Harvest Moon: Back to Nature', font=F['h1'], bg=GREEN, fg='white'
-                 ).pack(side='left')
-        tk.Label(head, text=T('subtitle'), font=F['n'], bg=GREEN, fg='#cfe3c9').pack(side='left', padx=(12, 0),
-                                                                                   pady=(6, 0))
-        langs = tk.Frame(head, bg=GREEN)
-        langs.pack(side='right')
-        for l in ('pt', 'en'):
-            b = tk.Label(langs, text=l.upper(), font=F['b'], bg=GREEN_HI if l == state['lang'] else GREEN,
-                         fg='white', padx=8, pady=2, cursor='hand2')
+        langs_o, langs = raised(head, WOOD, 3)
+        langs.configure(padx=4, pady=2)
+        head.create_window(0, 0, window=langs_o, anchor='ne', tags='langs')
+        for l in ('en', 'es', 'pt'):
+            on = l == state['lang']
+            # the language in use stands on a darker square, the others brighten under the mouse
+            b = tk.Frame(langs, bg=WOOD_HI if on else WOOD, padx=2)
             b.pack(side='left', padx=1)
-            b.bind('<Button-1>', lambda e, l=l: (state.update(lang=l), build()))
-        # side menu and pages
-        main_ = tk.Frame(body, bg=BG)
+            fl = flag(b, l, WOOD_HI if on else WOOD)
+            fl.pack()
+            for w in (b, fl):
+                w.bind('<Button-1>', lambda e, l=l: (state.update(lang=l), build()))
+                if not on:
+                    w.bind('<Enter>', lambda e, b=b, fl=fl: [x.configure(bg='white') for x in (b, fl)])
+                    w.bind('<Leave>', lambda e, b=b, fl=fl: [x.configure(bg=getattr(x, 'tint', WOOD))
+                                                             for x in (b, fl)])
+            if on:                                        # keeps its colour, not the gradient's
+                b.tint = fl.tint = None
+        head.bind('<Configure>', lambda e: draw_header(head, e.width, e.height))
+        # the site's background, with the menu box and the white page on it
+        main_ = tk.Canvas(body, highlightthickness=0, bg=SITE_BG)
         main_.pack(fill='both', expand=True)
-        side = tk.Frame(main_, bg=GREEN_LO, width=px(170))
-        side.pack(side='left', fill='y')
-        side.pack_propagate(False)
+        main_.bind('<Configure>', lambda e: tile(main_, e.width, e.height))
+        m, sw = px(15), px(210)
+        side_o, side = raised(main_, WOOD)
+        side_o.place(x=m, y=m + px(8), width=sw)
+        side.configure(padx=px(4), pady=px(4))
         holder = tk.Frame(main_, bg=BG)
-        holder.pack(side='left', fill='both', expand=True)
+        holder.place(x=2 * m + sw, y=m + px(8), relwidth=1, width=-(3 * m + sw), relheight=1,
+                     height=-(2 * m + px(8)))
         pages, navs = {}, {}
-        icons = {'start': '\U0001f3e0', 'video': '\U0001f5bc', 'game': '\U0001f3ae', 'keyboard': '\u2328',
-                 'controller': '\U0001f579'}
-        for name in ('start', 'video', 'game', 'keyboard', 'controller'):
-            n = tk.Label(side, text='  %s  %s' % (icons[name], T(name)), font=F['nav'], bg=GREEN_LO,
-                         fg='white', anchor='w', padx=14, pady=10, cursor='hand2')
+        for name in ('start', 'video', 'game', 'keyboard', 'controller', 'p2', 'coop', 'cheats'):
+            # a nav-link; the mouse pointer is already the game's glove
+            n = tk.Label(side, text=T(name), font=F['nav'], bg=WOOD, fg=NAV_C, anchor='w', padx=px(10),
+                         pady=px(6), cursor=cursor)
             n.pack(fill='x')
             n.bind('<Button-1>', lambda e, name=name: show(name))
             navs[name] = n
@@ -715,6 +1304,10 @@ def main():
             pages[name] = outer
             if name == 'start':
                 start_page(inner)
+            elif name == 'coop':
+                coop_page(inner)
+            elif name == 'p2':
+                p2_page(inner)
             else:
                 page_head(inner, T(name), T(name + '_sub'))
                 options_page(inner, name)
@@ -722,8 +1315,9 @@ def main():
         state['pages'], state['navs'] = pages, navs
         # footer
         status.pack(side='left', padx=16)
-        button(foot, T('play'), play, accent=True).pack(side='right', padx=(6, 16), pady=10)
-        button(foot, T('save'), save).pack(side='right', padx=6, pady=10)
+        if not live:
+            button(foot, T('play'), play, accent=True).pack(side='right', padx=(6, 16), pady=10)
+            button(foot, T('save'), save).pack(side='right', padx=6, pady=10)
         button(foot, T('close'), close).pack(side='right', padx=6, pady=10)
         show(state['page'])
         refresh()
@@ -738,8 +1332,10 @@ def main():
         state['page'] = name
         for n, p in state['pages'].items():
             p.pack_forget()
-            state['navs'][n].configure(bg=GREEN_HI if n == name else GREEN_LO)
+            state['navs'][n].configure(font=F['navb'] if n == name else F['nav'],
+                                          fg=TEXT_C if n == name else NAV_C)
         state['pages'][name].pack(fill='both', expand=True)
+        root.after(50, shade_all)
 
     for v in vars_.values():
         v.trace_add('write', changed)

@@ -99,11 +99,22 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
 
     srcs = []
     rt = os.path.join(ROOT, 'runtime')
+    # online co-op only connects copies built from the same sources (the same on any PC, unlike the .exe)
+    h = hashlib.sha1()
+    for f in sorted(os.listdir(rt)):
+        if f.endswith(('.c', '.h')):
+            h.update(open(os.path.join(rt, f), 'rb').read().replace(b'\r\n', b'\n'))
+    stamp_gen = os.path.join(ROOT, 'generated', '.stamp')
+    if os.path.exists(stamp_gen):
+        h.update(open(stamp_gen, 'rb').read())
+    build_id = h.hexdigest()[:8]
     for f in sorted(os.listdir(rt)):
         if f.endswith('.c'):
             flags = common + opt_rt + warn_rt
             if f == 'platform_sdl.c':
                 flags = flags + sdl_cflags
+            if f == 'netplay.c':
+                flags = flags + ['-DHMBTN_BUILD_ID=0x' + build_id]
             srcs.append((os.path.join(rt, f), flags))
     gen = os.path.join(ROOT, 'generated')
     for f in sorted(os.listdir(gen)):
@@ -120,7 +131,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         if os.path.exists(obj) and os.path.exists(stamp):
             t = os.path.getmtime(obj)
             src_t = os.path.getmtime(src)
-            if os.path.basename(src).startswith(('gpu_replay', 'gpu_band')):    # include gpu.c
+            if os.path.basename(src).startswith(('gpu_replay', 'gpu_band', 'gpu_view2')):    # include gpu.c
                 src_t = max(src_t, os.path.getmtime(os.path.join(rt, 'gpu.c')))
             if t >= src_t and t >= hdr_t:
                 return obj, 0, ''
@@ -149,7 +160,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
     elif IS_WIN:
         link += ['-static-libgcc', '-Wl,--stack,16777216']
         link += ['-mwindows'] if release else ['-mconsole']
-        link += ['-lwinmm']
+        link += ['-lwinmm', '-lws2_32']
     else:
         link += ['-lm', '-Wl,-z,stacksize=16777216']
     code, out = sh(link)

@@ -183,6 +183,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "scale")) g_cfg.scale = atoi(val);
     else if (!strcmp(key, "upscale")) g_cfg.upscale = atoi(val);
     else if (!strcmp(key, "drawthreads")) g_cfg.draw_threads = !strcmp(val, "auto") ? -1 : atoi(val);
+    else if (!strcmp(key, "p2view_upscale")) g_cfg.p2view_upscale = atoi(val);
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
@@ -201,11 +202,18 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "textspeed")) g_cfg.textspeed = atoi(val);
     else if (!strcmp(key, "overclock")) g_cfg.overclock = atoi(val);
     else if (!strcmp(key, "emptybag")) g_cfg.emptybag = atoi(val);
+    else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
+    else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);
+    else if (!strcmp(key, "cheat_clock")) g_cfg.cheat_clock = atoi(val);
+    else if (!strcmp(key, "cheat_bag")) g_cfg.cheat_bag = atoi(val);
+    else if (!strcmp(key, "cheat_items")) g_cfg.cheat_items = atoi(val);
+    else if (!strcmp(key, "cheat_tools")) g_cfg.cheat_tools = atoi(val);
     else if (!strcmp(key, "smooth")) { if (atoi(val)) g_cfg.scaling = SCALING_SMOOTH; }   /* older ini files */
     else if (!strcmp(key, "scaling")) set_scaling(val);
     else if (!strcmp(key, "aspect43")) g_cfg.aspect_4_3 = atoi(val);
     else if (!strcmp(key, "fastforward")) g_cfg.allow_fast_forward = atoi(val);
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
+    else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
 }
 
@@ -225,6 +233,65 @@ static void load_ini(const char *path) {
         set_option(k, v);
     }
     fclose(f);
+}
+
+/* the cheats, changed while the game runs (the launcher opened by F5 saves the ini at each change):
+ * 1 = the ini changed since last asked, with v = the cheat_ keys below */
+static char ini_path[1200];
+static time_t ini_time;
+
+static time_t ini_changed(void) {
+    struct stat st;
+    return stat(ini_path, &st) == 0 ? st.st_mtime : 0;
+}
+
+int config_cheats(int v[CHEATS]) {
+    time_t t = ini_changed();
+    if (!t || t == ini_time) return 0;
+    ini_time = t;
+    FILE *f = fopen(ini_path, "r");
+    if (!f) return 0;
+    char line[1200];
+    memset(v, 0, CHEATS * sizeof *v);
+    while (fgets(line, sizeof line, f)) {
+        trim(line);
+        char *eq = strchr(line, '=');
+        if (line[0] == '#' || !eq) continue;
+        *eq = 0;
+        trim(line);
+        static const char *const keys[CHEATS] = { "cheat_money", "cheat_stamina", "cheat_clock", "cheat_bag",
+                                                  "cheat_items", "cheat_tools" };
+        for (int k = 0; k < CHEATS; k++) if (!strcmp(line, keys[k])) v[k] = atoi(eq + 1);
+    }
+    fclose(f);
+    return 1;
+}
+
+/* F5: the launcher on its Cheats page, over the game (the exe, or launcher.pyw with Python) */
+void open_cheats_window(void) {
+#ifdef _WIN32
+    char cmd[2400], exe[1100];
+    snprintf(exe, sizeof exe, "%sHarvestMoonBTN-Launcher.exe", exe_dir);
+    if (GetFileAttributesA(exe) != INVALID_FILE_ATTRIBUTES)
+        snprintf(cmd, sizeof cmd, "\"%s\" --page cheats --live", exe);
+    else
+        snprintf(cmd, sizeof cmd, "pythonw \"%slauncher.pyw\" --page cheats --live", exe_dir);
+    /* the game may have been started by the launcher (a PyInstaller one-file exe), whose variables it
+     * inherited: a new launcher took them for its own and looked for the old one's files, gone ("Failed
+     * to load Python DLL"). A fresh start for it */
+    static const char *const pyi[] = { "_MEIPASS2", "_PYI_ARCHIVE_FILE", "_PYI_APPLICATION_HOME_DIR",
+                                       "_PYI_PARENT_PROCESS_LEVEL", "_PYI_SPLASH_IPC" };
+    for (size_t i = 0; i < sizeof pyi / sizeof *pyi; i++) SetEnvironmentVariableA(pyi[i], NULL);
+    SetEnvironmentVariableA("PYINSTALLER_RESET_ENVIRONMENT", "1");
+    STARTUPINFOA si = { sizeof si };
+    PROCESS_INFORMATION pi;
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, exe_dir, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    } else {
+        LOGW("cannot open the launcher (%s)", cmd);
+    }
+#endif
 }
 
 static void usage(void) {
@@ -247,6 +314,9 @@ static void usage(void) {
            "  --card N              start with memory card N (1-4) in slot 1 (F1-F4 switch)\n"
            "  --scaling MODE        sharp-bilinear (default), sharp or smooth\n"
            "  --log N               log level 0..4\n"
+           "  --host [PORT]         online co-op: wait for a friend (default port 7845)\n"
+           "  --join ADDRESS[:PORT] online co-op: play on a friend's game\n"
+           "  --netdelay N          online co-op: input delay in frames (the host's counts, default 3)\n"
            "  --verify-data         check the game data pack against its checksums and exit\n"
            "testing options:\n"
            "  --headless --frames N --unthrottled --shots N --shotstart F --shotdir DIR --input SCRIPT|@FILE\n"
@@ -328,6 +398,8 @@ int main(int argc, char **argv) {
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);
+    snprintf(ini_path, sizeof ini_path, "%s", ini);
+    ini_time = ini_changed();           /* what is in it now is in use */
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         const char *nx = i + 1 < argc ? argv[i + 1] : "";
@@ -353,6 +425,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--smooth")) g_cfg.scaling = SCALING_SMOOTH;
         else if (!strcmp(a, "--scaling")) { set_scaling(nx); i++; }
         else if (!strcmp(a, "--log")) { g_log_level = atoi(nx); i++; }
+        else if (!strcmp(a, "--host")) { if (isdigit((unsigned char)nx[0])) { netplay_host(atoi(nx)); i++; } else netplay_host(0); }
+        else if (!strcmp(a, "--join")) { netplay_join(nx); i++; }
+        else if (!strcmp(a, "--netdelay")) { netplay_set_delay(atoi(nx)); i++; }
+        else if (!strcmp(a, "--p2")) g_p2_enabled = 1;
+        else if (!strcmp(a, "--p2demo")) g_p2_enabled = g_p2_demo = 1;
+        else if (!strcmp(a, "--p2view")) { g_view2 = atoi(nx); i++; }
+        else if (!strcmp(a, "--p2view-upscale")) { g_cfg.p2view_upscale = atoi(nx); i++; }
         else if (!strcmp(a, "--headless")) g_cfg.headless = 1;
         else if (!strcmp(a, "--verify-data")) { verify_data = 1; g_cfg.headless = 1; }
         else if (!strcmp(a, "--frames")) { g_cfg.max_frames = atoi(nx); i++; }
@@ -398,6 +477,7 @@ int main(int argc, char **argv) {
         log_file = fopen(lp, "w");
     }
     if (!g_cfg.screenshot_dir[0]) snprintf(g_cfg.screenshot_dir, sizeof g_cfg.screenshot_dir, "%sscreenshots", exe_dir);
+    if (netplay_role() == 2) { g_cfg.record = 0; g_cfg.record_path[0] = 0; }   /* the host's session is the one */
     if (g_cfg.record && !g_cfg.record_path[0] && !g_cfg.headless) {   /* recordings/session_<date>_<time>.txt */
         char d[1100];
         time_t now = time(NULL);
@@ -408,6 +488,7 @@ int main(int argc, char **argv) {
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
     }
 
+    if (g_view2 < 0) g_view2 = g_p2_enabled && !netplay_role();   /* a window for farmer 2 */
     if (platform_init() != 0) return 1;
 
     if (!locate_disc())
@@ -447,7 +528,23 @@ int main(int argc, char **argv) {
             LOGW("game folder is read-only; saving memory cards to %s", g_cfg.save_dir);
         }
     }
+    if (netplay_role() == 2) {          /* co-op guest: plays on copies of the host's cards */
+        char netdir[1200];
+        snprintf(netdir, sizeof netdir, "%s/netplay", g_cfg.save_dir);
+        mkdir_p(netdir);
+        if (!netplay_start(&card_bank, netdir)) {
+            if (!g_quit) fatal("%s", netplay_status(NULL));
+            return 0;
+        }
+    }
     memcard_open_banks(card_bank);
+    if (netplay_role() == 1) {          /* co-op host: sends its cards once the friend is in */
+        int b = memcard_bank();
+        if (!netplay_start(&b, NULL)) {
+            if (!g_quit) fatal("%s", netplay_status(NULL));
+            return 0;
+        }
+    }
     if (g_cfg.overclock < 100) g_cfg.overclock = 100;
     if (g_cfg.overclock > 400) g_cfg.overclock = 400;
     g_cycle_scale = 256u * 100u / (uint32_t)g_cfg.overclock;
@@ -511,6 +608,7 @@ int main(int argc, char **argv) {
     g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w || g_texpack || g_texdump);
     if (g_cfg.interp && g_pgxp) gpu_interp_enable();
     else if (g_cfg.interp) LOGW("interp needs upscale 2 or more and pgxp");
+    p2view_init();
     spu_init();
     dma_init();
     cdrom_init();
@@ -522,6 +620,7 @@ int main(int argc, char **argv) {
     g_pad_connected[0] = true;
 
     load_exe();
+    netplay_quit();
     memcard_flush();
     platform_shutdown();
     return 0;

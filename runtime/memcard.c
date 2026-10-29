@@ -92,6 +92,7 @@ static bool slot_answered;
 
 void memcard_slot_visit(void) {
     slot_answered = false;
+    p2_return_tools();
 }
 
 static bool bank_has_diary(int b);
@@ -104,6 +105,7 @@ int memcard_slot_auto(void) {
 }
 
 uint32_t memcard_slot_menu(uint32_t result, int loading) {
+    p2_return_tools();              /* the in-game diary's screen has no visit: here before it writes */
     if (!g_cfg.autoslot) return result;
     slot_answered = !slot_answered;
     if (!slot_answered) return (uint32_t)-1;
