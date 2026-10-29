@@ -44,6 +44,7 @@ screenshots/
 *.wav
 *.bmp
 *.exe
+!/dist-template/HarvestMoonBTN-Launcher.exe
 *.dll
 *.o
 *.obj

@@ -973,6 +973,7 @@ void platform_frame(void) {
         }
         uint16_t b = read_controllers();
         static uint16_t mine;           /* Alt held: keeps the buttons as they were */
+        if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
         if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);
         cheat_events((int)frame);
         g_p2_buttons = p2_pad | script_pad((int)frame, 1);   /* co-op with two farmers: the guest's buttons instead */
@@ -988,7 +989,7 @@ void platform_frame(void) {
     }
     bool need_pixels = shown || shot || shot_request, same = false;
     /* farmer 2's talk or menu: this window keeps the player's picture (farmer 2's shows the game's) */
-    bool keep = p2view_swapped();
+    bool keep = p2view_swapped() && g_view2 != 2;
     if (keep) {
         w = px_w;
         h = px_h;
@@ -1010,7 +1011,31 @@ void platform_frame(void) {
         }
         /* an in-between picture (not at full speed): the frame on screen is still the last one,
          * so frame_black stays as it was */
-        if (turbo() || !gpu_render_interp(frame_px, &w, &h)) {
+        static int v2_valid;
+        static uint32_t v2_changes;
+        int v2main = g_view2 == 2 && !p2view_swapped();
+        if (!v2main) v2_valid = 0;
+        if (v2main) {
+            /* online guest with two farmers: its window shows farmer 2's view (farmer 1's talk or
+             * menu: the last picture stays) */
+            px_valid = false;
+            if (v2i_shown) {
+                memcpy(frame_px, v2i_px, (size_t)v2i_w * v2i_h * 4);
+                w = v2i_w;
+                h = v2i_h;
+                v2_valid = 0;           /* the next one is the frame's own again */
+            } else if (!v2_valid || (view2_gpu_changes() != v2_changes && !p2view_held())) {
+                view2_gpu_render_display(frame_px, &w, &h);
+                v2_changes = view2_gpu_changes();
+                v2_valid = 1;
+                px_w = w;
+                px_h = h;
+            } else {
+                w = px_w;
+                h = px_h;
+                same = true;
+            }
+        } else if (turbo() || !gpu_render_interp(frame_px, &w, &h)) {
             /* the game draws every other VBlank or less: a picture nothing changed since is
              * in frame_px (and the texture) already */
             if (px_valid && gpu_changes() == px_changes) {

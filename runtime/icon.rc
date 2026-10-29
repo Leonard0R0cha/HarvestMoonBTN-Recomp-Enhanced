@@ -1,0 +1,2 @@
+/* the program icon (Explorer, taskbar, and the window: SDL uses the first icon of the executable) */
+1 ICON "icon.ico"
