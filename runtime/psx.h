@@ -84,6 +84,7 @@ bool iso_find_file(const char *path, uint32_t *lba, uint32_t *size);
 bool cdpak_open(const char *path, uint32_t *total_sectors);
 int  cdpak_read_sector(uint32_t lba, uint8_t *buf2352);
 int  cdpak_verify_all(void);
+long zlib_inflate(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen);
 
 /* ---- SIO0 (joypad / memory card hardware port) ---- */
 void sio_init(void);
@@ -153,6 +154,8 @@ typedef struct {
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
     int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
+    int  texturepack;           /* replacement images from textures/ (needs upscale >= 2) */
+    int  dumptextures;          /* write 2D sprites' textures to textures/dump/ (needs upscale >= 2) */
     int  ws_w, ws_h;            /* widescreen aspect W:H (e.g. 16:9), 0 = off */
     int  fullscreen;
     int  headless;              /* no window / audio (testing) */

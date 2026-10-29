@@ -22,6 +22,8 @@ OPTIONS = [
     ('video', 'video', 'perspective', 'bool'),
     ('video', 'video', 'sprite_depth', 'bool'),
     ('video', 'video', 'interp', 'bool'),
+    ('video', 'video', 'texturepack', 'bool'),
+    ('video', 'video', 'dumptextures', 'bool'),
     ('video', 'video', 'drawthreads', 'choice:auto|0|1|2|3|4'),
     ('video', 'video', 'scale', 'spin8'),
     ('video', 'video', 'fullscreen', 'bool'),
@@ -62,6 +64,8 @@ REQUIRES = {
     'sprite_depth': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'drawthreads': (_up2, 'need_up2'),
+    'texturepack': (_up2, 'need_up2'),
+    'dumptextures': (_up2, 'need_up2'),
 }
 
 # option -> (title, explanation)
@@ -79,6 +83,10 @@ TEXT = {
                          'like the ground under them.'),
         'interp': ('60 fps camera', 'The camera and scenery move 60 times a second (the game itself still runs '
                    'at 30). Drawn on spare processor cores; F9 switches it while playing.'),
+        'texturepack': ('Texture pack', 'Draws people, animals, field objects, text and the HUD with the images in '
+                        'the textures folder (not the 3D world). See docs/GRAPHICS.md.'),
+        'dumptextures': ('Dump textures', 'Writes each sprite texture the game shows to textures/dump, '
+                         'to draw a texture pack from.'),
         'drawthreads': ('Drawing threads', 'Processor threads that draw the 3D together, each a share of the '
                         'picture (the picture is the same). auto = by processor; 0 = the game\'s thread alone.'),
         'scale': ('Window size', 'Multiple of 320x240, when not in fullscreen.'),
@@ -119,6 +127,10 @@ TEXT = {
                          'como o chão embaixo deles.'),
         'interp': ('Câmera a 60 fps', 'A câmera e o cenário se movem 60 vezes por segundo (o jogo continua a '
                    '30). Usa núcleos livres do processador; F9 liga e desliga durante o jogo.'),
+        'texturepack': ('Pacote de texturas', 'Desenha pessoas, animais, objetos do campo, texto e o HUD com as '
+                        'imagens da pasta textures (não o mundo 3D). Veja docs/GRAPHICS.md.'),
+        'dumptextures': ('Exportar texturas', 'Grava cada textura de sprite que o jogo mostra em textures/dump, '
+                         'para criar um pacote de texturas.'),
         'drawthreads': ('Threads de desenho', 'Threads do processador que desenham o 3D juntas, cada uma uma '
                         'parte da imagem (a imagem é a mesma). auto = pelo processador; 0 = só a do jogo.'),
         'scale': ('Tamanho da janela', 'Múltiplo de 320x240, fora da tela cheia.'),
