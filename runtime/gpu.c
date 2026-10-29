@@ -450,19 +450,32 @@ static inline uint32_t tex_fetch(uint32_t u, uint32_t v)
     }
 }
 
-/* Texture packs: the image the upscaled copy of the polygon being drawn reads instead of its texels
- * (NULL: none), stretched over the polygon's UV box from rep_u0, rep_v0 (rep_su, rep_sv: image
- * pixels per texel). rep_fetch: the image pixel at u, v (8.24, a pixel centre's), nearest. */
+/* Texture packs: the image the upscaled copy of the primitive being drawn reads instead of its texels
+ * (NULL: none), stretched over its UV box from rep_u0, rep_v0 (rep_su, rep_sv: image pixels per
+ * texel). rep_at: the image pixel at image coordinates x, y (nearest); rep_fetch: at u, v (8.24, a
+ * pixel centre's); rep_mix: the texel drawn, the image pixel r with the semi-transparency bit of the
+ * texture's texel t there (the game sets it on almost every texel; it blends where the game draws
+ * semi-transparent, e.g. shadows). */
 static const TexImage *tex_rep;
 static float rep_u0, rep_v0, rep_su, rep_sv;
 
-static inline uint32_t rep_fetch(const TexImage *r, uint32_t u, uint32_t v)
+static inline uint32_t rep_mix(uint32_t r, uint32_t t)
 {
-    int32_t x = (int32_t)(((float)(u >> 8) * (1.0f / 65536.0f) - rep_u0) * rep_su);
-    int32_t y = (int32_t)(((float)(v >> 8) * (1.0f / 65536.0f) - rep_v0) * rep_sv);
+    return r ? r | (t & 0x8000u) : 0;
+}
+
+static inline uint32_t rep_at(const TexImage *r, float fx, float fy)
+{
+    int32_t x = (int32_t)fx, y = (int32_t)fy;
     x = x < 0 ? 0 : x >= r->w ? r->w - 1 : x;
     y = y < 0 ? 0 : y >= r->h ? r->h - 1 : y;
     return r->px[y * r->w + x];
+}
+
+static inline uint32_t rep_fetch(const TexImage *r, uint32_t u, uint32_t v)
+{
+    return rep_at(r, ((float)(u >> 8) * (1.0f / 65536.0f) - rep_u0) * rep_su,
+                  ((float)(v >> 8) * (1.0f / 65536.0f) - rep_v0) * rep_sv);
 }
 
 /* Texture colour modulation: (texel5 * colour8) >> 4, then dither/saturate. */
@@ -859,7 +872,9 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
         const TexImage *const rep = tex_rep;
         const uint32_t hu = (uint32_t)((int32_t)(d->dx.u + d->dy.u) / 2), hv = (uint32_t)((int32_t)(d->dx.v + d->dy.v) / 2);
         for (; w > 0; w--, x++) {
-            uint32_t tx = rep ? rep_fetch(rep, ig.u + hu, ig.v + hv) : tex_fetch(ig.u >> 24, ig.v >> 24);
+            uint32_t tx = tex_fetch(ig.u >> 24, ig.v >> 24);
+            if (rep)
+                tx = rep_mix(rep_fetch(rep, ig.u + hu, ig.v + hv), tx);
             if (tx) {
                 uint32_t rgb;
                 if (c->raw) {
@@ -1382,31 +1397,15 @@ int gpu_threads(void)
 #define BAND_SYNC() ((void)0)
 #endif
 
-/* Texture packs: the replacement for the texture of the player's sprite quad v (tagged t), found by
- * the texels of its UV box (min to max, both included: the frame the game uploaded for it, also
- * when mirrored), and sets up rep_fetch for it; with g_texdump, the box is written out. In a redraw
- * for an in-between picture, the player's anchor is the one of the recorded frame. */
-static const TexImage *texpack_quad(const PgxpWord *t, const TriVtx *v, int nv)
+/* Texture packs: the replacement for the w x h texels from u0, v0 (the current texture page and
+ * CLUT), found by their key; with g_texdump, they are written out. */
+static const TexImage *texpack_box(int32_t u0, int32_t v0, int32_t w, int32_t h)
 {
     static uint16_t box[256 * 256];
-    int32_t u0 = v[0].u, u1 = v[0].u, v0 = v[0].v, v1 = v[0].v, w, h, x, y, i;
-    const TexImage *r;
+    int32_t x, y;
     uint64_t key;
-    if (replaying ? t->cx != ipcx || t->cy != ipcy
-                  : player_gen + 1 < anchor_gen || t->cx != player_map.cx || t->cy != player_map.cy)
+    if (S.tw_and_u != 0xFFu || S.tw_or_u || S.tw_and_v != 0xFFu || S.tw_or_v || w < 1 || h < 1 || w > 256 || h > 256)
         return NULL;
-    if (S.tw_and_u != 0xFFu || S.tw_or_u || S.tw_and_v != 0xFFu || S.tw_or_v)
-        return NULL;
-    for (i = 1; i < nv; i++) {
-        u0 = v[i].u < u0 ? v[i].u : u0;
-        u1 = v[i].u > u1 ? v[i].u : u1;
-        v0 = v[i].v < v0 ? v[i].v : v0;
-        v1 = v[i].v > v1 ? v[i].v : v1;
-    }
-    if (u1 == u0 || v1 == v0)
-        return NULL;
-    w = u1 - u0 + 1;
-    h = v1 - v0 + 1;
     for (y = 0; y < h; y++)
         for (x = 0; x < w; x++)
             box[y * w + x] = (uint16_t)tex_fetch((uint32_t)(u0 + x), (uint32_t)(v0 + y));
@@ -1415,7 +1414,25 @@ static const TexImage *texpack_quad(const PgxpWord *t, const TriVtx *v, int nv)
     if (g_texdump)
         texpack_dump(key, w, h, box);
 #endif
-    if (!g_texpack || !(r = texpack_find(key)))
+    return g_texpack ? texpack_find(key) : NULL;
+}
+
+/* ... for a 2D sprite quad v built at a projected point (tagged t: people, animals, items), by the
+ * texels of its UV box (min to max, both included: the image the game drew it from, also when
+ * mirrored), stretched over the box for rep_fetch. */
+static const TexImage *texpack_quad(const PgxpWord *t, const TriVtx *v, int nv)
+{
+    int32_t u0 = v[0].u, u1 = v[0].u, v0 = v[0].v, v1 = v[0].v, i;
+    const TexImage *r;
+    if (t->cx == HUD_CX || t->cx == MENU_CX)
+        return NULL;
+    for (i = 1; i < nv; i++) {
+        u0 = v[i].u < u0 ? v[i].u : u0;
+        u1 = v[i].u > u1 ? v[i].u : u1;
+        v0 = v[i].v < v0 ? v[i].v : v0;
+        v1 = v[i].v > v1 ? v[i].v : v1;
+    }
+    if (u1 == u0 || v1 == v0 || !(r = texpack_box(u0, v0, u1 - u0 + 1, v1 - v0 + 1)))
         return NULL;
     rep_u0 = (float)u0;
     rep_v0 = (float)v0;
@@ -1814,11 +1831,12 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
 
 /* The upscaled copy of a tagged sprite rectangle scaled by sx, sy (depth, widescreen): the target
  * pixels between its scaled corners, each taking the texel under its centre (nearest, like the
- * native sprite). */
+ * native sprite), or with tex_rep the replacement image's pixel there (also for untagged ones). */
 static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uint32_t u0, uint32_t v0,
                                uint32_t color, int tex, int raw, int blend, const PgxpWord *t,
                                float sx, float sy)
 {
+    static int32_t col_tx[4096], col_ix[4096];
     const int32_t n = TH.n, cx = sprite_cx(t), cy = t->cy + S.offs_y;
     const float fn = (float)n;
     uint32_t r = color & 0xFFu, g = (color >> 8) & 0xFFu, b = (color >> 16) & 0xFFu;
@@ -1843,19 +1861,33 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
     if (Y0 < S.clip_y0 * n) Y0 = S.clip_y0 * n;
     if (X1 > (S.clip_x1 + 1) * n) X1 = (S.clip_x1 + 1) * n;
     if (Y1 > (S.clip_y1 + 1) * n) Y1 = (S.clip_y1 + 1) * n;
+    if (X1 - X0 > 4096)
+        X1 = X0 + 4096;
 
+    for (px = X0; px < X1; px++) {      /* each column's texel (and replacement pixel), once */
+        float fx = (((float)px + 0.5f) / fn - (float)cx - t->x) / sx + (float)(cx - x0);
+        int32_t tx = (int32_t)floorf(fx);
+        col_tx[px - X0] = tx < 0 ? 0 : tx >= w ? w - 1 : tx;
+        if (tex_rep) {
+            int32_t ix = (int32_t)(fx * rep_su);
+            col_ix[px - X0] = ix < 0 ? 0 : ix >= tex_rep->w ? tex_rep->w - 1 : ix;
+        }
+    }
     for (py = Y0; py < Y1; py++) {
-        int32_t ty = (int32_t)floorf((((float)py + 0.5f) / fn - (float)cy - t->y) / sy + (float)(cy - y0));
+        float fy = (((float)py + 0.5f) / fn - (float)cy - t->y) / sy + (float)(cy - y0);
+        int32_t ty = (int32_t)floorf(fy), iy = tex_rep ? (int32_t)(fy * rep_sv) : 0;
+        const uint16_t *rrow = tex_rep ? &tex_rep->px[(iy < 0 ? 0 : iy >= tex_rep->h ? tex_rep->h - 1 : iy) * tex_rep->w] : NULL;
         uint8_t vr;
         if (line_skip(py / n))
             continue;
         ty = ty < 0 ? 0 : ty >= h ? h - 1 : ty;
         vr = (uint8_t)(v0 + (uint32_t)(ty * v_inc));
         for (px = X0; px < X1; px++) {
-            int32_t tx = (int32_t)floorf((((float)px + 0.5f) / fn - (float)cx - t->x) / sx + (float)(cx - x0));
-            tx = tx < 0 ? 0 : tx >= w ? w - 1 : tx;
+            int32_t tx = col_tx[px - X0];
             if (tex) {
                 uint32_t tt = tex_fetch((uint8_t)(us + (uint32_t)(tx * u_inc)), vr);
+                if (rrow)
+                    tt = rep_mix(rrow[col_ix[px - X0]], tt);
                 if (tt)
                     plot(&TH, (uint32_t)px, (uint32_t)py, raw ? (tt & 0x7FFFu) : modulate(tt, r, g, b, NO_DITHER_LUT),
                          tt & 0x8000u, (tt & 0x8000u) ? blend : -1);
@@ -1905,9 +1937,12 @@ static void cmd_rect(const uint32_t *p)
     x = sext11((uint32_t)(x + S.offs_x));
     y = sext11((uint32_t)(y + S.offs_y));
 
+    const PgxpWord *t = NULL;
+    const TexImage *rep = NULL;
+    PgxpWord ttmp;
+    float sx = 1.0f, sy = 1.0f;
     if (TH.buf && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
-        PgxpWord ttmp;
-        const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
+        t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         if (t && !(t->w < 0.0f && t->value == p[1]))
             t = NULL;
         if (t && t->cx == MENU_CX) {        /* a menu background tile, drawn as it is */
@@ -1920,18 +1955,31 @@ static void cmd_rect(const uint32_t *p)
             t = &hud_word;
         t = interp_tag(t, &ttmp);
         if (t) {
-            const float sx = sprite_sx(t), sy = sprite_sy(t);
-            if (sx != 1.0f || sy != 1.0f) {                 /* scaled: native as usual, then the copy */
-                uint16_t *hb = TH.buf;
-                TH.buf = NULL;
-                draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
-                TH.buf = hb;
-                draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t, sx, sy);
-                return;
-            }
-            sprite_ox = sprite_coord(0, 0, t->x, 1.0f);
-            sprite_oy = sprite_coord(0, 0, t->y, 1.0f);
+            sx = sprite_sx(t);
+            sy = sprite_sy(t);
         }
+    }
+    /* texture packs: any textured rectangle (field objects, HUD, text, menus), by its texels; not
+     * flipped ones (the hardware reads those from another box) */
+    if (TH.buf && tex && (g_texpack || g_texdump) && !S.flip_x && !S.flip_y &&
+        (rep = texpack_box((int32_t)u, (int32_t)v, w, h)) != NULL) {
+        rep_su = (float)rep->w / (float)w;
+        rep_sv = (float)rep->h / (float)h;
+    }
+    if (rep || sx != 1.0f || sy != 1.0f) {              /* scaled or replaced: native as usual, then the copy */
+        static const PgxpWord untagged = { 0, 0.0f, 0.0f, -1.0f, 0, 0, 0.0f };
+        uint16_t *hb = TH.buf;
+        TH.buf = NULL;
+        draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
+        TH.buf = hb;
+        tex_rep = rep;
+        draw_sprite_scaled(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1, t ? t : &untagged, sx, sy);
+        tex_rep = NULL;
+        return;
+    }
+    if (t) {
+        sprite_ox = sprite_coord(0, 0, t->x, 1.0f);
+        sprite_oy = sprite_coord(0, 0, t->y, 1.0f);
     }
     draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
     sprite_ox = sprite_oy = 0;

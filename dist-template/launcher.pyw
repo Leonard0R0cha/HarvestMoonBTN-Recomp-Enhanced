@@ -83,9 +83,9 @@ TEXT = {
                          'like the ground under them.'),
         'interp': ('60 fps camera', 'The camera and scenery move 60 times a second (the game itself still runs '
                    'at 30). Drawn on spare processor cores; F9 switches it while playing.'),
-        'texturepack': ('Texture pack', 'Draws the player with the images in the textures folder (for now only '
-                        'the player). See docs/GRAPHICS.md.'),
-        'dumptextures': ('Dump textures', 'Writes each picture of the player the game shows to textures/dump, '
+        'texturepack': ('Texture pack', 'Draws people, animals, field objects, text and the HUD with the images in '
+                        'the textures folder (not the 3D world). See docs/GRAPHICS.md.'),
+        'dumptextures': ('Dump textures', 'Writes each sprite texture the game shows to textures/dump, '
                          'to draw a texture pack from.'),
         'drawthreads': ('Drawing threads', 'Processor threads that draw the 3D together, each a share of the '
                         'picture (the picture is the same). auto = by processor; 0 = the game\'s thread alone.'),
@@ -127,9 +127,9 @@ TEXT = {
                          'como o chão embaixo deles.'),
         'interp': ('Câmera a 60 fps', 'A câmera e o cenário se movem 60 vezes por segundo (o jogo continua a '
                    '30). Usa núcleos livres do processador; F9 liga e desliga durante o jogo.'),
-        'texturepack': ('Pacote de texturas', 'Desenha o jogador com as imagens da pasta textures (por enquanto '
-                        'só o jogador). Veja docs/GRAPHICS.md.'),
-        'dumptextures': ('Exportar texturas', 'Grava cada imagem do jogador que o jogo mostra em textures/dump, '
+        'texturepack': ('Pacote de texturas', 'Desenha pessoas, animais, objetos do campo, texto e o HUD com as '
+                        'imagens da pasta textures (não o mundo 3D). Veja docs/GRAPHICS.md.'),
+        'dumptextures': ('Exportar texturas', 'Grava cada textura de sprite que o jogo mostra em textures/dump, '
                          'para criar um pacote de texturas.'),
         'drawthreads': ('Threads de desenho', 'Threads do processador que desenham o 3D juntas, cada uma uma '
                         'parte da imagem (a imagem é a mesma). auto = pelo processador; 0 = só a do jogo.'),

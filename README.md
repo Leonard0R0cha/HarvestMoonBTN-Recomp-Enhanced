@@ -207,8 +207,8 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
 |  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects and the HUD keep their shape with `upscale` 2+ |
 |  | `interp` | `0` | `1` = in-between pictures: the camera and the 3D scenery move at 60 fps while the game runs at 30 (needs `pgxp`; 3 extra CPU threads) |
-|  | `texturepack` | `0` | `1` = draw the player with the replacement images in `textures/` next to the game ([texture packs](docs/GRAPHICS.md#texture-packs); needs `upscale` 2+) |
-|  | `dumptextures` | `0` | `1` = write each picture of the player to `textures/dump/`, to draw a texture pack from (needs `upscale` 2+) |
+|  | `texturepack` | `0` | `1` = draw 2D sprites (people, animals, field objects, text, HUD) with the replacement images in `textures/` next to the game ([texture packs](docs/GRAPHICS.md#texture-packs); needs `upscale` 2+) |
+|  | `dumptextures` | `0` | `1` = write each 2D sprite texture the game shows to `textures/dump/`, to draw a texture pack from (needs `upscale` 2+) |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
 |  | `fastcd` | `0` | shorter loading pauses: `1` = disc data 4x faster, `2` or more = that many times (music streaming is unaffected) |

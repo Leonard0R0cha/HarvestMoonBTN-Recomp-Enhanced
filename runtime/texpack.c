@@ -17,7 +17,8 @@ int g_texpack, g_texdump;
 static TexImage *imgs;              /* sorted by key */
 static int nimgs;
 static char dump_dir[1024];
-static uint64_t dumped[4096];       /* keys written this session */
+#define DUMPED_N (1 << 16)
+static uint64_t dumped[DUMPED_N];   /* keys written this session (open addressing, 0 = free) */
 static int ndumped;
 
 /* FNV-1a over the size and the 16-bit texels */
@@ -56,8 +57,8 @@ static int paeth(int a, int b, int c)
     return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
-/* An 8-bit RGB or RGBA PNG as texels: 15-bit colour, alpha below 128 transparent (0), opaque black
- * 8000h (0 would be transparent). NULL when it can't be read. */
+/* An 8-bit RGB or RGBA PNG as texels: 15-bit colour, alpha below 128 transparent (0), black as 0421h
+ * (0 would be transparent). NULL when it can't be read. */
 static uint16_t *png_load(const char *path, int *pw, int *ph)
 {
     static const uint8_t sig[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
@@ -110,7 +111,7 @@ static uint16_t *png_load(const char *path, int *pw, int *ph)
         for (x = 0; x < w; x++) {
             const uint8_t *p = r + x * bpp;
             uint16_t c = (uint16_t)((p[0] >> 3) | ((p[1] >> 3) << 5) | ((p[2] >> 3) << 10));
-            px[y * w + x] = bpp == 4 && p[3] < 128 ? 0 : c ? c : 0x8000;
+            px[y * w + x] = bpp == 4 && p[3] < 128 ? 0 : c ? c : 0x0421;
         }
     }
     *pw = w;
@@ -196,23 +197,23 @@ static void png_chunk(FILE *fp, const char *type, const uint8_t *d, size_t n)
     fwrite(b, 1, 4, fp);
 }
 
-/* Writes texels as <dump folder>/<key>.png (RGBA; texel 0 transparent), once per key and session, and
- * not over a file that is there already. */
+/* Writes texels as <dump folder>/<key>.png (RGBA; texel 0 transparent, bit 15 not kept), once per key
+ * and session, and not over a file that is there already. */
 void texpack_dump(uint64_t key, int w, int h, const uint16_t *px)
 {
     static const uint8_t sig[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
     char path[1200];
     size_t stride = (size_t)w * 4 + 1, n = stride * (size_t)h, nb = (n + 65534) / 65535, i, o = 2;
     uint8_t ihdr[13] = { 0 }, *raw, *z;
-    uint32_t a = 1, b = 0;
+    uint32_t a = 1, b = 0, s = (uint32_t)key & (DUMPED_N - 1);
     FILE *fp;
     int k;
-    for (k = 0; k < ndumped; k++)
-        if (dumped[k] == key)
-            return;
-    if (ndumped == (int)(sizeof dumped / sizeof *dumped))
+    while (dumped[s] && dumped[s] != key)
+        s = (s + 1) & (DUMPED_N - 1);
+    if (dumped[s] == key || ndumped >= DUMPED_N / 2)
         return;
-    dumped[ndumped++] = key;
+    dumped[s] = key;
+    ndumped++;
     snprintf(path, sizeof path, "%s/%016llx.png", dump_dir, (unsigned long long)key);
     if ((fp = fopen(path, "rb")) != NULL) {
         fclose(fp);

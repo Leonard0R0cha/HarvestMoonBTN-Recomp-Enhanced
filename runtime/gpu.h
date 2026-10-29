@@ -101,8 +101,9 @@ extern int (*g_scene_3d)(void);
 extern int g_hud_call;            /* the HUD icon routine is calling the sprite builder */
 
 /* Texture packs (texpack.c; upscaled display only): images drawn in the upscaled copy instead of
- * the texels of the player's sprite, found by a key of the texels (texpack_key: the size and the
- * 16-bit texels of the sprite's UV box). texpack_load reads every <key>.png in a folder (g_texpack:
+ * the texels of 2D sprites (quads built at a projected point, every textured rectangle), found by a
+ * key of the texels (texpack_key: the size and the 16-bit texels of the sprite's UV box).
+ * texpack_load reads every <key>.png in a folder (g_texpack:
  * any there); texpack_find is safe on any thread once loaded. With g_texdump (texpack_dump_to), the
  * GPU writes each texture it could replace to <folder>/<key>.png (texpack_dump). */
 typedef struct { uint64_t key; int w, h; uint16_t *px; } TexImage;   /* px: as texels, 0 = transparent */

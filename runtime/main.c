@@ -239,8 +239,8 @@ static void usage(void) {
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
-           "  --texturepack         draw the player with the images in textures/ (needs --upscale 2+)\n"
-           "  --dumptextures        write the player's textures to textures/dump/ (needs --upscale 2+)\n"
+           "  --texturepack         draw 2D sprites with the images in textures/ (needs --upscale 2+)\n"
+           "  --dumptextures        write the 2D sprites' textures to textures/dump/ (needs --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --no-autoslot         ask for the MEMORY CARD slot when saving/loading\n"
@@ -503,11 +503,11 @@ int main(int argc, char **argv) {
         if (g_cfg.dumptextures) {
             snprintf(dir, sizeof dir, "%stextures/dump", exe_dir);
             texpack_dump_to(dir);
-            LOGI("dumping the player's textures to %s", dir);
+            LOGI("dumping textures to %s", dir);
         }
     }
-    /* the player's sprite is found by its tag, so texture packs record tags too (without pgxp and
-     * widescreen they don't move or scale anything) */
+    /* sprite quads at projected points are found by their tags, so texture packs record tags too
+     * (without pgxp and widescreen they don't move or scale anything) */
     g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w || g_texpack || g_texdump);
     if (g_cfg.interp && g_pgxp) gpu_interp_enable();
     else if (g_cfg.interp) LOGW("interp needs upscale 2 or more and pgxp");

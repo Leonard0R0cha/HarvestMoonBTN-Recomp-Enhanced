@@ -1336,6 +1336,15 @@ static void player_quad(const uint16_t *tex, int mirrored)
     }
 }
 
+/* an untagged 8x8 textured rectangle at (100,100) */
+static void rect_scene(const uint16_t *tex)
+{
+    screen_320();
+    upload(640, 0, 8, 8, tex);
+    gp0(0xE100010A);
+    gp0(0x65000000); gp0(xy(100, 100)); gp0(0); gp0(xy(8, 8));
+}
+
 static void test_texpack(void)
 {
     static uint16_t ref[1024 * 512];
@@ -1347,8 +1356,9 @@ static void test_texpack(void)
     FILE *f;
     int i, j, w, h, mirrored;
 
+    gpu_vblank();
     for (i = 0; i < 64; i++) {
-        t1[i] = rgb15(i % 8 + 3, i / 8 + 3, 9);
+        t1[i] = (i == 5 ? 0x8000 : 0) | rgb15(i % 8 + 3, i / 8 + 3, 9);    /* with a semi-transparent texel */
         t2[i] = i == 9 ? 0x8000 : rgb15(20, i % 8 + 1, i / 8 + 1);   /* with opaque black */
     }
     for (i = 0; i < 256; i++)
@@ -1373,7 +1383,9 @@ static void test_texpack(void)
     CHECK(texpack_load("texpack_test") == 2 && g_texpack, "texpack: 2 images loaded");
     g_texdump = 0;                                       /* (the test's later textures aren't dumped) */
     im = texpack_find(k1);
-    CHECK(im && im->w == 8 && im->h == 8 && !memcmp(im->px, t1, sizeof t1), "texpack: PNG read back as dumped");
+    for (i = 0, j = 0; im && i < 64; i++)                /* (bit 15 isn't kept: it comes from the texture) */
+        j += im->px[i] != (t1[i] & 0x7FFF);
+    CHECK(im && im->w == 8 && im->h == 8 && !j, "texpack: PNG read back as dumped");
     im = texpack_find(k2);
     CHECK(im && im->w == 16 && im->h == 16 && !memcmp(im->px, rep, sizeof rep), "texpack: replacement read");
 
@@ -1390,6 +1402,20 @@ static void test_texpack(void)
             for (i = 0; i < 32; i++)
                 bad += out[(600 + j) * w + 600 + i] != argb15(rep[(j / 2) * 16 + (mirrored ? 15 - i / 2 : i / 2)]);
         CHECK(bad == 0, "texpack: %ld upscaled pixels not the replacement's (mirrored %d)", bad, mirrored);
+    }
+    {                                                    /* the same texels in a rectangle */
+        long bad = 0;
+        g_texpack = 0;
+        rect_scene(t2);
+        memcpy(ref, gpu_vram(), sizeof ref);
+        g_texpack = 1;
+        rect_scene(t2);
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "texpack: rectangle: native VRAM unchanged");
+        gpu_render_display(out, &w, &h);
+        for (j = 0; j < 32; j++)
+            for (i = 0; i < 32; i++)
+                bad += out[(400 + j) * w + 400 + i] != argb15(rep[(j / 2) * 16 + i / 2]);
+        CHECK(bad == 0, "texpack: rectangle: %ld upscaled pixels not the replacement's", bad);
     }
     t1[63] = 0;                                          /* a texture without replacement: drawn as usual */
     player_quad(t1, 0);
