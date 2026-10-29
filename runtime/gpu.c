@@ -450,6 +450,21 @@ static inline uint32_t tex_fetch(uint32_t u, uint32_t v)
     }
 }
 
+/* Texture packs: the image the upscaled copy of the polygon being drawn reads instead of its texels
+ * (NULL: none), stretched over the polygon's UV box from rep_u0, rep_v0 (rep_su, rep_sv: image
+ * pixels per texel). rep_fetch: the image pixel at u, v (8.24, a pixel centre's), nearest. */
+static const TexImage *tex_rep;
+static float rep_u0, rep_v0, rep_su, rep_sv;
+
+static inline uint32_t rep_fetch(const TexImage *r, uint32_t u, uint32_t v)
+{
+    int32_t x = (int32_t)(((float)(u >> 8) * (1.0f / 65536.0f) - rep_u0) * rep_su);
+    int32_t y = (int32_t)(((float)(v >> 8) * (1.0f / 65536.0f) - rep_v0) * rep_sv);
+    x = x < 0 ? 0 : x >= r->w ? r->w - 1 : x;
+    y = y < 0 ? 0 : y >= r->h ? r->h - 1 : y;
+    return r->px[y * r->w + x];
+}
+
 /* Texture colour modulation: (texel5 * colour8) >> 4, then dither/saturate. */
 static inline uint32_t modulate(uint32_t t, uint32_t r, uint32_t g, uint32_t b,
                                 const uint8_t *lut)
@@ -841,8 +856,10 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
                 persp_span(t, c, y, x, w, ig, d, pp, drow, 2);
             return;
         }
+        const TexImage *const rep = tex_rep;
+        const uint32_t hu = (uint32_t)((int32_t)(d->dx.u + d->dy.u) / 2), hv = (uint32_t)((int32_t)(d->dx.v + d->dy.v) / 2);
         for (; w > 0; w--, x++) {
-            uint32_t tx = tex_fetch(ig.u >> 24, ig.v >> 24);
+            uint32_t tx = rep ? rep_fetch(rep, ig.u + hu, ig.v + hv) : tex_fetch(ig.u >> 24, ig.v >> 24);
             if (tx) {
                 uint32_t rgb;
                 if (c->raw) {
@@ -947,7 +964,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
 {
     int32_t cy0 = S.clip_y0 * t->n, cy1 = S.clip_y1 * t->n + t->n - 1;
     Persp ps;
-    const Persp *pp = (t->n > 1 && c->textured && g_pgxp_persp && persp_setup(&ps, a, b, cc)) ? &ps : NULL;
+    const Persp *pp = (t->n > 1 && c->textured && g_pgxp_persp && !tex_rep && persp_setup(&ps, a, b, cc)) ? &ps : NULL;
     TriVtx v[3];
     unsigned cv;
     int core;
@@ -1365,6 +1382,48 @@ int gpu_threads(void)
 #define BAND_SYNC() ((void)0)
 #endif
 
+/* Texture packs: the replacement for the texture of the player's sprite quad v (tagged t), found by
+ * the texels of its UV box (min to max, both included: the frame the game uploaded for it, also
+ * when mirrored), and sets up rep_fetch for it; with g_texdump, the box is written out. In a redraw
+ * for an in-between picture, the player's anchor is the one of the recorded frame. */
+static const TexImage *texpack_quad(const PgxpWord *t, const TriVtx *v, int nv)
+{
+    static uint16_t box[256 * 256];
+    int32_t u0 = v[0].u, u1 = v[0].u, v0 = v[0].v, v1 = v[0].v, w, h, x, y, i;
+    const TexImage *r;
+    uint64_t key;
+    if (replaying ? t->cx != ipcx || t->cy != ipcy
+                  : player_gen + 1 < anchor_gen || t->cx != player_map.cx || t->cy != player_map.cy)
+        return NULL;
+    if (S.tw_and_u != 0xFFu || S.tw_or_u || S.tw_and_v != 0xFFu || S.tw_or_v)
+        return NULL;
+    for (i = 1; i < nv; i++) {
+        u0 = v[i].u < u0 ? v[i].u : u0;
+        u1 = v[i].u > u1 ? v[i].u : u1;
+        v0 = v[i].v < v0 ? v[i].v : v0;
+        v1 = v[i].v > v1 ? v[i].v : v1;
+    }
+    if (u1 == u0 || v1 == v0)
+        return NULL;
+    w = u1 - u0 + 1;
+    h = v1 - v0 + 1;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++)
+            box[y * w + x] = (uint16_t)tex_fetch((uint32_t)(u0 + x), (uint32_t)(v0 + y));
+    key = texpack_key(w, h, box);
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+    if (g_texdump)
+        texpack_dump(key, w, h, box);
+#endif
+    if (!g_texpack || !(r = texpack_find(key)))
+        return NULL;
+    rep_u0 = (float)u0;
+    rep_v0 = (float)v0;
+    rep_su = (float)r->w / (float)(u1 - u0);
+    rep_sv = (float)r->h / (float)(v1 - v0);
+    return r;
+}
+
 static void cmd_polygon(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
@@ -1447,6 +1506,7 @@ static void cmd_polygon(const uint32_t *p)
     }
     if (TH.buf) {
         const PgxpWord *st = NULL;
+        const TexImage *rep = NULL;
         PgxpWord stmp;
         if (g_sprite_tags) {    /* a 2D sprite quad built at a projected point: every corner tagged alike */
             const PgxpWord *t0 = &pgxp_mem[(cmd_addr[xyi[0]] & 0x1FFFFCu) >> 2];
@@ -1475,6 +1535,8 @@ static void cmd_polygon(const uint32_t *p)
                     st = &hud_word;
             }
             st = interp_tag(st, &stmp);
+            if (st && tex && quad && (g_texpack || g_texdump))
+                rep = texpack_quad(st, v, nv);
         }
         for (i = 0; i < nv; i++) {
             float fx, fy, fw;
@@ -1494,13 +1556,18 @@ static void cmd_polygon(const uint32_t *p)
         }
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
         if (atomic_load_explicit(&nbands, memory_order_relaxed)) {
-            band_push(&c, v, quad);
-            return;
+            if (!rep) {
+                band_push(&c, v, quad);
+                return;
+            }
+            band_sync();        /* a replaced texture is drawn here, over the polygons queued before it */
         }
 #endif
+        tex_rep = rep;
         draw_triangle(&TH, &c, &v[0], &v[1], &v[2]);
         if (quad)
             draw_triangle(&TH, &c, &v[1], &v[2], &v[3]);
+        tex_rep = NULL;
     }
 }
 

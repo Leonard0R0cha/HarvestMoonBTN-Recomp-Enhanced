@@ -187,6 +187,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
+    else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
+    else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
     else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
@@ -237,6 +239,8 @@ static void usage(void) {
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
+           "  --texturepack         draw the player with the images in textures/ (needs --upscale 2+)\n"
+           "  --dumptextures        write the player's textures to textures/dump/ (needs --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
            "  --no-autoslot         ask for the MEMORY CARD slot when saving/loading\n"
@@ -337,6 +341,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
         else if (!strcmp(a, "--interp")) g_cfg.interp = 1;
         else if (!strcmp(a, "--no-interp")) g_cfg.interp = 0;
+        else if (!strcmp(a, "--texturepack")) g_cfg.texturepack = 1;
+        else if (!strcmp(a, "--no-texturepack")) g_cfg.texturepack = 0;
+        else if (!strcmp(a, "--dumptextures")) g_cfg.dumptextures = 1;
         else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
         else if (!strcmp(a, "--fastcd")) g_cfg.fast_cd = 1;
@@ -487,7 +494,21 @@ int main(int argc, char **argv) {
         g_scene_3d = platform_3d_scene;
         LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
     }
-    g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w);
+    if ((g_cfg.texturepack || g_cfg.dumptextures) && gpu_upscale() < 2)
+        LOGW("texture packs need upscale 2 or more");
+    else if (g_cfg.texturepack || g_cfg.dumptextures) {
+        char dir[1200];
+        snprintf(dir, sizeof dir, "%stextures", exe_dir);
+        if (g_cfg.texturepack) LOGI("texture pack: %d images in %s", texpack_load(dir), dir);
+        if (g_cfg.dumptextures) {
+            snprintf(dir, sizeof dir, "%stextures/dump", exe_dir);
+            texpack_dump_to(dir);
+            LOGI("dumping the player's textures to %s", dir);
+        }
+    }
+    /* the player's sprite is found by its tag, so texture packs record tags too (without pgxp and
+     * widescreen they don't move or scale anything) */
+    g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w || g_texpack || g_texdump);
     if (g_cfg.interp && g_pgxp) gpu_interp_enable();
     else if (g_cfg.interp) LOGW("interp needs upscale 2 or more and pgxp");
     spu_init();

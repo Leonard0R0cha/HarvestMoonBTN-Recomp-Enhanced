@@ -1314,6 +1314,97 @@ static void test_interp(void)
     free(out);
 }
 
+/* ---------------------------------------------------------------------- */
+/* Texture packs: the player's sprite quad (an 8x8 texture at (150,150), UV 0..7, mirrored: 7..0)
+ * dumped, read back, and drawn with a replacement in the upscaled copy only */
+
+static void player_quad(const uint16_t *tex, int mirrored)
+{
+    static const int Q[4][2] = { { 150, 150 }, { 158, 150 }, { 150, 158 }, { 158, 158 } };
+    int k;
+    screen_320();
+    upload(640, 0, 8, 8, tex);
+    gpu_sprite_anchor(154, 158, 0.0f, 0.0f, 1.0f, 0.0f, 1);  /* the player's anchor */
+    gpu_sprite_begin(154, 158);
+    for (k = 0; k < 4; k++)
+        gpu_sprite_tag(0x5000u + 8u * (uint32_t)k, xy(Q[k][0], Q[k][1]));
+    gp0(0x2D000000);
+    for (k = 0; k < 4; k++) {
+        uint32_t u = (uint32_t)((k & 1) ^ mirrored) * 7u, v = (uint32_t)(k >> 1) * 7u;
+        gp0_at(xy(Q[k][0], Q[k][1]), 0x5000u + 8u * (uint32_t)k);
+        gp0((k == 1 ? 0x010A0000u : 0u) | (v << 8) | u);       /* 15-bit page at x=640 */
+    }
+}
+
+static void test_texpack(void)
+{
+    static uint16_t ref[1024 * 512];
+    uint16_t t1[64], t2[64], rep[16 * 16];
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    const TexImage *im;
+    uint64_t k1, k2;
+    char path[64];
+    FILE *f;
+    int i, j, w, h, mirrored;
+
+    for (i = 0; i < 64; i++) {
+        t1[i] = rgb15(i % 8 + 3, i / 8 + 3, 9);
+        t2[i] = i == 9 ? 0x8000 : rgb15(20, i % 8 + 1, i / 8 + 1);   /* with opaque black */
+    }
+    for (i = 0; i < 256; i++)
+        rep[i] = i == 0 ? 0 : rgb15(i % 16 + 1, i / 16 + 1, 25);     /* 2x, first pixel transparent */
+    k1 = texpack_key(8, 8, t1);
+    k2 = texpack_key(8, 8, t2);
+    snprintf(path, sizeof path, "texpack_test/%016llx.png", (unsigned long long)k1);
+    remove(path);
+    snprintf(path, sizeof path, "texpack_test/%016llx.png", (unsigned long long)k2);
+    remove(path);
+    gpu_set_upscale(4);
+    g_sprite_tags = 1;
+
+    texpack_dump_to("texpack_test");                     /* drawing the quad dumps its texture */
+    player_quad(t1, 0);
+    snprintf(path, sizeof path, "texpack_test/%016llx.png", (unsigned long long)k1);
+    f = fopen(path, "rb");
+    CHECK(f != NULL, "texpack: %s dumped", path);
+    if (f)
+        fclose(f);
+    texpack_dump(k2, 16, 16, rep);                       /* the replacement for t2 */
+    CHECK(texpack_load("texpack_test") == 2 && g_texpack, "texpack: 2 images loaded");
+    g_texdump = 0;                                       /* (the test's later textures aren't dumped) */
+    im = texpack_find(k1);
+    CHECK(im && im->w == 8 && im->h == 8 && !memcmp(im->px, t1, sizeof t1), "texpack: PNG read back as dumped");
+    im = texpack_find(k2);
+    CHECK(im && im->w == 16 && im->h == 16 && !memcmp(im->px, rep, sizeof rep), "texpack: replacement read");
+
+    for (mirrored = 0; mirrored < 2; mirrored++) {
+        long bad = 0;
+        g_texpack = 0;
+        player_quad(t2, mirrored);
+        memcpy(ref, gpu_vram(), sizeof ref);
+        g_texpack = 1;
+        player_quad(t2, mirrored);
+        CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "texpack: native VRAM unchanged (mirrored %d)", mirrored);
+        gpu_render_display(out, &w, &h);
+        for (j = 0; j < 32; j++)                         /* each replacement pixel is 2x2 target pixels */
+            for (i = 0; i < 32; i++)
+                bad += out[(600 + j) * w + 600 + i] != argb15(rep[(j / 2) * 16 + (mirrored ? 15 - i / 2 : i / 2)]);
+        CHECK(bad == 0, "texpack: %ld upscaled pixels not the replacement's (mirrored %d)", bad, mirrored);
+    }
+    t1[63] = 0;                                          /* a texture without replacement: drawn as usual */
+    player_quad(t1, 0);
+    gpu_render_display(out, &w, &h);
+    CHECK(out[601 * w + 605] == argb15(t1[1]) && out[631 * w + 631] == argb15(t1[54]), "texpack: other textures unchanged");
+
+    g_texpack = g_texdump = g_sprite_tags = 0;
+    gpu_set_upscale(1);
+    free(out);
+}
+
+/* the frontend's (main.c) */
+void log_msg(int level, const char *fmt, ...) { (void)level; (void)fmt; }
+void fatal(const char *fmt, ...) { (void)fmt; printf("FATAL\n"); exit(1); }
+
 int main(int argc, char **argv)
 {
     const char *vram_path = argc > 1 ? argv[1] : "gpu_test_vram.bmp";
@@ -1369,6 +1460,7 @@ int main(int argc, char **argv)
     test_pgxp();
     test_pgxp_sprite();
     test_interp();
+    test_texpack();
 
     printf("%d passed, %d failed\n", g_pass, g_fail);
     free(img);

@@ -14,6 +14,8 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `sprite_depth = 1` | 2D objects get smaller further away, like the 3D ground | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
+| `texturepack = 1` | the player drawn with replacement images from `textures/` | upscale 2+ |
+| `dumptextures = 1` | the player's textures written to `textures/dump/`, to draw a pack from | upscale 2+ |
 
 The launcher (`launcher.pyw` in the build folder, needs Python) edits all of these.
 
@@ -275,6 +277,69 @@ found): the game keeps its full speed with `interp` on, and the in-between pictu
 in time at upscale 2 and 3. At upscale 4 by the waterfall the game's own drawing already takes
 more than a frame's time, so there it shows 30 pictures a second.
 
+## Texture packs
+
+A texture pack is a folder of PNG images, `textures/` next to the game, that the upscaled picture
+uses in place of the game's own texels. For now it covers the player only. The native VRAM is drawn
+as before (the game reads it back and samples it), so the game sees no difference; with a pack the
+RAM and VRAM stayed identical to a run without one, and the pictures differed only where the player
+is.
+
+**Finding: the player's frames move around VRAM.** The player is one textured quad (`POLY_FT4`,
+8-bit, opaque, not tinted) built by the single-quad builder (80016C08) and tagged with the player's
+anchor. The game uploads the current animation frame for every frame it draws, into one of two
+slots of the texture page at 960,256 (x 960 or 992, one per drawing buffer), with its palette in
+row 485 or 486. The quad's UVs span the uploaded image, last texel included (`0..35 × 0..44` for a
+36×45 frame); facing left swaps the U of the corners. The VRAM address and the palette row change
+every frame, so a frame can only be recognised by what it looks like.
+
+**The key.** For a textured quad tagged with the player's anchor, the GPU reads the texels of its UV
+box (smallest to largest UV, both included) through the palette and hashes the box's size and the
+16-bit texels (FNV-1a, 64 bits). The same animation frame gets the same key in either slot, with
+either palette row and mirrored or not. A replacement is `textures/<key>.png`, e.g.
+`textures/74c3cd670f0ebe99.png`. The player of the recorded farm session used 33 different frames.
+
+**Making a pack.**
+
+1. Play with `dumptextures = 1` (or `--dumptextures`). Each frame of the player not seen before is
+   written once to `textures/dump/<key>.png`: an RGBA image of the frame at its original size,
+   transparent where the texel is 0. Files already there are not written again.
+2. Draw the frames anew at any size, keeping the shape (4× the dump is exactly one image pixel per
+   screen pixel at `upscale = 4`). Pixels with alpha below 128 are transparent. Save as 8-bit RGB or
+   RGBA PNG in `textures/`, under the dump's name.
+3. Play with `texturepack = 1`. The images are read when the game starts; the log says how many.
+
+`tools/texpack_sample.py` makes a sample pack from dumps: each frame enlarged 4× with Scale2x applied
+twice (smooth diagonals instead of 4×4 blocks). It is made from your own dump, so no game art is
+in the repository: `python tools/texpack_sample.py dist/HarvestMoonBTN-Windows-x64/textures/dump/*.png`.
+
+**How it's drawn.** When the key has an image, the upscaled copy of the quad is drawn as before, with
+the same corners (sub-pixel anchor, depth scale, widescreen squeeze), colour and blending; only the
+texel each pixel takes comes from the image: the UV at the pixel's centre, mapped from the UV box onto
+the image, nearest. A mirrored quad shows the image mirrored. The UV box is stretched over the whole
+image: the original 36-texel frame, drawn at UV 0..35 on a 36-pixel quad, shows 35 texels with one of
+them twice, while its replacement shows every one of its columns. The drawing threads don't draw a
+replaced quad: the GPU waits for the polygons queued before it and draws it itself (the pictures came
+out identical with 0 and 4 threads). The in-between pictures redraw the recorded frame, where the
+player is the recorded frame's player anchor, so they show the replacement too.
+
+The player is found by its sprite tag, so with a pack sprite tags are recorded even without PGXP and
+widescreen; there they move and scale nothing (checked at upscale 2, 4:3, no PGXP: only the player's
+pixels changed).
+
+**Limits.**
+
+- Only the player (and what it holds over its head, which takes its anchor): widening it to every
+  tagged sprite is one condition in `texpack_quad`, but rectangle sprites (stumps, rocks), 3D models
+  and the HUD would need keys of their own.
+- Upscaled picture only (upscale 2+), nearest sampling; widescreen squeezes a 4× image onto 3 pixels per
+  texel, so columns of it are dropped.
+- Replacement colours are 15-bit, like the VRAM. A texel's semi-transparency bit is not kept: opaque
+  black stays opaque, semi-transparent texels become opaque (the player has none).
+- A frame drawn with a different palette is a different key (a recoloured frame needs its own image).
+- All images are read at start and kept in memory.
+- Texture windows (`GP0(E2h)`) are not supported: such a quad is drawn as usual.
+
 ## Testing method
 
 - `--record FILE` saves the pad input of a play session; `--input @FILE` replays it
@@ -285,7 +350,7 @@ more than a frame's time, so there it shows 30 pictures a second.
 - Every option was checked for game-state identity (RAM + VRAM dumps compared with a plain
   run) and with unit tests in `runtime/tests/` (upscaled texel sampling, PGXP vertices,
   perspective, sprite shifting and depth scaling, the ground-scale formula, the widescreen
-  projection, sprite squeeze and frustum angles). Widescreen changes the game state on
+  projection, sprite squeeze and frustum angles, texture pack PNGs and a replaced quad). Widescreen changes the game state on
   purpose; with it off the game state is unchanged.
 - Interpolation only changes what is shown. The in-between pictures were compared frame by
   frame across 1, 2 and 3 worker bands (identical) and checked against the frames before and
