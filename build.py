@@ -90,7 +90,9 @@ def recompile(clean):
     for n in sorted(GAME_FILES):
         h.update(GAME_FILES[n].encode())
     for p in RECOMP_INPUTS:
-        h.update(open(os.path.join(ROOT, p), 'rb').read())
+        # as text: Windows line ends (a copy not checked out with git) must not change the key, which
+        # goes into the co-op build id (tools/compile.py)
+        h.update(open(os.path.join(ROOT, p), 'rb').read().replace(b'\r\n', b'\n'))
     key = h.hexdigest()
     stamp = os.path.join(ROOT, 'generated', '.stamp')
     if not clean and os.path.exists(stamp) and open(stamp).read() == key:
