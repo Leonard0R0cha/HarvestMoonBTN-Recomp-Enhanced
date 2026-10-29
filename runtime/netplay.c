@@ -32,10 +32,11 @@ typedef int sock_t;
 #define close_sock close
 #endif
 
-#define NET_VERSION 1
+#define NET_VERSION 2
 #define RING 256                /* frames of input kept (more than any delay) */
 #define HASH_EVERY 60
 #define TIMEOUT_MS 15000
+#define CARDS_TIMEOUT_MS 300000  /* the host waits this long for the friend to get its cards (slow links) */
 
 enum { MSG_INPUT = 1, MSG_HASH = 2, MSG_BYE = 3 };
 
@@ -112,10 +113,32 @@ static int wait_readable(int ms) {
     return select((int)sock + 1, &r, NULL, NULL, &tv) > 0;
 }
 
+static int wait_writable(int ms) {
+    fd_set w;
+    struct timeval tv = { ms / 1000, (ms % 1000) * 1000 };
+    FD_ZERO(&w);
+    FD_SET(sock, &w);
+    return select((int)sock + 1, NULL, &w, NULL, &tv) > 0;
+}
+
+static int would_block(void) {
+#ifdef _WIN32
+    return WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+#endif
+}
+
+/* also on the non-blocking socket of the game: a full send buffer (the cards still on their way
+ * over a slow link) is waited out, not taken for a lost connection */
 static int send_all(const void *p, int n) {
     const char *c = p;
     while (n > 0) {
         int k = send(sock, c, n, 0);
+        if (k < 0 && would_block()) {
+            if (!wait_writable(TIMEOUT_MS)) return 0;
+            continue;
+        }
         if (k <= 0) return 0;
         c += k;
         n -= k;
@@ -123,13 +146,13 @@ static int send_all(const void *p, int n) {
     return 1;
 }
 
-/* blocking read of exactly n bytes (handshake only), giving up after TIMEOUT_MS of silence */
-static int recv_all(void *p, int n) {
+/* blocking read of exactly n bytes (handshake only), giving up after ms of silence */
+static int recv_wait(void *p, int n, int ms) {
     char *c = p;
     while (n > 0) {
         int waited = 0;
         while (!wait_readable(50)) {
-            if (closing() || (waited += 50) > TIMEOUT_MS) return 0;
+            if (closing() || (waited += 50) > ms) return 0;
         }
         int k = recv(sock, c, n, 0);
         if (k <= 0) return 0;
@@ -139,10 +162,12 @@ static int recv_all(void *p, int n) {
     return 1;
 }
 
-static int recv_line(char *out, int n) {
+static int recv_all(void *p, int n) { return recv_wait(p, n, TIMEOUT_MS); }
+
+static int recv_line_wait(char *out, int n, int ms) {
     int i = 0;
     while (i < n - 1) {
-        if (!recv_all(out + i, 1)) return 0;
+        if (!recv_wait(out + i, 1, ms)) return 0;
         if (out[i] == '\n') break;
         i++;
     }
@@ -150,14 +175,18 @@ static int recv_line(char *out, int n) {
     return 1;
 }
 
+static int recv_line(char *out, int n) { return recv_line_wait(out, n, TIMEOUT_MS); }
+
 static void put32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
 static uint32_t get32(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
+
+static void drop(const char *why);
 
 static void send_msg(int type, uint16_t buttons, uint32_t frame, uint32_t value) {
     uint8_t m[12] = { (uint8_t)type, 0, (uint8_t)buttons, (uint8_t)(buttons >> 8) };
     put32(m + 4, frame);
     put32(m + 8, value);
-    if (active && !send_all(m, 12)) active = 0;
+    if (active && !send_all(m, 12)) drop("Coop: a conexão caiu (jogando sozinho)");
 }
 
 static void drop(const char *why) {
@@ -301,6 +330,7 @@ int netplay_start(int *bank, const char *guest_dir) {
         *bank = b;
         if (!recv_line(line, sizeof line)) { drop("Coop: conexão perdida"); return 0; }
         apply_settings(line);
+        set_status("Coop: recebendo os saves do anfitrião...");
         for (int i = 0; i < CARD_BANKS; i++) {      /* the host's cards, into saves/netplay */
             uint8_t n4[4];
             char p[1200];
@@ -315,6 +345,7 @@ int netplay_start(int *bank, const char *guest_dir) {
             if (f) { fwrite(data, 1, n, f); fclose(f); }
             free(data);
         }
+        if (!send_all("READY\n", 6)) { drop("Coop: conexão perdida"); return 0; }
         snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", guest_dir);
     } else {
         unsigned v = 0, h = 0;
@@ -328,6 +359,7 @@ int netplay_start(int *bank, const char *guest_dir) {
         send_all(line, (int)strlen(line));
         settings_line(line, sizeof line);
         send_all(line, (int)strlen(line));
+        set_status("Coop: mandando os saves para o amigo...");
         for (int i = 0; i < CARD_BANKS; i++) {
             char p[1200];
             uint8_t n4[4];
@@ -348,6 +380,12 @@ int netplay_start(int *bank, const char *guest_dir) {
             put32(n4, (uint32_t)n);
             if (!send_all(n4, 4) || (n && !send_all(data, (int)n))) { drop("Coop: conexão perdida"); return 0; }
             if (data && i != *bank - 1) free(data);
+        }
+        /* the game starts once the friend has all of them: with several saves that is half a
+         * megabyte, which a slow link takes longer than TIMEOUT_MS to carry */
+        if (!recv_line_wait(line, sizeof line, CARDS_TIMEOUT_MS) || strcmp(line, "READY")) {
+            drop("Coop: o amigo não recebeu os saves (conexão perdida)");
+            return 0;
         }
     }
 #ifdef _WIN32
