@@ -21,7 +21,7 @@
 #include "gte.h"
 #include <setjmp.h>
 
-int g_view2 = -1;                   /* -1: on with --p2 when not online (main.c) */
+int g_view2 = -1;                   /* -1: on with --p2 when not online (main.c); 2: online guest, in the game's window */
 int g_view2_run;
 
 #define FRAME 0x800C14A0u
@@ -42,7 +42,7 @@ static unsigned runs, dropped;
 static int p2view_built(void);
 
 void p2view_init(void) {
-    if (!g_view2) return;
+    if (g_view2 <= 0) return;
     ram0 = malloc(sizeof g_ram);
     built = malloc(sizeof g_ram);
     gte0 = malloc(gte_state_size());

@@ -72,6 +72,10 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None):
         f.write(readme.replace('{{GAME_DATA}}\n', game_data))
     shutil.copy2(os.path.join(TPL, 'LICENSE-SDL2.txt'), os.path.join(out, 'LICENSE-SDL2.txt'))
     shutil.copy2(os.path.join(TPL, 'launcher.pyw'), os.path.join(out, 'launcher.pyw'))
+    # the launcher built from it (PyInstaller), for players without Python
+    launcher_exe = os.path.join(TPL, 'HarvestMoonBTN-Launcher.exe')
+    if os.path.isfile(launcher_exe):
+        shutil.copy2(launcher_exe, os.path.join(out, 'HarvestMoonBTN-Launcher.exe'))
     # the launcher's own pictures (any it also finds there from elsewhere are kept)
     assets = os.path.join(TPL, 'launcher-assets')
     if os.path.isdir(assets):

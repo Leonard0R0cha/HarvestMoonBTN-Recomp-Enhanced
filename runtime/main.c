@@ -488,7 +488,7 @@ int main(int argc, char **argv) {
                  t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
     }
 
-    if (g_view2 < 0) g_view2 = g_p2_enabled && !netplay_role();   /* a window for farmer 2 */
+    if (g_view2 < 0 && netplay_role() != 2) g_view2 = g_p2_enabled && !netplay_role();   /* a window for farmer 2 */
     if (platform_init() != 0) return 1;
 
     if (!locate_disc())
@@ -536,6 +536,7 @@ int main(int argc, char **argv) {
             if (!g_quit) fatal("%s", netplay_status(NULL));
             return 0;
         }
+        if (g_view2 < 0) g_view2 = g_p2_enabled ? 2 : 0;   /* two farmers: the guest's window follows farmer 2 */
     }
     memcard_open_banks(card_bank);
     if (netplay_role() == 1) {          /* co-op host: sends its cards once the friend is in */

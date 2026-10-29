@@ -154,6 +154,13 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
                 failed = True
     if failed:
         sys.exit('BUILD FAILED')
+    if IS_WIN and not linux_cross:      # the program icon (runtime/icon.rc)
+        res = os.path.join(objdir, 'icon_rc.o')
+        code, out = sh([os.path.join(DEPS, 'llvm-mingw', 'bin', 'x86_64-w64-mingw32-windres.exe'),
+                        os.path.join(rt, 'icon.rc'), '-o', res])
+        if code:
+            sys.exit('ICON FAILED\n' + out)
+        objs.append(res)
     link = cc + target + objs + sdl_libs + ['-o', exe]
     if linux_cross:
         link += ['-lm', '-ldl', '-lpthread', '-Wl,-z,stack-size=16777216', '-s']
