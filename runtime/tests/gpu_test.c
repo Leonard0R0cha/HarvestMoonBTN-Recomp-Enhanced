@@ -1012,6 +1012,44 @@ static void test_pgxp_seams(void)
         CHECK(!memcmp(one, out, (size_t)w * h * sizeof(uint32_t)), "seam: the same picture with band workers");
         free(one);
     }
+    {                                           /* the same with perspective-correct textured quads */
+        static uint16_t tex[16 * 16];
+        int i, k;
+        for (i = 0; i < 16 * 16; i++)
+            tex[i] = (i % 16) < 8 ? rgb15(31, 0, 0) : rgb15(0, 0, 31);
+        g_pgxp_persp = 1;
+        screen_320();
+        upload(640, 0, 16, 16, tex);
+        pgxp_quad(0x00FF00, G, GF, 0x3000);
+        for (k = 0; k < 2; k++) {               /* B from the red texels, C from the blue */
+            const int (*P)[2] = k ? C : B;
+            const float (*F)[2] = k ? CF : BF;
+            uint32_t a = k ? 0x3020u : 0x3010u, u0 = k ? 8u : 0u;
+            for (i = 0; i < 4; i++)
+                gpu_pgxp_store(a + 4u * (uint32_t)i, xy(P[i][0], P[i][1]), 1, F[i][0], F[i][1], 100.0f);
+            gp0(0x2D000000);                    /* textured quad, raw */
+            gp0_at(xy(P[0][0], P[0][1]), a);        gp0(u0);
+            gp0_at(xy(P[1][0], P[1][1]), a + 4);    gp0((0x10Au << 16) | (u0 + 7u));
+            gp0_at(xy(P[2][0], P[2][1]), a + 8);    gp0((15u << 8) | u0);
+            gp0_at(xy(P[3][0], P[3][1]), a + 12);   gp0((15u << 8) | (u0 + 7u));
+        }
+        gpu_render_display(out, &w, &h);
+        g_pgxp_persp = 0;
+        for (gap = 0, x = 156; x < 164; x++)
+            gap += (out[160 * w + x] & 0xFFFFFFu) == 0x00FF00u;
+        CHECK(gap == 0, "seam: filled between perspective-correct textured quads (%d px)", gap);
+    }
+    g_pgxp_cracks = 0;                          /* crackfix = 0: drawn as before */
+    gpu_set_upscale(4);
+    screen_320();
+    pgxp_quad(0x00FF00, G, GF, 0x3000);
+    pgxp_quad(0x0000FF, B, BF, 0x3010);
+    pgxp_quad(0xFF0000, C, CF, 0x3020);
+    gpu_render_display(out, &w, &h);
+    for (gap = 0, x = 156; x < 164; x++)
+        gap += (out[160 * w + x] & 0xFFFFFFu) == 0x00FF00u;
+    CHECK(gap == 3, "seam: left open with the fix off (%d px)", gap);
+    g_pgxp_cracks = 1;
     g_pgxp = 0;
     gpu_set_upscale(1);
     free(out);
@@ -1560,6 +1598,7 @@ int main(int argc, char **argv)
 
     test_upscale();
     test_upscale_texels();
+    g_pgxp_cracks = 1;
     test_pgxp();
     test_pgxp_seams();
     test_pgxp_sprite();

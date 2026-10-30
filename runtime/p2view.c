@@ -59,6 +59,7 @@ void p2view_init(void) {
     int up = gpu_upscale();
     if (g_cfg.p2view_upscale > 0 && g_cfg.p2view_upscale < up) up = g_cfg.p2view_upscale;
     view2_gpu_init();
+    view2_g_pgxp_cracks = g_pgxp_cracks;
     view2_gpu_set_upscale(up);
     view2_gpu_set_threads(gpu_threads());   /* as many as the game's GPU draws with */
     view2_g_pgxp = g_pgxp && view2_gpu_upscale() > 1;

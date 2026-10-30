@@ -13,12 +13,13 @@ EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMo
 
 BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle',
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
-# (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, text, choice:a|b|c,
-# edit:a|b|c (a choice that can also be typed)
+# (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
+# text, choice:a|b|c, edit:a|b|c (a choice that can also be typed)
 OPTIONS = [
     ('video', 'video', 'upscale', 'choice:1|2|3|4'),
     ('video', 'video', 'widescreen', 'choice:off|16:9|16:10|21:9'),
     ('video', 'video', 'pgxp', 'bool'),
+    ('video', 'video', 'crackfix', 'bool:1'),
     ('video', 'video', 'perspective', 'bool'),
     ('video', 'video', 'sprite_depth', 'bool'),
     ('video', 'video', 'interp', 'bool'),
@@ -59,13 +60,14 @@ PRESETS = [
     ('preset4', {'upscale': '3'}),
     ('preset6', {'upscale': '4'}),
 ]
-PRESET_ALL = {'pgxp': '1', 'perspective': '1', 'sprite_depth': '1', 'interp': '1'}
+PRESET_ALL = {'pgxp': '1', 'crackfix': '1', 'perspective': '1', 'sprite_depth': '1', 'interp': '1'}
 
 # option -> (what it needs, as a text key): greyed out until it holds
 def _up2(v):
     return v('upscale') not in ('', '1')
 REQUIRES = {
     'pgxp': (_up2, 'need_up2'),
+    'crackfix': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'perspective': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'sprite_depth': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
@@ -83,6 +85,9 @@ TEXT = {
         'widescreen': ('Widescreen', 'Shows more of the farm and town at the sides. Title, menus and videos stay '
                        '4:3. With resolution 2 or more, people and the HUD keep their shape.'),
         'pgxp': ('Precise 3D (PGXP)', 'No more wobbling polygons, the PlayStation\'s trademark shimmer.'),
+        'crackfix': ('Close cracks between models', 'Fills the thin gaps precise 3D opens where models meet '
+                     '(ground tiles, door frames, fences on the ground), as the PlayStation shows them. Costs '
+                     'about 1 ms a frame at resolution 4.'),
         'perspective': ('Perspective-correct textures', 'No warping on large floors and walls. Costs some '
                         'speed.'),
         'sprite_depth': ('Objects shrink with distance', 'Stumps, rocks and people get smaller further away, '
@@ -145,6 +150,9 @@ TEXT = {
         'widescreen': ('Tela larga', 'Mostra mais da fazenda e da cidade nas laterais. Título, menus e vídeos '
                        'continuam 4:3. Com resolução 2 ou mais, pessoas e o HUD mantêm a forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Acaba com os polígonos tremendo, o tremido típico do PlayStation.'),
+        'crackfix': ('Fechar frestas entre modelos', 'Preenche as frestas finas que o 3D preciso abre onde os '
+                     'modelos se encontram (pisos, batentes de portas, cercas no chão), como o PlayStation mostra. '
+                     'Custa cerca de 1 ms por quadro na resolução 4.'),
         'perspective': ('Texturas com perspectiva correta', 'Sem distorção em chãos e paredes grandes. Pesa um '
                         'pouco.'),
         'sprite_depth': ('Objetos diminuem com a distância', 'Tocos, pedras e pessoas ficam menores ao longe, '
@@ -206,6 +214,9 @@ TEXT = {
         'widescreen': ('Pantalla panorámica', 'Muestra más de la granja y del pueblo a los lados. Título, menús y '
                        'vídeos siguen en 4:3. Con resolución 2 o más, las personas y el HUD mantienen su forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Se acabaron los polígonos temblorosos, el temblor típico de PlayStation.'),
+        'crackfix': ('Cerrar grietas entre modelos', 'Rellena las grietas finas que el 3D preciso abre donde los '
+                     'modelos se juntan (suelo, marcos de puertas, cercas en el suelo), como las muestra '
+                     'PlayStation. Cuesta cerca de 1 ms por cuadro en resolución 4.'),
         'perspective': ('Texturas con perspectiva correcta', 'Sin deformación en suelos y paredes grandes. Cuesta '
                         'algo de velocidad.'),
         'sprite_depth': ('Los objetos se achican con la distancia', 'Tocones, rocas y personas se ven más '
@@ -774,8 +785,8 @@ def main():
     for page, section, key, kind in OPTIONS:
         # a path from a commented example ("#disc = C:\Games\...") is not a real setting
         start = loaded.get(key, '') if (key in active or kind not in ('file', 'dir')) else ''
-        if kind.startswith('choice:') and not start:
-            start = kind[7:].split('|')[0]       # the game's default
+        if kind.startswith(('choice:', 'bool:')) and not start:
+            start = kind.split(':')[1].split('|')[0]     # the game's default
         vars_[key] = tk.StringVar(value=start)
 
     def val(k):
@@ -1014,7 +1025,7 @@ def main():
         ctl = tk.Frame(row, bg=CARD)
         ctl.grid(row=0, column=1, sticky='e', padx=(16, 0))
         var = vars_[key]
-        if kind == 'bool':
+        if kind.startswith('bool'):
             w, enable = toggle(ctl, var)
             w.pack()
         elif kind.startswith(('choice:', 'edit:')):
@@ -1199,8 +1210,8 @@ def main():
                 v = str(min(max(int(v), 1), int(kind[4:])))
                 vars_[key].set(v)
             was = loaded.get(key, '') if (key in active or kind not in ('file', 'dir')) else ''
-            if not was and kind.startswith('choice:'):
-                was = kind[7:].split('|')[0]        # the game's default: nothing to write
+            if not was and kind.startswith(('choice:', 'bool:')):
+                was = kind.split(':')[1].split('|')[0]      # the game's default: nothing to write
             if v != was:
                 text = set_ini(text, section, key, v)
         with open(INI, 'w', encoding='utf-8') as f:

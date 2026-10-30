@@ -11,6 +11,7 @@ static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define GPU_REPLAY_RUN gpu_replay_run
 #define g_pgxp replay_g_pgxp
 #define g_pgxp_persp replay_g_pgxp_persp
+#define g_pgxp_cracks replay_g_pgxp_cracks
 #define g_gp0_addr replay_g_gp0_addr
 #define gpu_pgxp_store replay_gpu_pgxp_store
 #define g_sprite_tags replay_g_sprite_tags

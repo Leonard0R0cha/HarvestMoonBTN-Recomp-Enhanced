@@ -9,6 +9,7 @@ static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define GPU_VIEW2 1
 #define g_pgxp view2_g_pgxp
 #define g_pgxp_persp view2_g_pgxp_persp
+#define g_pgxp_cracks view2_g_pgxp_cracks
 #define g_gp0_addr view2_g_gp0_addr
 #define gpu_pgxp_store view2_gpu_pgxp_store
 #define g_sprite_tags view2_g_sprite_tags

@@ -10,6 +10,7 @@ static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define GPU_BAND_RUN band4_run
 #define g_pgxp band4_g_pgxp
 #define g_pgxp_persp band4_g_pgxp_persp
+#define g_pgxp_cracks band4_g_pgxp_cracks
 #define g_gp0_addr band4_g_gp0_addr
 #define gpu_pgxp_store band4_gpu_pgxp_store
 #define g_sprite_tags band4_g_sprite_tags

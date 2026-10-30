@@ -10,6 +10,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 |---|---|---|
 | `upscale = 2..4` | draws everything a second time at 2–4× resolution, for display | |
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly | upscale 2+ |
+| `crackfix = 1` | closes the cracks PGXP opens between models (on unless set to 0) | pgxp |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `sprite_depth = 1` | 2D objects get smaller further away, like the 3D ground | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |

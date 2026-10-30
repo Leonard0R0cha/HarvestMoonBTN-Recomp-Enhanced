@@ -175,6 +175,7 @@ static inline int band_row(int32_t y)
  * (w = 0: no precise position; w < 0: sprite tag, below). cmd_addr: RAM address of each word
  * in S.cmd. */
 int g_pgxp, g_pgxp_persp;
+int g_pgxp_cracks;                  /* close the cracks between models (under, seams); before gpu_set_upscale */
 uint32_t g_gp0_addr = 0xFFFFFFFFu;
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND) && !defined(GPU_VIEW2)
 /* The second view (p2view.c): what the GPU is sent goes to its copy (gpu_view2.c) too
@@ -582,22 +583,30 @@ static inline uint32_t blend_px(uint32_t bk, uint32_t fr, int mode)
  * written pixel (texel bit 15, or 0 for untextured), blend = -1 or mode. */
 static void plot_under(uint32_t x, uint32_t y, uint32_t rgb);
 
-static inline void plot(const Target *t, uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
+/* ... with the target's tags tg (NULL: none), the tag tagv to write and under (und) as given: a
+ * span reads them once (every store could change a global, so the compiler can't) */
+static inline __attribute__((always_inline)) void plot_t(const Target *t, uint32_t x, uint32_t y, uint32_t rgb,
+                                                         uint32_t bit15, int blend, uint16_t *tg, uint16_t tagv, int und)
 {
     uint32_t i = ((y & t->ym) << t->sh) | (x & t->xm);
     uint16_t *p = &t->buf[i];
     uint32_t bk = *p;
-    if (under) {
+    if (und) {
         plot_under(x, y, rgb | bit15);
         return;
     }
     if (bk & S.mask_check)
         return;
-    if (t->tag && blend < 0)
-        t->tag[i] = cur_tag;
+    if (tg && blend < 0)
+        tg[i] = tagv;
     if (blend >= 0)
         rgb = blend_px(bk, rgb, blend);
     *p = (uint16_t)(rgb | bit15 | S.mask_set);
+}
+
+static inline void plot(const Target *t, uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
+{
+    plot_t(t, x, y, rgb, bit15, blend, t->tag, cur_tag, under);
 }
 
 /* The second drawing (under) of native row y: in this band if one of its n upscaled rows is (n is
@@ -668,7 +677,7 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
                 uint16_t *p = &TH.buf[((hy + j) << TH.sh) + hx];
                 for (i = 0; i < n; i++)
                     p[i] = v;
-                for (i = 0; i < n; i++)
+                for (i = 0; TH.tag && i < n; i++)
                     TH.tag[((hy + j) << TH.sh) + hx + i] = cur_tag;
             }
             return;
@@ -777,7 +786,8 @@ static void up_block(uint32_t x, uint32_t y, uint16_t v)
         for (i = 0; i < n; i++)
             if (!(TH.buf[k + i] & S.mask_check)) {
                 TH.buf[k + i] = v;
-                TH.tag[k + i] = cur_tag;
+                if (TH.tag)
+                    TH.tag[k + i] = cur_tag;
             }
     }
 }
@@ -793,7 +803,8 @@ static void up_refresh(void)
                 for (i = 0; i < n; i++)
                     p[x * n + i] = S.vram[(y << 10) | x];
         }
-    memset(TH.tag, 0, ((size_t)1 << (2 * TH.sh - 1)) * sizeof *TH.tag);
+    if (TH.tag)
+        memset(TH.tag, 0, ((size_t)1 << (2 * TH.sh - 1)) * sizeof *TH.tag);
 }
 
 /* 480i with drawing to the displayed field disabled: lines of the field
@@ -856,7 +867,8 @@ static inline void interp_add(Interp *ig, const Interp *d, uint32_t count)
 static inline __attribute__((always_inline)) void persp_span(const Target *t, const PolyCtx *c, uint32_t y,
                                                              int32_t x, int32_t w, Interp ig, const InterpDelta *d,
                                                              const Persp *pp, const uint8_t (*drow)[512],
-                                                             const uint32_t mode)
+                                                             const uint32_t mode, uint16_t *const tg,
+                                                             const uint16_t tagv, const int und)
 {
     float pu = (float)(pp->u[0] + pp->u[1] * x + pp->u[2] * (int32_t)y);
     float pv = (float)(pp->v[0] + pp->v[1] * x + pp->v[2] * (int32_t)y);
@@ -930,7 +942,7 @@ static inline __attribute__((always_inline)) void persp_span(const Target *t, co
                 rgb = modulate(tx, c->flat_r, c->flat_g, c->flat_b,
                                c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
             }
-            plot(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1);
+            plot_t(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1, tg, tagv, und);
         }
         ig.r += d->dx.r;
         ig.g += d->dx.g;
@@ -938,12 +950,16 @@ static inline __attribute__((always_inline)) void persp_span(const Target *t, co
     }
 }
 
-static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_bound,
-                      Interp ig, const InterpDelta *d, const Persp *pp)
+/* draw_span with under as und, a constant: the usual spans have no call in their loops */
+static inline __attribute__((always_inline)) void span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_start,
+                                                      int32_t x_bound, Interp ig, const InterpDelta *d,
+                                                      const Persp *pp, const int und)
 {
     int32_t x, w, x_adj;
     int32_t cx0 = S.clip_x0 * t->n, cx1 = S.clip_x1 * t->n + t->n - 1;
     uint32_t y;
+    uint16_t *const tg = t->tag;
+    const uint16_t tagv = cur_tag;
 
     if (line_skip(yi / t->n))
         return;
@@ -960,7 +976,7 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
     }
     if (x + w > cx1 + 1)
         w = cx1 + 1 - x;
-    if (under) {        /* only native pixels over marked ones: almost none */
+    if (und) {          /* only native pixels over marked ones: almost none */
         while (w > 0 && !under_marked(x, yi)) {
             x++;
             x_adj++;
@@ -981,11 +997,11 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
         const uint8_t (*drow)[512] = dither_lut[(y / (uint32_t)t->n) & 3u];
         if (pp) {
             if (S.tex_mode == 0)
-                persp_span(t, c, y, x, w, ig, d, pp, drow, 0);
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 0, tg, tagv, und);
             else if (S.tex_mode == 1)
-                persp_span(t, c, y, x, w, ig, d, pp, drow, 1);
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 1, tg, tagv, und);
             else
-                persp_span(t, c, y, x, w, ig, d, pp, drow, 2);
+                persp_span(t, c, y, x, w, ig, d, pp, drow, 2, tg, tagv, und);
             return;
         }
         const TexImage *const rep = tex_rep;
@@ -1005,7 +1021,7 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
                     rgb = modulate(tx, c->flat_r, c->flat_g, c->flat_b,
                                    c->dither ? drow[t->dcol[(uint32_t)x & 4095u]] : NO_DITHER_LUT);
                 }
-                plot(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1);
+                plot_t(t, (uint32_t)x, y, rgb, tx & 0x8000u, (tx & 0x8000u) ? c->blend : -1, tg, tagv, und);
             }
             ig.u += d->dx.u;
             ig.v += d->dx.v;
@@ -1023,24 +1039,33 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
             } else {
                 rgb = (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10);
             }
-            plot(t, (uint32_t)x, y, rgb, 0, c->blend);
+            plot_t(t, (uint32_t)x, y, rgb, 0, c->blend, tg, tagv, und);
             ig.r += d->dx.r;
             ig.g += d->dx.g;
             ig.b += d->dx.b;
         }
-    } else if (c->blend < 0 && !S.mask_check && !under) {
+    } else if (c->blend < 0 && !S.mask_check && !und) {
         uint16_t *p = &t->buf[(y & t->ym) << t->sh];
         uint16_t val = (uint16_t)(c->flat_rgb15 | S.mask_set);
-        uint16_t *tg = t->tag ? &t->tag[(y & t->ym) << t->sh] : NULL;
+        uint16_t *trow = tg ? &tg[(y & t->ym) << t->sh] : NULL;
         for (; w > 0; w--, x++) {
             p[x] = val;
-            if (tg)
-                tg[x] = cur_tag;
+            if (trow)
+                trow[x] = tagv;
         }
     } else {
         for (; w > 0; w--, x++)
-            plot(t, (uint32_t)x, y, c->flat_rgb15, 0, c->blend);
+            plot_t(t, (uint32_t)x, y, c->flat_rgb15, 0, c->blend, tg, tagv, und);
     }
+}
+
+static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_start, int32_t x_bound,
+                      Interp ig, const InterpDelta *d, const Persp *pp)
+{
+    if (under)
+        span(t, c, yi, x_start, x_bound, ig, d, pp, 1);
+    else
+        span(t, c, yi, x_start, x_bound, ig, d, pp, 0);
 }
 
 static inline void swap_vtx(TriVtx *a, TriVtx *b)
@@ -1877,7 +1902,7 @@ static void cmd_polygon(const uint32_t *p)
         }
         if (precise && !st)
             cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
-        precise = precise && moved && !st && c.blend < 0;   /* see-through ones would blend twice */
+        precise = precise && moved && !st && c.blend < 0 && TH.tag;   /* see-through ones would blend twice */
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
         if (atomic_load_explicit(&nbands, memory_order_relaxed)) {
             if (!rep) {
@@ -2317,11 +2342,12 @@ static void cmd_fill(const uint32_t *p)
             int32_t n = TH.n, i, j;
             for (j = 0; j < n; j++) {
                 uint16_t *hrow = &TH.buf[(uint32_t)(dy * n + j) << TH.sh];
-                uint16_t *trow = &TH.tag[(uint32_t)(dy * n + j) << TH.sh];
+                uint16_t *trow = TH.tag ? &TH.tag[(uint32_t)(dy * n + j) << TH.sh] : NULL;
                 for (x = 0; x < w; x++)
                     for (i = 0; i < n; i++) {
                         hrow[((x0 + x) & 1023) * n + i] = val;
-                        trow[((x0 + x) & 1023) * n + i] = (uint16_t)(TAG_FILL | cur_tag);
+                        if (trow)
+                            trow[((x0 + x) & 1023) * n + i] = (uint16_t)(TAG_FILL | cur_tag);
                     }
             }
         }
@@ -2369,21 +2395,22 @@ static void cmd_copy(const uint32_t *p)
             int32_t ys = sy * n + y, yd = dy * n + y;
             const uint16_t *srow = &TH.buf[(uint32_t)(ys % H) << TH.sh];
             uint16_t *drow = &TH.buf[(uint32_t)(yd % H) << TH.sh];
-            const uint16_t *stag = &TH.tag[(uint32_t)(ys % H) << TH.sh];
-            uint16_t *dtag = &TH.tag[(uint32_t)(yd % H) << TH.sh];
+            const uint16_t *stag = TH.tag ? &TH.tag[(uint32_t)(ys % H) << TH.sh] : NULL;
+            uint16_t *dtag = TH.tag ? &TH.tag[(uint32_t)(yd % H) << TH.sh] : NULL;
             for (x = 0; x < w * n; x += 128 * n) {
                 k = w * n - x < 128 * n ? w * n - x : 128 * n;
                 for (i = 0; i < k; i++) {
                     int32_t xs = sx * n + x + i;
                     htmp[i] = srow[xs >= W ? xs - W : xs];
-                    ttmp[i] = stag[xs >= W ? xs - W : xs];
+                    ttmp[i] = stag ? stag[xs >= W ? xs - W : xs] : 0;
                 }
                 for (i = 0; i < k; i++) {
                     int32_t xd = dx * n + x + i;
                     uint16_t *dp = &drow[xd >= W ? xd - W : xd];
                     if (!(*dp & S.mask_check)) {
                         *dp = (uint16_t)(htmp[i] | S.mask_set);
-                        dtag[xd >= W ? xd - W : xd] = ttmp[i];
+                        if (dtag)
+                            dtag[xd >= W ? xd - W : xd] = ttmp[i];
                     }
                 }
             }
@@ -2612,7 +2639,8 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
             continue;
         uint32_t row = (y % (512u * (uint32_t)j->th.n)) << j->th.sh;
         memcpy(&j->th.buf[row], &j->src[row], (size_t)1024 * (size_t)j->th.n * sizeof(uint16_t));
-        memcpy(&j->th.tag[row], &j->src_tag[row], (size_t)1024 * (size_t)j->th.n * sizeof *j->th.tag);
+        if (j->th.tag)
+            memcpy(&j->th.tag[row], &j->src_tag[row], (size_t)1024 * (size_t)j->th.n * sizeof *j->th.tag);
     }
     clock_t t1 = clock();
     memcpy(S.vram, j->vram, sizeof S.vram);
@@ -2750,8 +2778,8 @@ void gpu_interp_enable(void)
     frec = calloc(2, sizeof *frec);
     job = malloc(sizeof *job);
     interp_buf = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof(uint16_t));
-    interp_tags = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *interp_tags);
-    g_interp = frec && job && interp_buf && interp_tags;
+    interp_tags = TH.tag ? malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *interp_tags) : NULL;
+    g_interp = frec && job && interp_buf && (interp_tags || !TH.tag);
     ilog = getenv("HMBTN_INTERP_LOG") != NULL;
 }
 
@@ -3287,7 +3315,7 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
         build_rgb_lut();
     if (n > 1) {
         int W = 1024 * n, x0 = d.vram_x * n, n1 = *w < W - x0 ? *w : W - x0;   /* n1: before the wrap */
-        if (g_pgxp && n1 == *w)
+        if (g_pgxp && TH.tag && n1 == *w)
             seam_pass(x0, d.vram_y * n, *w, *h);
         for (y = 0; y < *h; y++) {
             const uint16_t *row = &TH.buf[(uint32_t)((d.vram_y * n + y) % (512 * n)) << TH.sh];
@@ -3364,8 +3392,8 @@ void gpu_set_upscale(int n)
         n = 4;
     sh = n == 2 ? 11u : 12u;   /* power-of-two row stride: 2048 or 4096 halfwords */
     TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
-    TH.tag = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
-    if (!TH.buf || !TH.tag) {
+    TH.tag = g_pgxp_cracks ? (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t)) : NULL;
+    if (!TH.buf || (g_pgxp_cracks && !TH.tag)) {
         free(TH.buf);
         free(TH.tag);
         TH.buf = NULL;
