@@ -187,6 +187,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
+    else if (!strcmp(key, "crackfix")) g_cfg.crackfix = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
     else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
@@ -304,6 +305,7 @@ static void usage(void) {
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --sprite-depth        scale 2D objects with their depth (needs --pgxp)\n"
+           "  --no-crackfix         leave the cracks between models open (faster)\n"
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
            "  --texturepack         draw 2D sprites with the images in textures/ (needs --upscale 2+)\n"
@@ -389,6 +391,7 @@ int main(int argc, char **argv) {
     g_cfg.autoslot = 1;
     g_cfg.fastcard = 1;
     g_cfg.draw_threads = -1;
+    g_cfg.crackfix = 1;
     g_cfg.quickui = 1;
     g_cfg.fastload = 1;
     g_cfg.skipscenes = 1;
@@ -411,6 +414,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
+        else if (!strcmp(a, "--no-crackfix")) g_cfg.crackfix = 0;
         else if (!strcmp(a, "--interp")) g_cfg.interp = 1;
         else if (!strcmp(a, "--no-interp")) g_cfg.interp = 0;
         else if (!strcmp(a, "--texturepack")) g_cfg.texturepack = 1;
@@ -571,6 +575,7 @@ int main(int argc, char **argv) {
     mem_reset();
     gte_reset();
     gpu_init();
+    g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
     gpu_set_upscale(g_cfg.upscale);
     if (gpu_upscale() != g_cfg.upscale) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
     if (gpu_upscale() > 1) {

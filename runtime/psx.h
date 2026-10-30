@@ -206,6 +206,7 @@ typedef struct {
     int  pgxp;                  /* precise 3D vertex positions (needs upscale >= 2) */
     int  perspective;           /* perspective-correct textures (needs pgxp) */
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
+    int  crackfix;              /* close the cracks between models (needs pgxp) */
     int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
     int  texturepack;           /* replacement images from textures/ (needs upscale >= 2) */
     int  dumptextures;          /* write 2D sprites' textures to textures/dump/ (needs upscale >= 2) */

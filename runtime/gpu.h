@@ -63,6 +63,7 @@ void     gpu_interp_late(void);
  * holds the tagged value is drawn at the precise position (and depth, for g_pgxp_persp). */
 extern int      g_pgxp;           /* precise vertices (needs upscaling) */
 extern int      g_pgxp_persp;     /* perspective-correct textures (needs g_pgxp) */
+extern int      g_pgxp_cracks;    /* close the cracks between models (needs g_pgxp; set before gpu_set_upscale) */
 extern uint32_t g_gp0_addr;       /* RAM address of the GP0 word being written, ~0 = none */
 void     gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w);
 
@@ -123,7 +124,7 @@ uint32_t gpu_changes(void);       /* changes when anything that can alter the pi
 extern int g_gpu_route;
 extern int (*g_view2_built)(void);   /* the second GPU will draw lists the second view's run built */
 extern uint32_t view2_g_gp0_addr;
-extern int view2_g_pgxp, view2_g_pgxp_persp, view2_g_sprite_tags, view2_g_sprite_depth;
+extern int view2_g_pgxp, view2_g_pgxp_persp, view2_g_pgxp_cracks, view2_g_sprite_tags, view2_g_sprite_depth;
 extern float view2_g_sprite_ws;
 extern int (*view2_g_scene_3d)(void);
 void     view2_gpu_init(void);
