@@ -137,9 +137,25 @@ typedef struct {
     uint32_t sh, xm, ym;            /* log2 row stride, coordinate wrap masks */
     int32_t  n;                     /* scale (1 = native VRAM) */
     uint8_t  dcol[4096];            /* dither column for x: (x / n) & 3 */
+    uint16_t *tag;                  /* upscaled copy: per pixel, what drew it last (see under) */
 } Target;
 static Target TN = { S.vram, 10, 1023, 511, 1, { 0 } };
 static Target TH;                   /* upscaled copy; buf == NULL when off */
+/* Cracks: models that meet (a wall on the ground, ground tiles, a fence post on the ground) are
+ * often not closed in 3D, and their corners only meet on the console's whole-pixel grid. At their
+ * precise positions what was drawn before them shows through. So each pixel of the upscaled copy
+ * has a tag: what drew it last (a fill, a 3D polygon or anything else, TAG_*) and when (a sequence
+ * number of the commands); see-through pixels leave it. Where a fill (the screen clear) still
+ * shows, a 3D polygon is drawn a second time as the console draws it, at its whole-pixel corners
+ * and native resolution, each of its pixels only onto those of the n x n it covers (under,
+ * plot_under): what the console shows there. They keep their tag, so a later polygon's second
+ * drawing goes over them too, as on the console. Where something drawn before shows (the ground
+ * through a door frame), seam_pass fills the gap when the picture is shown. */
+#define TAG_FILL 0x4000u
+#define TAG_3D 0x8000u
+#define TAG_KIND(t) ((t) & 0xC000u)
+static int under;
+static uint16_t cur_tag, tag_seq;      /* the tag of what is being drawn */
 /* Where textures and CLUTs are read: this GPU's own, except in a band worker's copy (gpu_band1.c
  * ...), which draws the GPU's polygons with the GPU's native VRAM and each polygon's CLUT. */
 static const uint16_t *tex_vram = S.vram;
@@ -397,6 +413,8 @@ static void build_dither_lut(void)
                 if (t > 31) t = 31;
                 dither_lut[y][x][v] = (uint8_t)t;
             }
+    for (x = 0; x < 4096; x++)          /* in every copy: band workers draw natively too (under) */
+        TN.dcol[x] = (uint8_t)(x & 3);
     dither_lut_ready = 1;
 }
 
@@ -562,15 +580,61 @@ static inline uint32_t blend_px(uint32_t bk, uint32_t fr, int mode)
 
 /* Write one pixel. rgb = 15-bit colour, bit15 = value of bit 15 for the
  * written pixel (texel bit 15, or 0 for untextured), blend = -1 or mode. */
+static void plot_under(uint32_t x, uint32_t y, uint32_t rgb);
+
 static inline void plot(const Target *t, uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, int blend)
 {
-    uint16_t *p = &t->buf[((y & t->ym) << t->sh) | (x & t->xm)];
+    uint32_t i = ((y & t->ym) << t->sh) | (x & t->xm);
+    uint16_t *p = &t->buf[i];
     uint32_t bk = *p;
+    if (under) {
+        plot_under(x, y, rgb | bit15);
+        return;
+    }
     if (bk & S.mask_check)
         return;
+    if (t->tag && blend < 0)
+        t->tag[i] = cur_tag;
     if (blend >= 0)
         rgb = blend_px(bk, rgb, blend);
     *p = (uint16_t)(rgb | bit15 | S.mask_set);
+}
+
+/* The second drawing (under) of native row y: in this band if one of its n upscaled rows is (n is
+ * less than BAND_STRIPE, so they are in one or two stripes) */
+static inline int band_rows(int32_t y)
+{
+    return band_row(y * TH.n) || band_row(y * TH.n + TH.n - 1);
+}
+
+/* ... its native pixel (x, y) onto the marked pixels of its n x n in the upscaled copy (in this
+ * band's rows) */
+static void plot_under(uint32_t x, uint32_t y, uint32_t rgb)
+{
+    uint32_t n = (uint32_t)TH.n, hx = (x & 1023u) * n, hy = (y & 511u) * n, i, j;
+    uint32_t split = BAND_STRIPE - hy % BAND_STRIPE;    /* rows from here are in the next stripe */
+    int b0 = band_row((int32_t)hy), b1 = band_row((int32_t)(hy + n - 1));
+    for (j = 0; j < n; j++) {
+        uint32_t k = ((hy + j) << TH.sh) + hx;
+        if (!(j < split ? b0 : b1))
+            continue;
+        for (i = 0; i < n; i++)
+            if (TAG_KIND(TH.tag[k + i]) == TAG_FILL && !(TH.buf[k + i] & S.mask_check))
+                TH.buf[k + i] = (uint16_t)(rgb | S.mask_set);
+    }
+}
+
+/* Has native pixel (x, y) pixels in its n x n that still show a fill (under)? */
+static inline int under_marked(int32_t x, int32_t y)
+{
+    uint32_t n = (uint32_t)TH.n, hx = ((uint32_t)x & 1023u) * n, hy = ((uint32_t)y & 511u) * n, i, j;
+    for (j = 0; j < n; j++) {
+        const uint16_t *b = &TH.tag[((hy + j) << TH.sh) + hx];
+        for (i = 0; i < n; i++)
+            if (TAG_KIND(b[i]) == TAG_FILL)
+                return 1;
+    }
+    return 0;
 }
 
 /* Sprites and lines: the native pixel, and the n x n block it covers in the upscaled copy. */
@@ -604,6 +668,8 @@ static inline void plot2(uint32_t x, uint32_t y, uint32_t rgb, uint32_t bit15, i
                 uint16_t *p = &TH.buf[((hy + j) << TH.sh) + hx];
                 for (i = 0; i < n; i++)
                     p[i] = v;
+                for (i = 0; i < n; i++)
+                    TH.tag[((hy + j) << TH.sh) + hx + i] = cur_tag;
             }
             return;
         }
@@ -707,10 +773,12 @@ static void up_block(uint32_t x, uint32_t y, uint16_t v)
 {
     uint32_t n = (uint32_t)TH.n, i, j;
     for (j = 0; j < n; j++) {
-        uint16_t *p = &TH.buf[(((y & 511u) * n + j) << TH.sh) + (x & 1023u) * n];
+        uint32_t k = (((y & 511u) * n + j) << TH.sh) + (x & 1023u) * n;
         for (i = 0; i < n; i++)
-            if (!(p[i] & S.mask_check))
-                p[i] = v;
+            if (!(TH.buf[k + i] & S.mask_check)) {
+                TH.buf[k + i] = v;
+                TH.tag[k + i] = cur_tag;
+            }
     }
 }
 
@@ -725,6 +793,7 @@ static void up_refresh(void)
                 for (i = 0; i < n; i++)
                     p[x * n + i] = S.vram[(y << 10) | x];
         }
+    memset(TH.tag, 0, ((size_t)1 << (2 * TH.sh - 1)) * sizeof *TH.tag);
 }
 
 /* 480i with drawing to the displayed field disabled: lines of the field
@@ -891,6 +960,15 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
     }
     if (x + w > cx1 + 1)
         w = cx1 + 1 - x;
+    if (under) {        /* only native pixels over marked ones: almost none */
+        while (w > 0 && !under_marked(x, yi)) {
+            x++;
+            x_adj++;
+            w--;
+        }
+        while (w > 0 && !under_marked(x + w - 1, yi))
+            w--;
+    }
     if (w <= 0)
         return;
 
@@ -950,11 +1028,15 @@ static void draw_span(const Target *t, const PolyCtx *c, int32_t yi, int32_t x_s
             ig.g += d->dx.g;
             ig.b += d->dx.b;
         }
-    } else if (c->blend < 0 && !S.mask_check) {
+    } else if (c->blend < 0 && !S.mask_check && !under) {
         uint16_t *p = &t->buf[(y & t->ym) << t->sh];
         uint16_t val = (uint16_t)(c->flat_rgb15 | S.mask_set);
-        for (; w > 0; w--, x++)
+        uint16_t *tg = t->tag ? &t->tag[(y & t->ym) << t->sh] : NULL;
+        for (; w > 0; w--, x++) {
             p[x] = val;
+            if (tg)
+                tg[x] = cur_tag;
+        }
     } else {
         for (; w > 0; w--, x++)
             plot(t, (uint32_t)x, y, c->flat_rgb15, 0, c->blend);
@@ -1160,7 +1242,7 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
                 y = t->n == 1 ? sext11((uint32_t)yi) : yi;
                 if (y < cy0)
                     break;
-                if (y > cy1 || !band_row(y))
+                if (y > cy1 || !(under ? band_rows(y) : band_row(y)))
                     continue;
                 draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
             }
@@ -1169,11 +1251,130 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
                 int32_t y = t->n == 1 ? sext11((uint32_t)yi) : yi;
                 if (y > cy1)
                     break;
-                if (y >= cy0 && band_row(y))
+                if (y >= cy0 && (under ? band_rows(y) : band_row(y)))
                     draw_span(t, c, yi, fp_int(lc), fp_int(rc), ig, &d, pp);
                 yi++;
                 lc += ls;
                 rc += rs;
+            }
+        }
+    }
+}
+
+/* A polygon in the upscaled copy (triangles v0 v1 v2 and, for a quad, v1 v2 v3), then, where it
+ * left the background showing, as the console draws it at its corners u (NULL: none; see under). */
+static void draw_up(const PolyCtx *c, const TriVtx *v, const TriVtx *u, int quad)
+{
+    draw_triangle(&TH, c, &v[0], &v[1], &v[2]);
+    if (quad)
+        draw_triangle(&TH, c, &v[1], &v[2], &v[3]);
+    if (u) {
+        under = 1;
+        draw_triangle(&TN, c, &u[0], &u[1], &u[2]);
+        if (quad)
+            draw_triangle(&TN, c, &u[1], &u[2], &u[3]);
+        under = 0;
+    }
+}
+
+/* Seams (see under): a run of pixels across or down, narrower than a console pixel, drawn before
+ * the 3D polygons on both sides of it (two different ones: not a hole in one texture) is a gap
+ * between models that meet on the console, showing what is behind them: filled from its two sides.
+ * The run ends at the first pixel drawn after all of it. An outline has something drawn before it
+ * on one side only and stays as it is. All runs across are filled first, then all runs down, from
+ * a copy of the picture as the first pass left it (snap): the picture is the same however the rows
+ * are shared out among band workers. Columns x0.. of rows ya..yb - 1 of the upscaled copy buf, tag. */
+static inline int tag_older(uint32_t a, uint32_t b)     /* a drawn before b */
+{
+    return ((b - a) & 0x3FFFu) - 1u < 0x1FFFu;
+}
+
+#define SEAM_ROW(p, yy) (&(p)[(uint32_t)(((yy) % (512 * TH.n) + 512 * TH.n) % (512 * TH.n)) << TH.sh])
+
+/* ... across, in this band's rows, then copied to snap */
+static void seam_across(uint16_t *buf, const uint16_t *tag, uint16_t *snap, int32_t x0, int32_t w, int32_t ya, int32_t yb)
+{
+    const int32_t n = TH.n;
+    int32_t x, y, k, e;
+    for (y = ya; y < yb; y++) {
+        uint16_t *row = SEAM_ROW(buf, y);
+        const uint16_t *tr = SEAM_ROW(tag, y);
+        if (!band_row(y))
+            continue;
+        for (x = x0 + 1; x < x0 + w - 1; x++) {
+            uint32_t l, m, r;
+#ifdef __SSE2__
+            if (x + 8 <= x0 + w) {      /* 8 pixels each as its left neighbour: nothing starts here */
+                int same = _mm_movemask_epi8(_mm_cmpeq_epi16(_mm_loadu_si128((const __m128i *)&tr[x]),
+                                                              _mm_loadu_si128((const __m128i *)&tr[x - 1])));
+                if (same == 0xFFFF) {
+                    x += 7;
+                    continue;
+                }
+                x += __builtin_ctz(~same & 0xFFFF) / 2;
+            }
+#endif
+            l = tr[x - 1];
+            m = tr[x];
+            if (m == l || TAG_KIND(l) != TAG_3D || !tag_older(m, l))
+                continue;
+            for (e = x + 1; e < x0 + w && e - x <= n && (tr[e] == m || tag_older(tr[e], m)); e++)
+                ;
+            if (e >= x0 + w || e - x > n)
+                continue;
+            r = tr[e];
+            if (r != l && TAG_KIND(r) == TAG_3D)
+                for (k = x; k < e; k++)
+                    row[k] = k - x < (e - x + 1) / 2 ? row[x - 1] : row[e];
+            x = e - 1;
+        }
+        memcpy(&SEAM_ROW(snap, y)[x0], &row[x0], (size_t)w * sizeof *row);
+    }
+}
+
+/* ... down, filling this band's rows: each run is decided from where it starts (the rows above
+ * one of this band's stripes that a run into it can start in included) */
+static void seam_down(uint16_t *buf, const uint16_t *tag, const uint16_t *snap, int32_t x0, int32_t w, int32_t ya, int32_t yb)
+{
+    const int32_t n = TH.n;
+    int32_t s, se, x, y, k, e;
+    for (s = ya; s < yb; s = se) {
+        se = band_nb ? (int32_t)(((uint32_t)s / BAND_STRIPE + 1u) * BAND_STRIPE) : yb;
+        if (se > yb)
+            se = yb;
+        if (!band_row(s))
+            continue;
+        for (y = s - n + 1 > ya + 1 ? s - n + 1 : ya + 1; y < se; y++) {
+            const uint16_t *tr = SEAM_ROW(tag, y), *up = SEAM_ROW(tag, y - 1);
+            for (x = x0; x < x0 + w; x++) {
+                uint32_t m, a, b;
+#ifdef __SSE2__
+                if (x + 8 <= x0 + w) {  /* 8 pixels each as the one above: nothing starts here */
+                    int same = _mm_movemask_epi8(_mm_cmpeq_epi16(_mm_loadu_si128((const __m128i *)&tr[x]),
+                                                                  _mm_loadu_si128((const __m128i *)&up[x])));
+                    if (same == 0xFFFF) {
+                        x += 7;
+                        continue;
+                    }
+                    x += __builtin_ctz(~same & 0xFFFF) / 2;
+                }
+#endif
+                m = tr[x];
+                a = up[x];
+                if (m == a || TAG_KIND(a) != TAG_3D || !tag_older(m, a))
+                    continue;
+                for (e = y + 1; e < yb && e - y <= n; e++) {
+                    uint32_t t = SEAM_ROW(tag, e)[x];
+                    if (t != m && !tag_older(t, m))
+                        break;
+                }
+                if (e >= yb || e - y > n)
+                    continue;
+                b = SEAM_ROW(tag, e)[x];
+                if (b != a && TAG_KIND(b) == TAG_3D)
+                    for (k = y; k < e; k++)
+                        if (k >= s && k < se)
+                            SEAM_ROW(buf, k)[x] = k - y < (e - y + 1) / 2 ? SEAM_ROW(snap, y - 1)[x] : SEAM_ROW(snap, e)[x];
             }
         }
     }
@@ -1195,8 +1396,12 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
 #define BAND_MAX 4                  /* band workers at most */
 typedef struct {
     PolyCtx c;
-    TriVtx v[4];
-    int quad, persp;
+    TriVtx v[4], u[4];              /* u: the console's corners, native (under) */
+    int quad, under, persp;
+    uint16_t tag;
+    int seam;                       /* 1, 2: not a polygon but seam_across, seam_down of the picture: */
+    uint16_t *sbuf, *stag, *ssnap;  /* ... buf, tag, snap, columns sx0 .. + sw, rows sy0 .. + sh */
+    int32_t sx0, sy0, sw, sh;
     uint32_t tp_x, tp_y, tex_mode, tw_and_u, tw_or_u, tw_and_v, tw_or_v;
     int32_t clip_x0, clip_y0, clip_x1, clip_y1;
     uint32_t mask_set, mask_check, disp_mode, dfe, field;
@@ -1221,6 +1426,13 @@ void GPU_BAND_RUN(const BandItem *ring, uint64_t from, uint64_t to, const Target
     band_nb = nb;
     for (; from < to; from++) {
         const BandItem *it = &ring[from & (BQ - 1)];
+        if (it->seam) {
+            if (it->seam == 1)
+                seam_across(it->sbuf, it->stag, it->ssnap, it->sx0, it->sw, it->sy0, it->sy0 + it->sh);
+            else
+                seam_down(it->sbuf, it->stag, it->ssnap, it->sx0, it->sw, it->sy0, it->sy0 + it->sh);
+            continue;
+        }
         S.tp_x = it->tp_x;
         S.tp_y = it->tp_y;
         S.tex_mode = it->tex_mode;
@@ -1239,9 +1451,8 @@ void GPU_BAND_RUN(const BandItem *ring, uint64_t from, uint64_t to, const Target
         S.field = it->field;
         tex_clut = it->clut;
         g_pgxp_persp = it->persp;
-        draw_triangle(&TH, &it->c, &it->v[0], &it->v[1], &it->v[2]);
-        if (it->quad)
-            draw_triangle(&TH, &it->c, &it->v[1], &it->v[2], &it->v[3]);
+        cur_tag = it->tag;
+        draw_up(&it->c, it->v, it->under ? it->u : NULL, it->quad);
     }
 }
 #endif
@@ -1380,7 +1591,7 @@ static void band_native_draw(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
         }
 }
 
-static void band_push(const PolyCtx *c, const TriVtx *v, int quad)
+static void band_push(const PolyCtx *c, const TriVtx *v, const TriVtx *u, int quad)
 {
     BandItem *it;
     if (bq_pub - band_min_done() >= BQ)
@@ -1388,7 +1599,12 @@ static void band_push(const PolyCtx *c, const TriVtx *v, int quad)
     it = &bq[bq_pub & (BQ - 1)];
     it->c = *c;
     memcpy(it->v, v, (quad ? 4 : 3) * sizeof *v);
+    if (u)
+        memcpy(it->u, u, (quad ? 4 : 3) * sizeof *u);
     it->quad = quad;
+    it->under = u != NULL;
+    it->tag = cur_tag;
+    it->seam = 0;
     it->persp = g_pgxp_persp;
     it->tp_x = S.tp_x;
     it->tp_y = S.tp_y;
@@ -1428,6 +1644,25 @@ static void band_push(const PolyCtx *c, const TriVtx *v, int quad)
         wk_wake(WK_WORK);
         wk_unlock();
     }
+}
+
+/* The band workers' seam_across (kind 1) or seam_down (2) of the picture in buf, tag */
+static void band_push_seam(int kind, uint16_t *buf, uint16_t *tag, uint16_t *snap, int32_t x0, int32_t y0, int32_t w, int32_t h)
+{
+    BandItem *it;
+    if (bq_pub - band_min_done() >= BQ)
+        band_sync();
+    it = &bq[bq_pub & (BQ - 1)];
+    it->seam = kind;
+    it->sbuf = buf;
+    it->stag = tag;
+    it->ssnap = snap;
+    it->sx0 = x0;
+    it->sy0 = y0;
+    it->sw = w;
+    it->sh = h;
+    bq_pub++;
+    atomic_store(&bq_head, bq_pub);
 }
 
 /* n band workers draw the upscaled polygons (0: the GPU draws them itself); after gpu_set_upscale */
@@ -1612,14 +1847,25 @@ static void cmd_polygon(const uint32_t *p)
             if (st && tex && quad && (g_texpack || g_texdump))
                 rep = texpack_quad(st, v, nv);
         }
+        /* u: the console's corners, for the background a 3D polygon leaves showing (under); in an
+         * in-between picture, moved as far as the precise ones, rounded (corners that meet on the
+         * console move alike and still meet; rounding each moved position could split them) */
+        TriVtx u[4];
+        int precise = 0, moved = 0;
         for (i = 0; i < nv; i++) {
             float fx, fy, fw;
+            u[i] = v[i];
             if (g_pgxp && pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &fx, &fy, &fw)) {
-                if (replaying)
+                if (replaying) {
+                    float ox = fx, oy = fy;
                     interp_point(&fx, &fy, &fw);
+                    u[i].x += (int32_t)lrintf(fx - ox);
+                    u[i].y += (int32_t)lrintf(fy - oy);
+                }
                 v[i].x = (int32_t)lrintf((fx + (float)S.offs_x) * (float)TH.n);
                 v[i].y = (int32_t)lrintf((fy + (float)S.offs_y) * (float)TH.n);
                 v[i].w = fw;
+                precise = 1;
             } else if (st) {
                 v[i].x = sprite_coord(v[i].x, sprite_cx(st), st->x, sprite_sx(st));
                 v[i].y = sprite_coord(v[i].y, st->cy + S.offs_y, st->y, sprite_sy(st));
@@ -1627,20 +1873,22 @@ static void cmd_polygon(const uint32_t *p)
                 v[i].x *= TH.n;
                 v[i].y *= TH.n;
             }
+            moved |= u[i].x * TH.n != v[i].x || u[i].y * TH.n != v[i].y;
         }
+        if (precise && !st)
+            cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
+        precise = precise && moved && !st && c.blend < 0;   /* see-through ones would blend twice */
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
         if (atomic_load_explicit(&nbands, memory_order_relaxed)) {
             if (!rep) {
-                band_push(&c, v, quad);
+                band_push(&c, v, precise ? u : NULL, quad);
                 return;
             }
             band_sync();        /* a replaced texture is drawn here, over the polygons queued before it */
         }
 #endif
         tex_rep = rep;
-        draw_triangle(&TH, &c, &v[0], &v[1], &v[2]);
-        if (quad)
-            draw_triangle(&TH, &c, &v[1], &v[2], &v[3]);
+        draw_up(&c, v, precise ? u : NULL, quad);
         tex_rep = NULL;
     }
 }
@@ -2069,9 +2317,12 @@ static void cmd_fill(const uint32_t *p)
             int32_t n = TH.n, i, j;
             for (j = 0; j < n; j++) {
                 uint16_t *hrow = &TH.buf[(uint32_t)(dy * n + j) << TH.sh];
+                uint16_t *trow = &TH.tag[(uint32_t)(dy * n + j) << TH.sh];
                 for (x = 0; x < w; x++)
-                    for (i = 0; i < n; i++)
+                    for (i = 0; i < n; i++) {
                         hrow[((x0 + x) & 1023) * n + i] = val;
+                        trow[((x0 + x) & 1023) * n + i] = (uint16_t)(TAG_FILL | cur_tag);
+                    }
             }
         }
     }
@@ -2113,21 +2364,27 @@ static void cmd_copy(const uint32_t *p)
     if (TH.buf) {
         int32_t n = TH.n, W = 1024 * n, H = 512 * n, k;
         uint16_t htmp[128 * 4];
+        uint16_t ttmp[128 * 4];
         for (y = 0; y < h * n; y++) {
             int32_t ys = sy * n + y, yd = dy * n + y;
             const uint16_t *srow = &TH.buf[(uint32_t)(ys % H) << TH.sh];
             uint16_t *drow = &TH.buf[(uint32_t)(yd % H) << TH.sh];
+            const uint16_t *stag = &TH.tag[(uint32_t)(ys % H) << TH.sh];
+            uint16_t *dtag = &TH.tag[(uint32_t)(yd % H) << TH.sh];
             for (x = 0; x < w * n; x += 128 * n) {
                 k = w * n - x < 128 * n ? w * n - x : 128 * n;
                 for (i = 0; i < k; i++) {
                     int32_t xs = sx * n + x + i;
                     htmp[i] = srow[xs >= W ? xs - W : xs];
+                    ttmp[i] = stag[xs >= W ? xs - W : xs];
                 }
                 for (i = 0; i < k; i++) {
                     int32_t xd = dx * n + x + i;
                     uint16_t *dp = &drow[xd >= W ? xd - W : xd];
-                    if (!(*dp & S.mask_check))
+                    if (!(*dp & S.mask_check)) {
                         *dp = (uint16_t)(htmp[i] | S.mask_set);
+                        dtag[xd >= W ? xd - W : xd] = ttmp[i];
+                    }
                 }
             }
         }
@@ -2236,6 +2493,7 @@ static void frame_record(const uint32_t *p, uint32_t op);
 static void gp0_execute(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
+    cur_tag = (uint16_t)(++tag_seq & 0x3FFFu);
 
     if (op == 0x02 || ((op >> 5) >= 2 && (op >> 5) <= 5))   /* fill, line, rect, copy, transfer */
         BAND_SYNC();
@@ -2328,6 +2586,7 @@ typedef struct {
     int pgxp, persp, depth, scene3d, log;
     Target th;
     const uint16_t *src;
+    const uint16_t *src_tag;
     uint32_t y0, y1;
     int32_t band[INTERP_WORKERS + 1];   /* worker k draws VRAM rows band[k] .. band[k + 1] */
 } InterpJob;
@@ -2353,6 +2612,7 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
             continue;
         uint32_t row = (y % (512u * (uint32_t)j->th.n)) << j->th.sh;
         memcpy(&j->th.buf[row], &j->src[row], (size_t)1024 * (size_t)j->th.n * sizeof(uint16_t));
+        memcpy(&j->th.tag[row], &j->src_tag[row], (size_t)1024 * (size_t)j->th.n * sizeof *j->th.tag);
     }
     clock_t t1 = clock();
     memcpy(S.vram, j->vram, sizeof S.vram);
@@ -2417,6 +2677,7 @@ static FrameRec *frec;              /* [2] */
 static Camera cam_cur;
 static InterpJob *job;
 static uint16_t *interp_buf;        /* the in-between picture: a scratch copy of the upscaled VRAM */
+static uint16_t *interp_tags;       /* and of its tags (Target.tag) */
 static uint32_t job_gen;            /* the next frame the in-between picture is made for */
 static int since_flip, last_y = -1, disp_y[2] = { -1, -1 }, ilog;
 
@@ -2489,7 +2750,8 @@ void gpu_interp_enable(void)
     frec = calloc(2, sizeof *frec);
     job = malloc(sizeof *job);
     interp_buf = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof(uint16_t));
-    g_interp = frec && job && interp_buf;
+    interp_tags = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *interp_tags);
+    g_interp = frec && job && interp_buf && interp_tags;
     ilog = getenv("HMBTN_INTERP_LOG") != NULL;
 }
 
@@ -2518,7 +2780,7 @@ int gpu_render_interp(uint32_t *out, int *w, int *h)
 {
     GpuDisplay d;
     uint32_t disp_saved;
-    uint16_t *hb;
+    uint16_t *hb, *ht;
     int b;
 
     BAND_SYNC();
@@ -2535,12 +2797,15 @@ int gpu_render_interp(uint32_t *out, int *w, int *h)
     if (ilog && since_flip > 2)
         fprintf(stderr, "interp: held\n");
     hb = TH.buf;
+    ht = TH.tag;
     TH.buf = interp_buf;
+    TH.tag = interp_tags;
     disp_saved = S.disp_y;              /* the next frame's buffer, from the in-between picture */
     S.disp_y = (uint32_t)disp_y[!b];
     gpu_render_display(out, w, h);
     S.disp_y = disp_saved;
     TH.buf = hb;
+    TH.tag = ht;
     return 1;
 }
 
@@ -2613,7 +2878,9 @@ int gpu_interp_prepare(void)
     job->log = ilog;
     job->th = TH;
     job->th.buf = interp_buf;
+    job->th.tag = interp_tags;
     job->src = TH.buf;
+    job->src_tag = TH.tag;
     job->y0 = (uint32_t)disp_y[!b] * (uint32_t)TH.n;
     job->y1 = (uint32_t)(disp_y[!b] + d.height) * (uint32_t)TH.n;
     for (k = 1; k < INTERP_WORKERS; k++)
@@ -2978,6 +3245,27 @@ static void convert_row(uint32_t *o, const uint16_t *row, int n)
         o[x] = rgb_lut[row[x] & 0x7FFFu];
 }
 
+
+/* Seams of the picture at x0, y0 (w x h upscaled pixels): by the band workers if there are any */
+static uint16_t *seam_snap;         /* the size of TH.buf */
+
+static void seam_pass(int32_t x0, int32_t y0, int32_t w, int32_t h)
+{
+    if (!seam_snap && !(seam_snap = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *seam_snap)))
+        return;
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+    if (atomic_load(&nbands)) {
+        band_push_seam(1, TH.buf, TH.tag, seam_snap, x0, y0, w, h);
+        band_sync();
+        band_push_seam(2, TH.buf, TH.tag, seam_snap, x0, y0, w, h);
+        band_sync();
+        return;
+    }
+#endif
+    seam_across(TH.buf, TH.tag, seam_snap, x0, w, y0, y0 + h);
+    seam_down(TH.buf, TH.tag, seam_snap, x0, w, y0, y0 + h);
+}
+
 void gpu_render_display(uint32_t *out, int *w, int *h)
 {
     GpuDisplay d;
@@ -2999,6 +3287,8 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
         build_rgb_lut();
     if (n > 1) {
         int W = 1024 * n, x0 = d.vram_x * n, n1 = *w < W - x0 ? *w : W - x0;   /* n1: before the wrap */
+        if (g_pgxp && n1 == *w)
+            seam_pass(x0, d.vram_y * n, *w, *h);
         for (y = 0; y < *h; y++) {
             const uint16_t *row = &TH.buf[(uint32_t)((d.vram_y * n + y) % (512 * n)) << TH.sh];
             uint32_t *o = out + (size_t)y * (size_t)*w;
@@ -3040,13 +3330,10 @@ const uint16_t *gpu_vram(void)
 
 void gpu_init(void)
 {
-    int x;
     BAND_SYNC();
     changes++;
     if (!dither_lut_ready)
         build_dither_lut();
-    for (x = 0; x < 4096; x++)
-        TN.dcol[x] = (uint8_t)(x & 3);
     memset(&S, 0, sizeof(S));
     S.tex_disable_allow = 0;
     S.read_latch = 0;
@@ -3066,15 +3353,25 @@ void gpu_set_upscale(int n)
 #endif
     changes++;
     free(TH.buf);
+    free(TH.tag);
+    free(seam_snap);
     TH.buf = NULL;
+    TH.tag = NULL;
+    seam_snap = NULL;
     if (n < 2)
         return;
     if (n > 4)
         n = 4;
     sh = n == 2 ? 11u : 12u;   /* power-of-two row stride: 2048 or 4096 halfwords */
     TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
-    if (!TH.buf)
+    TH.tag = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
+    if (!TH.buf || !TH.tag) {
+        free(TH.buf);
+        free(TH.tag);
+        TH.buf = NULL;
+        TH.tag = NULL;
         return;
+    }
     TH.sh = sh;
     TH.xm = (1u << sh) - 1u;
     TH.ym = (1u << (sh - 1u)) - 1u;

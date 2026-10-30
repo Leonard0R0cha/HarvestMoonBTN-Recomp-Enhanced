@@ -54,6 +54,53 @@ word), each vertex whose RAM word still holds the recorded value is drawn at the
 position, and with its depth for perspective-correct texturing. If the game changed the
 word in between, the shadow value no longer matches and the vertex is drawn as usual.
 
+**Finding: black hairlines between models.** With PGXP, thin black lines flickered where models
+meet: ground tiles in the town square, the ground at fence posts, bench legs and doorways, the
+corners of sheds. Logging every polygon corner at the frames of a recorded session showed that
+over 99.5% of the corners were drawn at their precise position (no positions lost on the way),
+and that the corners on either side of a line are different 3D points, 8 to 30+ units apart:
+the models are not closed (corners that miss each other, and T-junctions, where a corner sits
+partway along another polygon's edge). Only 3 of 178 looked like fixed-point rounding. On the
+console both sides round to the same or neighbouring pixels and the hole disappears; drawn where
+they really are, the screen clear (a black fill) shows through.
+
+**Fix: the console's drawing under the gaps.** Each pixel of the upscaled copy has a tag: what
+drew it last (the screen clear, a 3D polygon or anything else) and when (a sequence number of
+the drawing commands); see-through pixels leave it. Every 3D polygon is drawn a second time as
+the console draws it, at its whole-pixel corners and at native resolution, each of its pixels
+only onto the pixels of the n×n it covers that still show the screen clear, in the same order as
+everything else: exactly what the console shows there. In the session, the
+background showing where the console's picture is not black went from 7537 pixels to 512 (33
+frames, upscale 4, 16:9); what is still black is black on the console too (a few seams leave
+pixel gaps there as well), apart from pixels next to sprites moved by their sub-pixel anchors.
+Pixels drawn by anything else are untouched (the same frames, compared before and after: no
+pixel changed outside the background), so textures don't move and black art stays black. It
+costs about 0.5 ms per VBlank at upscale 4 (14.8 s over the 27,200 VBlanks of the session).
+In an in-between picture the console's corners are moved as far as the precise ones, rounded.
+Rounding each moved position instead split corners that meet on the console onto different
+pixels: on the farm, every other picture had cracks at door frames and wall corners, which
+flickered at 60 Hz (in-between-only hairlines: 1500 pixels in 72-89 pictures, 159 now).
+Filling hairlines of background with the native pixel when the picture is shown was tried
+first: it needs a guess at what a hairline is, and wherever a sprite is moved or scaled in the
+upscaled copy (sub-pixel anchors, depth scaling, the widescreen HUD) it would show a ghost of
+its native position.
+
+**Finding: door frames and nameplates let the ground through.** Where parts sit on another model
+(a door frame in a house wall, the doghouse's nameplate, a window frame), the gap between their
+precise edges shows what was drawn before them, the ground behind the house, not the screen
+clear, so the second drawing doesn't reach it. In motion it flickered as a thin line of ground
+colour. The console shows some of these gaps too, as single flickering pixels.
+
+**Fix: seams.** When the picture is shown, a run of pixels across or down, narrower than a
+console pixel, drawn before the 3D polygons on both sides of it (two different ones: a hole in a
+single texture stays), is filled from its two sides. An outline has something drawn before it
+on one side only, so object edges stay smooth; the test is about drawing order, not colour, so
+dark texels and sprites are left alone. On the farm it fills about 1,900 pixels a frame (door,
+window and doghouse frames, ground-tile seams) and changes nothing else. The band workers do it,
+all runs across first, then all runs down from a copy of what the first pass left, so the
+picture is the same with any number of them: about 0.4 ms per picture at upscale 4 with four
+workers (0.9 ms on the game's thread alone).
+
 ## 2D objects on a 3D field
 
 Stumps, rocks, weeds, flowers, villagers and the player are not 3D models. The game

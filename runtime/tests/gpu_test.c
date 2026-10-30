@@ -870,16 +870,22 @@ static void gp0_at(uint32_t w, uint32_t addr)
     g_gp0_addr = 0xFFFFFFFFu;
 }
 
-/* flat triangle whose vertex words are tagged at integer + d; bad != 0 tags vertex 0 with a stale value */
-static void pgxp_triangle(float d, uint32_t bad)
+/* flat triangle (command cmd) whose vertex words are tagged at integer + d; bad != 0 tags vertex 0
+ * with a stale value; cover: over a black rectangle drawn first instead of the screen clear */
+static void pgxp_triangle(float d, uint32_t bad, uint32_t cmd, int cover)
 {
     static const int P[3][2] = { { 20, 20 }, { 60, 20 }, { 20, 60 } };
     int i;
     screen_320();
+    if (cover) {
+        gp0(0x60000000);
+        gp0(xy(0, 0));
+        gp0(xy(100, 100));
+    }
     for (i = 0; i < 3; i++)
         gpu_pgxp_store(0x1000u + 4u * (uint32_t)i, (bad && !i) ? bad : xy(P[i][0], P[i][1]), 1,
                        (float)P[i][0] + d, (float)P[i][1] + d, 100.0f);
-    gp0(0x20FFFFFF);
+    gp0(cmd);
     for (i = 0; i < 3; i++)
         gp0_at(xy(P[i][0], P[i][1]), 0x1000u + 4u * (uint32_t)i);
 }
@@ -914,18 +920,27 @@ static void test_pgxp(void)
 
     gpu_set_upscale(4);
     g_pgxp = 0;
-    pgxp_triangle(0.5f, 0);
+    pgxp_triangle(0.5f, 0, 0x20FFFFFF, 1);
     memcpy(ref, gpu_vram(), sizeof ref);
     gpu_render_display(out, &w, &h);
     CHECK(HI(81, 81), "pgxp off: corner at the integer position");
 
     g_pgxp = 1;
-    pgxp_triangle(0.5f, 0);
+    pgxp_triangle(0.5f, 0, 0x20FFFFFF, 1);
     CHECK(!memcmp(ref, gpu_vram(), sizeof ref), "pgxp: native VRAM unchanged");
     gpu_render_display(out, &w, &h);
-    CHECK(!HI(81, 81) && HI(82, 82), "pgxp: corner moved by half a native pixel");
+    CHECK(!HI(81, 81) && HI(82, 82), "pgxp: corner moved by half a native pixel (drawn black stays black)");
 
-    pgxp_triangle(0.5f, xy(21, 20));
+    /* cracks: where the precise shape leaves the screen clear showing, the console's shape fills it */
+    pgxp_triangle(0.5f, 0, 0x20FFFFFF, 0);
+    gpu_render_display(out, &w, &h);
+    CHECK(HI(81, 81) && HI(82, 82), "pgxp: background left open filled with the console's shape");
+    CHECK(!HI(79, 81) && !HI(81, 79), "pgxp: nothing filled outside the console's shape");
+    pgxp_triangle(0.5f, 0, 0x22FFFFFF, 0);
+    gpu_render_display(out, &w, &h);
+    CHECK(!HI(81, 81) && HI(82, 82), "pgxp: see-through polygons are not drawn twice");
+
+    pgxp_triangle(0.5f, xy(21, 20), 0x20FFFFFF, 1);
     gpu_render_display(out, &w, &h);
     CHECK(HI(81, 81), "pgxp: stale tag ignored");
 
@@ -936,6 +951,68 @@ static void test_pgxp(void)
     CHECK(u >= 10 && u <= 14, "perspective-correct u = %d (expected ~12.6)", u);
 #undef HI
     g_pgxp = g_pgxp_persp = 0;
+    gpu_set_upscale(1);
+    free(out);
+}
+
+/* flat quad (colour col) at native corners P[i], tagged at precise positions F[i]; words at addr.. */
+static void pgxp_quad(uint32_t col, const int P[4][2], const float F[4][2], uint32_t addr)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        gpu_pgxp_store(addr + 4u * (uint32_t)i, xy(P[i][0], P[i][1]), 1, F[i][0], F[i][1], 100.0f);
+    gp0(0x28000000 | col);
+    for (i = 0; i < 4; i++)
+        gp0_at(xy(P[i][0], P[i][1]), addr + 4u * (uint32_t)i);
+}
+
+/* Seams: two 3D quads that meet on the console at x 40, with a gap of 3/4 pixel between their
+ * precise edges (39.5 and 40.25) over an older 3D ground quad: the gap is filled from its sides;
+ * the left quad's outline over the ground (20.5) stays as drawn */
+static void test_pgxp_seams(void)
+{
+    static const int G[4][2] = { { 10, 10 }, { 90, 10 }, { 10, 90 }, { 90, 90 } };
+    static const float GF[4][2] = { { 10, 10 }, { 90, 10 }, { 10, 90 }, { 90, 90 } };
+    static const int B[4][2] = { { 20, 20 }, { 40, 20 }, { 20, 60 }, { 40, 60 } };
+    static const float BF[4][2] = { { 20.5f, 20 }, { 39.5f, 20 }, { 20.5f, 60 }, { 39.5f, 60 } };
+    static const int C[4][2] = { { 40, 20 }, { 60, 20 }, { 40, 60 }, { 60, 60 } };
+    static const float CF[4][2] = { { 40.25f, 20 }, { 60, 20 }, { 40.25f, 60 }, { 60, 60 } };
+    uint32_t *out = (uint32_t *)malloc((size_t)1024 * 512 * 16 * sizeof(uint32_t));
+    int w, h, x, gap = 0;
+    gpu_set_upscale(4);
+    g_pgxp = 1;
+    screen_320();
+    pgxp_quad(0x00FF00, G, GF, 0x3000);         /* ground: green */
+    pgxp_quad(0x0000FF, B, BF, 0x3010);         /* red */
+    pgxp_quad(0xFF0000, C, CF, 0x3020);         /* blue */
+    gpu_render_display(out, &w, &h);
+    for (x = 156; x < 164; x++)
+        gap += (out[160 * w + x] & 0xFFFFFFu) == 0x00FF00u;
+    CHECK(gap == 0, "seam: no ground showing between the quads (%d px)", gap);
+    CHECK((out[160 * w + 81] & 0xFFFFFFu) == 0x00FF00u, "seam: the outline over the ground stays as drawn");
+    CHECK((out[160 * w + 83] & 0xFFFFFFu) == 0xFF0000u, "seam: the quad itself as drawn");
+    screen_320();                               /* the right quad drawn first */
+    pgxp_quad(0x00FF00, G, GF, 0x3000);
+    pgxp_quad(0xFF0000, C, CF, 0x3020);
+    pgxp_quad(0x0000FF, B, BF, 0x3010);
+    gpu_render_display(out, &w, &h);
+    for (gap = 0, x = 156; x < 164; x++)
+        gap += (out[160 * w + x] & 0xFFFFFFu) == 0x00FF00u;
+    CHECK(gap == 0, "seam: filled whichever side was drawn first (%d px)", gap);
+    {                                           /* the same with band workers */
+        uint32_t *one = (uint32_t *)malloc((size_t)w * h * sizeof(uint32_t));
+        memcpy(one, out, (size_t)w * h * sizeof(uint32_t));
+        gpu_set_threads(4);
+        screen_320();
+        pgxp_quad(0x00FF00, G, GF, 0x3000);
+        pgxp_quad(0xFF0000, C, CF, 0x3020);
+        pgxp_quad(0x0000FF, B, BF, 0x3010);
+        gpu_render_display(out, &w, &h);
+        gpu_set_threads(0);
+        CHECK(!memcmp(one, out, (size_t)w * h * sizeof(uint32_t)), "seam: the same picture with band workers");
+        free(one);
+    }
+    g_pgxp = 0;
     gpu_set_upscale(1);
     free(out);
 }
@@ -1484,6 +1561,7 @@ int main(int argc, char **argv)
     test_upscale();
     test_upscale_texels();
     test_pgxp();
+    test_pgxp_seams();
     test_pgxp_sprite();
     test_interp();
     test_texpack();
