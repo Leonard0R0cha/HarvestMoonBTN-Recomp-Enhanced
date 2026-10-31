@@ -44,6 +44,7 @@ uint16_t g_p2_buttons;          /* farmer 2's pad, set by the frontend each fram
 #define PLAYER_DRAW 0x800CA24Cu
 #define CONTROL 0x800C401Cu
 #define WALK 0x800CAADCu
+#define IDLE 0x800CA6C4u        /* counts the minutes standing still (+0x1A; the control lies down to rest) */
 #define PAD 0x8005E3A8u         /* -> the pad state (port 1) */
 #define BUFFER 0x8005E3A4u      /* which of the two screens is being built (0 / 1) */
 #define SLOTS 0x80122F9Cu       /* per screen: VRAM places of the player's pictures */
@@ -209,6 +210,8 @@ static int owner, exchanged;    /* farmer 2 opened the menu that has the game / 
 static int thrown_by_p2, flying_before; /* places (bits) farmer 2 threw / flying when its tick began */
 static int landing;
 static int asked;               /* farmer 2's turn pressed X (and the player did not) */
+static int p1_led;              /* the player was led when farmer 2's turn began */
+static uint32_t idle_clock;     /* the clock farmer 2's minutes standing still were last counted at */
 static int loaded;              /* the farm's tick was not run for a while: a new area */
 static int32_t seen_x, seen_z;  /* where the player was at the last tick */
 static uint64_t last_tick;
@@ -654,6 +657,7 @@ static void turn(CPU *c) {
         }
     }
     if (!(MEM_R32(MENU_FLAGS) & MENU_OPEN)) keep_registry(c, sp);
+    p1_led = (MEM_R32(FLAGS) & LED) != 0;
     swap_at(pad, PAD_SIZE, saved_pad, my_pad);
     swap_at(log, INPUT_LOG_SIZE, saved_log, my_log);
     swap_globals(saved_globals, my_globals);
@@ -662,6 +666,12 @@ static void turn(CPU *c) {
     inside = 1;
     uint32_t menu = MEM_R32(MENU_FLAGS) & MENU_OPEN, led = MEM_R32(FLAGS) & LED;
     int was_flying = flying();
+    if (MEM_R32(HOUR) != idle_clock) {     /* as the clock (800C0A4C) does it for the player each minute */
+        idle_clock = MEM_R32(HOUR);
+        c->r[4] = PLAYER;
+        c->r[29] = sp;
+        call_addr(c, IDLE);
+    }
     c->r[29] = sp;
     call_addr(c, CONTROL);
     {   /* farmer 2's X on the player (the player's struct is in "saved") */
@@ -735,7 +745,7 @@ void p2_aim_view(void) {
 
 /* ... and puts back everything farmer 2 keeps */
 #define STATE(X) X(me) X(my_globals) X(my_pad) X(my_log) X(my_anims) X(placed) X(inside) X(ticks) \
-    X(owner) X(exchanged) X(asked) X(thrown_by_p2) X(flying_before) X(landing) X(loaded) X(seen_x) X(seen_z) X(last_tick) X(buttons) X(rested_day) X(area) X(held) X(count) X(fainted) \
+    X(owner) X(exchanged) X(asked) X(thrown_by_p2) X(flying_before) X(landing) X(loaded) X(seen_x) X(seen_z) X(last_tick) X(buttons) X(rested_day) X(area) X(held) X(count) X(fainted) X(idle_clock) \
     X(trade_who) X(trade_kind) X(trade_next) X(trade_places_n) X(trade_store) \
     X(lent_n) X(lent_at) X(lent_slot) X(lent_e) X(lent_snap) X(lent_exchanged)
 #define SIZE(v) + sizeof v
@@ -776,6 +786,15 @@ void p2_tick_begin(void) {
     uint32_t f;
     memcpy(&f, me + 0x6C, 4);
     if (asked && (MEM_R32(MENU_FLAGS) & MENU_OPEN)) owner = 1;     /* the script farmer 2's X started */
+    /* ... or it leads "the player" (a thing on a shop's shelf: the script marks the struct in the
+     * player's place, the player's, the next frame; the farmer then takes the thing in its hands
+     * and the menu to buy it opens): the lead is farmer 2's */
+    if (asked && !owner && !p1_led && (MEM_R32(FLAGS) & LED) && !(f & LED)) {
+        MEM_W32(FLAGS, MEM_R32(FLAGS) & ~LED);
+        f |= LED;
+        memcpy(me + 0x6C, &f, 4);
+        owner = 1;
+    }
     asked = 0;
     if (owner && !(MEM_R32(MENU_FLAGS) & MENU_OPEN) && !(f & LED)) owner = 0;
     /* in farmer 2's own menu all its buttons but Start and Select reach the game */
