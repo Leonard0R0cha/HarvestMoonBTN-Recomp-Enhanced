@@ -186,7 +186,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "p2view_upscale")) g_cfg.p2view_upscale = atoi(val);
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
-    else if (!strcmp(key, "sprite_depth")) g_cfg.sprite_depth = atoi(val);
+    else if (!strcmp(key, "sprite_depth")) {}   /* older ini files: always off now (--sprite-depth for tests) */
     else if (!strcmp(key, "crackfix")) g_cfg.crackfix = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
@@ -215,6 +215,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "fastforward")) g_cfg.allow_fast_forward = atoi(val);
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
     else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
+    else if (!strcmp(key, "language")) {}    /* the launcher's own */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
 }
 

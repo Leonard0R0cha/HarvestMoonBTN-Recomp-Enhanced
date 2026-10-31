@@ -205,7 +205,6 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `pgxp` | `0` | `1` = precise 3D vertex positions, no wobble (needs `upscale` 2+) |
 |  | `crackfix` | `1` | `1` = close the thin cracks between models that `pgxp` opens; `0` is about 1 ms a frame faster at upscale 4 (needs `pgxp`) |
 |  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
-|  | `sprite_depth` | `0` | `1` = 2D objects get smaller further away, like the 3D ground (needs `pgxp`) |
 |  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects and the HUD keep their shape with `upscale` 2+ |
 |  | `interp` | `0` | `1` = in-between pictures: the camera and the 3D scenery move at 60 fps while the game runs at 30 (needs `pgxp`; 3 extra CPU threads) |
 |  | `texturepack` | `0` | `1` = draw 2D sprites (people, animals, field objects, text, HUD) with the replacement images in `textures/` next to the game ([texture packs](docs/GRAPHICS.md#texture-packs); needs `upscale` 2+) |
@@ -225,6 +224,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 | `[keyboard]` | `key_up` … `key_select` |  | comma-separated SDL key names, e.g. `key_cross = X,Space,K` |
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
+| `[launcher]` | `language` |  | the launcher's language, `en`, `pt` or `es` (its flags set it); not set: the system's |
 
 Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--no-crackfix`, `--perspective`, `--sprite-depth`, `--widescreen W:H`, `--interp`, `--texturepack`, `--dumptextures`, `--fastcd`,
 `--no-autoslot`, `--card N`, `--overclock N`, `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing

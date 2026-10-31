@@ -12,7 +12,6 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly | upscale 2+ |
 | `crackfix = 1` | closes the cracks PGXP opens between models (on unless set to 0) | pgxp |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
-| `sprite_depth = 1` | 2D objects get smaller further away, like the 3D ground | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
 | `texturepack = 1` | 2D sprites drawn with replacement images from `textures/` | upscale 2+ |
@@ -139,7 +138,7 @@ object would be about 71% of its mid-screen size at the top of the view and 122%
 bottom. Walking away from a stump moves it up the screen, where the ground shrinks but the
 stump doesn't, so it looks bigger. With the wobbly original ground this was hard to see.
 
-**Fix (optional): depth scaling.** With `sprite_depth` each tagged sprite is also scaled
+**Fix (optional, command line `--sprite-depth` only): depth scaling.** With it each tagged sprite is also scaled
 about its anchor by
 
     s = depth where the projection centre's ray meets the player's ground level
