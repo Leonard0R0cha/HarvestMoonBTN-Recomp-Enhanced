@@ -3,7 +3,7 @@
 
 Needs Python 3 with tkinter (part of the python.org installer). Double-click it, or run
 "python launcher.pyw". Only options you change are written; comments in hmbtn.ini stay.
-English, Portuguese or Spanish, as the system (the flags in the header switch).
+English, Portuguese or Spanish, as the system until a flag in the header picks one (kept in hmbtn.ini).
 """
 import os, re, struct, subprocess, sys
 
@@ -21,7 +21,6 @@ OPTIONS = [
     ('video', 'video', 'pgxp', 'bool'),
     ('video', 'video', 'crackfix', 'bool:1'),
     ('video', 'video', 'perspective', 'bool'),
-    ('video', 'video', 'sprite_depth', 'bool'),
     ('video', 'video', 'interp', 'bool'),
     ('video', 'video', 'texturepack', 'bool'),
     ('video', 'video', 'dumptextures', 'bool'),
@@ -60,7 +59,7 @@ PRESETS = [
     ('preset4', {'upscale': '3'}),
     ('preset6', {'upscale': '4'}),
 ]
-PRESET_ALL = {'pgxp': '1', 'crackfix': '1', 'perspective': '1', 'sprite_depth': '1', 'interp': '1'}
+PRESET_ALL = {'pgxp': '1', 'crackfix': '1', 'perspective': '1', 'interp': '1'}
 
 # option -> (what it needs, as a text key): greyed out until it holds
 def _up2(v):
@@ -69,7 +68,6 @@ REQUIRES = {
     'pgxp': (_up2, 'need_up2'),
     'crackfix': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'perspective': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
-    'sprite_depth': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'drawthreads': (_up2, 'need_up2'),
     'texturepack': (_up2, 'need_up2'),
@@ -90,8 +88,6 @@ TEXT = {
                      'about 1 ms a frame at resolution 4.'),
         'perspective': ('Perspective-correct textures', 'No warping on large floors and walls. Costs some '
                         'speed.'),
-        'sprite_depth': ('Objects shrink with distance', 'Stumps, rocks and people get smaller further away, '
-                         'like the ground under them.'),
         'interp': ('60 fps camera', 'The camera and scenery move 60 times a second (the game itself still runs '
                    'at 30). Drawn on spare processor cores; F9 switches it while playing.'),
         'texturepack': ('Texture pack', 'Draws people, animals, field objects, text and the HUD with the images in '
@@ -155,8 +151,6 @@ TEXT = {
                      'Custa cerca de 1 ms por quadro na resolução 4.'),
         'perspective': ('Texturas com perspectiva correta', 'Sem distorção em chãos e paredes grandes. Pesa um '
                         'pouco.'),
-        'sprite_depth': ('Objetos diminuem com a distância', 'Tocos, pedras e pessoas ficam menores ao longe, '
-                         'como o chão embaixo deles.'),
         'interp': ('Câmera a 60 fps', 'A câmera e o cenário se movem 60 vezes por segundo (o jogo continua a '
                    '30). Usa núcleos livres do processador; F9 liga e desliga durante o jogo.'),
         'texturepack': ('Pacote de texturas', 'Desenha pessoas, animais, objetos do campo, texto e o HUD com as '
@@ -219,8 +213,6 @@ TEXT = {
                      'PlayStation. Cuesta cerca de 1 ms por cuadro en resolución 4.'),
         'perspective': ('Texturas con perspectiva correcta', 'Sin deformación en suelos y paredes grandes. Cuesta '
                         'algo de velocidad.'),
-        'sprite_depth': ('Los objetos se achican con la distancia', 'Tocones, rocas y personas se ven más '
-                         'pequeños a lo lejos, como el suelo bajo ellos.'),
         'interp': ('Cámara a 60 fps', 'La cámara y el escenario se mueven 60 veces por segundo (el juego sigue a '
                    '30). Usa núcleos libres del procesador; F9 lo alterna durante el juego.'),
         'texturepack': ('Paquete de texturas', 'Dibuja personas, animales, objetos del campo, texto y el HUD con las '
@@ -699,7 +691,8 @@ def main():
     # at once and the game takes it up (the cheats), and there is no Play
     live = '--live' in sys.argv
     first = sys.argv[sys.argv.index('--page') + 1] if '--page' in sys.argv[:-1] else 'start'
-    state = {'lang': language(), 'page': first, 'dirty': False, 'note': ''}
+    lang = loaded.get('language') if 'language' in active else None     # the flag chosen last time
+    state = {'lang': lang if lang in UI else language(), 'page': first, 'dirty': False, 'note': ''}
 
     if os.name == 'nt':             # sharp text on scaled screens (Tk then sizes fonts for the DPI)
         try:
@@ -910,7 +903,8 @@ def main():
             if en[0]:
                 var.set('0' if var.get() == '1' else '1')
         c.bind('<Button-1>', click)
-        var.trace_add('write', draw)
+        tid = var.trace_add('write', draw)
+        c.bind('<Destroy>', lambda e: var.trace_remove('write', tid))   # rebuilt pages (language) get new ones
         draw()
 
         def enable(ok):
@@ -1222,6 +1216,15 @@ def main():
         state['note'] = '\u2714 ' + T('saved')
         refresh()
 
+    def set_lang(l):
+        """switch the language and keep it for next time, at once (other unsaved changes stay unsaved)"""
+        nonlocal text
+        state['lang'] = l
+        text = set_ini(text, 'launcher', 'language', l)
+        with open(INI, 'w', encoding='utf-8') as f:
+            f.write(text)
+        build()
+
     def play(args=()):
         save()
         if not os.path.exists(EXE):
@@ -1284,7 +1287,7 @@ def main():
             fl = flag(b, l, WOOD_HI if on else WOOD)
             fl.pack()
             for w in (b, fl):
-                w.bind('<Button-1>', lambda e, l=l: (state.update(lang=l), build()))
+                w.bind('<Button-1>', lambda e, l=l: set_lang(l))
                 if not on:
                     w.bind('<Enter>', lambda e, b=b, fl=fl: [x.configure(bg='white') for x in (b, fl)])
                     w.bind('<Leave>', lambda e, b=b, fl=fl: [x.configure(bg=getattr(x, 'tint', WOOD))
