@@ -15,7 +15,10 @@
  * chip is not written, and the CD, the pads and memory cards are not touched: a run that does
  * (or runs for too long: a wait for something that does not come) is dropped. Some scripts load a
  * file from the CD in the frame, every other frame for seconds: then the second window keeps
- * farmer 2's last picture (for up to HOLD frames; after that it shows what the first does). */
+ * farmer 2's last picture (for up to HOLD frames; after that it shows what the first does).
+ * The frame's CD loads (8002194C, after what is drawn is built) are left out of that run: at 12:00
+ * and after some talks they wait for the disc every frame for seconds, and every run was dropped
+ * (the second window stood still till the player went somewhere else). */
 #include "psx.h"
 #include "gpu.h"
 #include "gte.h"

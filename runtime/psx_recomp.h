@@ -245,6 +245,7 @@ void quick_bag_filter(void);
 void p2_draw(CPU *c);
 void p2_tick(CPU *c);
 void p2view_frame(CPU *c);      /* entry of the farm's frame: run once more for farmer 2's window (p2view.c) */
+extern int g_view2_run;         /* ... while that run goes */
 void p2_tick_begin(void);
 void cheats_tick(void);
 void p2_tick_end(void);

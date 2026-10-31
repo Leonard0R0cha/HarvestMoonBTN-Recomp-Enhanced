@@ -457,6 +457,9 @@ ENTRY_HOOKS[0x80017AE8] = 'if (quick_text_wait_kept(R[31])) return;'
 # libsnd's sequencer tick (8002A6E4, SsSeqCalledTbyT) is not run while fastload runs a loading
 # pause at full speed, so the music does not run on unheard (quick_music_held).
 ENTRY_HOOKS[0x8002A6E4] = 'if (quick_music_held()) return;'
+# the CD loads of the frame (8002194C, after the farm's frame has built what it draws): not in the
+# farm's frame run once more for farmer 2's window, which can't use the CD (runtime/p2view.c)
+ENTRY_HOOKS[0x8002194C] = 'if (g_view2_run) return;'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
