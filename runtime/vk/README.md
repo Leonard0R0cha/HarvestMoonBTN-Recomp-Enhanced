@@ -4,8 +4,10 @@ parallel-psx, a Vulkan PS1 GPU renderer, draws the upscaled picture. gpu.c keeps
 console's native VRAM (exact, for what the game and the port read back) and hands parallel-psx
 every command it runs (`vk_renderer.h`). Windows only (compiled in by tools/compile.py); Vulkan is
 loaded at runtime, and without it the game falls back to the CPU renderer.
+The windows show the pictures straight from the GPU (a Vulkan swapchain each, replacing SDL's
+renderer; letterbox and scaling as before); pictures are read back only for screenshots.
 
-Supported: upscale 1–4, pgxp and perspective-correct textures, widescreen with the HUD kept 4:3,
+Supported: upscale 1–8, pgxp and perspective-correct textures, widescreen with the HUD kept 4:3,
 sprite anchors and depth, texture packs, in-between pictures (interp), the crack fix (background and
 seams), the co-op second window.
 
@@ -31,5 +33,6 @@ seams), the co-op second window.
 | `ppsx/stb` | public domain or MIT (in each file) |
 
 ## Test switches
+`HMBTN_VK_COPY=1` shows the pictures through the CPU and SDL's renderer, as before direct display;
 `HMBTN_VK_STATS=1` logs command counts every 600 VBlanks; `HMBTN_VK_CPU_OFF=1` skips gpu.c's own
 drawing (reads come back from the GPU); `HMBTN_RENDER_ALL=1` makes headless runs build every picture.

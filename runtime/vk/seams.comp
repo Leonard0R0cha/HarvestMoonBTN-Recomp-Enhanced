@@ -3,13 +3,15 @@
 // uPic, uTag: the picture and its tags (15 bits as 5-bit colour channels: 0x4000 a moved 3D polygon,
 // the low 14 bits the command's number). Pass 0, a thread per row: the picture with runs across
 // filled, to uSnap. Pass 1, a thread per column: from uSnap, runs down filled, to uOut as
-// 0xAARRGGBB. A run of pixels under a console pixel (n) last drawn before the moved 3D polygons
-// on both sides of it, two different ones, is filled from its sides.
+// 0xAARRGGBB words (read back) and uColor (shown). A run of pixels under a console pixel (n) last
+// drawn before the moved 3D polygons on both sides of it, two different ones, is filled from its
+// sides.
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, rgba8) uniform readonly image2D uPic;
 layout(set = 0, binding = 1, rgba8) uniform readonly image2D uTag;
 layout(set = 0, binding = 2, r32ui) uniform uimage2D uSnap;
 layout(set = 0, binding = 3, r32ui) uniform writeonly uimage2D uOut;
+layout(set = 0, binding = 4, rgba8) uniform writeonly image2D uColor;     // the same, to show
 layout(push_constant, std430) uniform Push
 {
 	int w, h, n, pass;
@@ -64,10 +66,16 @@ void across(int y)
 	}
 }
 
+void put(int x, int y, uint c)
+{
+	imageStore(uOut, ivec2(x, y), uvec4(c));
+	imageStore(uColor, ivec2(x, y), vec4(uvec4(c >> 16, c >> 8, c, 255u) & 255u) / 255.0);
+}
+
 void down(int x)
 {
 	for (int y = 0; y < p.h; y++)
-		imageStore(uOut, ivec2(x, y), imageLoad(uSnap, ivec2(x, y)));
+		put(x, y, imageLoad(uSnap, ivec2(x, y)).r);
 	for (int y = 1; y < p.h; y++)
 	{
 		uint m = tag_at(x, y), a = tag_at(x, y - 1);
@@ -87,7 +95,7 @@ void down(int x)
 		{
 			uint up = imageLoad(uSnap, ivec2(x, y - 1)).r, dn = imageLoad(uSnap, ivec2(x, e)).r;
 			for (int k = y; k < e; k++)
-				imageStore(uOut, ivec2(x, k), uvec4(k - y < (e - y + 1) / 2 ? up : dn));
+				put(x, k, k - y < (e - y + 1) / 2 ? up : dn);
 		}
 	}
 }

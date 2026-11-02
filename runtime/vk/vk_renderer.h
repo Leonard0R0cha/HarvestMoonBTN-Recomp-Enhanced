@@ -35,6 +35,16 @@ void vkr_sync(int x, int y, int w, int h, uint16_t *vram);            /* that bo
 void vkr_display(uint32_t *out, int *w, int *h, int x, int y, int dw, int dh);   /* the display area, scaled */
 void vkr_vblank(int shown, int x, int y, int dw, int dh);   /* shown: that display area (starts its picture) */
 void vkr_kick(int x, int y, int dw, int dh);   /* start the picture of that display area now */
+
+/* Direct display: window win (0 the game's, 1 farmer 2's; hwnd: its HWND) shows the pictures from
+ * the GPU (0: can't). vkr_display then reads pictures back only when pixels are wanted
+ * (vkr_want_pixels: screenshots); vkr_keep(slot) keeps the picture it made last for vkr_present
+ * (0: there was none, it was the CPU's; slot -1 forgets it), and vkr_present shows slot's picture,
+ * or px (w x h, the CPU's: a video), letterboxed at aspect, scaled by scaling (SCALING_*). */
+int  vkr_window(int win, void *hwnd);
+void vkr_want_pixels(int want);
+int  vkr_keep(int slot);
+void vkr_present(int win, int slot, const uint32_t *px, int w, int h, double aspect, int scaling);
 /* 0: the game's renderer, 1: the one in-between pictures are redrawn into (2, 3: their tags; 4 ..
  * 7: the same for the second view's GPU, gpu_view2.c); the calls above go to it */
 void vkr_target(int k);

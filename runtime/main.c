@@ -45,6 +45,7 @@ volatile int g_quit;
 static FILE *log_file;
 
 int platform_init(void);
+void platform_vulkan(void);
 int platform_3d_scene(void);
 void platform_shutdown(void);
 void platform_error_box(const char *title, const char *msg);
@@ -593,6 +594,8 @@ int main(int argc, char **argv) {
         LOGW("renderer vulkan: not available, using the CPU renderer");
         if (g_cfg.upscale > 4) g_cfg.upscale = 4;
     }
+    if (vk)
+        platform_vulkan();          /* the windows show its pictures from the GPU */
 #endif
     g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
     gpu_set_upscale(vk ? 1 : g_cfg.upscale);
