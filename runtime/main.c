@@ -6,6 +6,9 @@
 #include "spu.h"
 #include "gte.h"
 #include "workers.h"
+#ifdef HMBTN_VULKAN
+#include "vk/vk_renderer.h"
+#endif
 #include <stdarg.h>
 #include <time.h>
 #include <ctype.h>
@@ -182,6 +185,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "savedir")) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", val);
     else if (!strcmp(key, "scale")) g_cfg.scale = atoi(val);
     else if (!strcmp(key, "upscale")) g_cfg.upscale = atoi(val);
+    else if (!strcmp(key, "renderer")) g_cfg.renderer_vk = !strcmp(val, "vulkan");
     else if (!strcmp(key, "drawthreads")) g_cfg.draw_threads = !strcmp(val, "auto") ? -1 : atoi(val);
     else if (!strcmp(key, "p2view_upscale")) g_cfg.p2view_upscale = atoi(val);
     else if (!strcmp(key, "pgxp")) g_cfg.pgxp = atoi(val);
@@ -303,6 +307,7 @@ static void usage(void) {
            "  --scale N             initial window scale (default 3)\n"
            "  --upscale N           internal resolution 1..4 (default 1 = original 320x240)\n"
            "  --drawthreads N       threads drawing the upscaled 3D, 0..4 (default: by processor)\n"
+           "  --renderer R          cpu (default) or vulkan (experiment: parallel-psx draws the picture)\n"
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --no-sprite-depth     2D objects keep one size (they scale with depth by default, with --pgxp)\n"
@@ -412,6 +417,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--fullscreen")) g_cfg.fullscreen = 1;
         else if (!strcmp(a, "--scale")) { g_cfg.scale = atoi(nx); i++; }
         else if (!strcmp(a, "--upscale")) { g_cfg.upscale = atoi(nx); i++; }
+        else if (!strcmp(a, "--renderer")) { g_cfg.renderer_vk = !strcmp(nx, "vulkan"); i++; }
         else if (!strcmp(a, "--drawthreads")) { g_cfg.draw_threads = atoi(nx); i++; }
         else if (!strcmp(a, "--pgxp")) g_cfg.pgxp = 1;
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
@@ -579,16 +585,23 @@ int main(int argc, char **argv) {
     mem_reset();
     gte_reset();
     gpu_init();
+    int vk = 0;
+#ifdef HMBTN_VULKAN
+    /* experiment: parallel-psx draws the picture at the upscale (runtime/vk); the GPU (gpu.c) keeps
+     * the native VRAM, and the upscaled copy's features are drawn by Vulkan */
+    if (g_cfg.renderer_vk && !(vk = vkr_init(g_cfg.upscale)))
+        LOGW("renderer vulkan: not available, using the CPU renderer");
+#endif
     g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
-    gpu_set_upscale(g_cfg.upscale);
-    if (gpu_upscale() != g_cfg.upscale) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
+    gpu_set_upscale(vk ? 1 : g_cfg.upscale);
+    if (gpu_upscale() != g_cfg.upscale && !vk) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
     if (gpu_upscale() > 1) {
         /* by processor: one thread per logical processor but the game's, up to 4 */
         int n = g_cfg.draw_threads >= 0 ? g_cfg.draw_threads : wk_cpu_count() - 1;
         gpu_set_threads(n);
         if (gpu_threads()) LOGI("upscaled 3D drawn by %d threads", gpu_threads());
     }
-    g_pgxp = g_cfg.pgxp && gpu_upscale() > 1;
+    g_pgxp = g_cfg.pgxp && (gpu_upscale() > 1 || (vk && g_cfg.upscale > 1));
     g_pgxp_persp = g_pgxp && g_cfg.perspective;
     g_sprite_depth = g_pgxp && g_cfg.sprite_depth;
     if (g_cfg.pgxp && !g_pgxp) LOGW("pgxp has no effect without upscale 2 or more");
@@ -596,12 +609,12 @@ int main(int argc, char **argv) {
         /* the game's projection is made for a 4:3 TV: squeeze x by (4/3) / (W/H) */
         int num = 4 * g_cfg.ws_h, den = 3 * g_cfg.ws_w;
         gte_set_widescreen(num, den);
-        if (gpu_upscale() > 1) g_sprite_ws = (float)num / (float)den;
+        if (gpu_upscale() > 1 || (vk && g_cfg.upscale > 1)) g_sprite_ws = (float)num / (float)den;
         else LOGW("widescreen: 2D objects and people look wider without upscale 2 or more");
         g_scene_3d = platform_3d_scene;
         LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
     }
-    if ((g_cfg.texturepack || g_cfg.dumptextures) && gpu_upscale() < 2)
+    if ((g_cfg.texturepack || g_cfg.dumptextures) && gpu_upscale() < 2 && !(vk && g_cfg.upscale > 1))
         LOGW("texture packs need upscale 2 or more");
     else if (g_cfg.texturepack || g_cfg.dumptextures) {
         char dir[1200];
@@ -615,7 +628,7 @@ int main(int argc, char **argv) {
     }
     /* sprite quads at projected points are found by their tags, so texture packs record tags too
      * (without pgxp and widescreen they don't move or scale anything) */
-    g_sprite_tags = gpu_upscale() > 1 && (g_pgxp || g_cfg.ws_w || g_texpack || g_texdump);
+    g_sprite_tags = (gpu_upscale() > 1 || (vk && g_cfg.upscale > 1)) && (g_pgxp || g_cfg.ws_w || g_texpack || g_texdump);
     if (g_cfg.interp && g_pgxp) gpu_interp_enable();
     else if (g_cfg.interp) LOGW("interp needs upscale 2 or more and pgxp");
     p2view_init();

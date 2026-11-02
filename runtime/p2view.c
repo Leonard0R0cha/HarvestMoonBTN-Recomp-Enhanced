@@ -23,6 +23,9 @@
 #include "gpu.h"
 #include "gte.h"
 #include <setjmp.h>
+#ifdef HMBTN_VULKAN
+#include "vk/vk_renderer.h"
+#endif
 
 int g_view2 = -1;                   /* -1: on with --p2 when not online (main.c); 2: online guest, in the game's window */
 int g_view2_run;
@@ -65,7 +68,11 @@ void p2view_init(void) {
     view2_g_pgxp_cracks = g_pgxp_cracks;
     view2_gpu_set_upscale(up);
     view2_gpu_set_threads(gpu_threads());   /* as many as the game's GPU draws with */
-    view2_g_pgxp = g_pgxp && view2_gpu_upscale() > 1;
+    int vk = 0;
+#ifdef HMBTN_VULKAN
+    vk = g_vk > 1;                      /* Vulkan draws it upscaled (the GPU keeps the native VRAM) */
+#endif
+    view2_g_pgxp = g_pgxp && (view2_gpu_upscale() > 1 || vk);
     view2_g_pgxp_persp = g_pgxp_persp && view2_g_pgxp;
     view2_g_sprite_depth = g_sprite_depth && view2_g_pgxp;
     view2_g_sprite_ws = g_sprite_ws;

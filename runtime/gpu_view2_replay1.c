@@ -8,6 +8,8 @@
 static char guard_head[64] __attribute__((aligned(64), used));
 static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define GPU_REPLAY 1
+#define GPU_VK_REPLAY 1     /* with renderer = vulkan: redraws the second view's in-between pictures */
+#define GPU_VK_SET 4
 #define GPU_REPLAY_RUN view2_replay_run1
 #define g_pgxp v2replay_g_pgxp
 #define g_pgxp_persp v2replay_g_pgxp_persp

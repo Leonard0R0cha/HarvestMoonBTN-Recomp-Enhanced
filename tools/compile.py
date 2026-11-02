@@ -120,6 +120,21 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
             if f == 'netplay.c':
                 flags = flags + ['-DHMBTN_BUILD_ID=0x' + build_id]
             srcs.append((os.path.join(rt, f), flags))
+    # experiment: parallel-psx (runtime/vk, C++; Vulkan is loaded at runtime) behind "renderer = vulkan"
+    vk = os.path.join(rt, 'vk')
+    cxx = None
+    if IS_WIN and not linux_cross and os.path.isdir(vk):
+        pp = os.path.join(vk, 'ppsx')
+        inc = ['-I' + os.path.join(vk, 'compat')] + ['-I' + os.path.join(pp, *d) for d in (
+            ('renderer',), ('glsl', 'prebuilt'), ('volk',), ('khronos', 'include'), ('SPIRV-Cross',))]
+        cxx = [cc[0].replace('clang.exe', 'clang++.exe')]
+        cxxflags = target + ['-std=gnu++14', '-O2', '-DNDEBUG', '-DSPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS'] + inc
+        srcs = [(s, f + ['-DHMBTN_VULKAN']) for s, f in srcs]
+        srcs.append((os.path.join(vk, 'vk_renderer.cpp'), cxxflags + ['-Wall']))
+        srcs.append((os.path.join(pp, 'renderer', 'renderer.cpp'), cxxflags + ['-w']))
+        for f in ('spirv_cfg', 'spirv_cross', 'spirv_cross_parsed_ir', 'spirv_parser'):
+            srcs.append((os.path.join(pp, 'SPIRV-Cross', f + '.cpp'), cxxflags + ['-w']))
+        srcs.append((os.path.join(pp, 'volk', 'volk.c'), target + ['-O2', '-w'] + inc))
     gen = os.path.join(ROOT, 'generated')
     for f in sorted(os.listdir(gen)):
         if f.endswith('.c'):
@@ -127,11 +142,12 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
 
     def compile_one(item):
         src, flags = item
-        obj = os.path.join(objdir, os.path.basename(src)[:-2] + '.o')
+        obj = os.path.join(objdir, os.path.splitext(os.path.basename(src))[0] + '.o')
         # rebuild if source, header set or flags changed
         key = hashlib.sha1((' '.join(flags)).encode()).hexdigest()[:8]
         stamp = obj + '.' + key
-        hdr_t = max(os.path.getmtime(os.path.join(rt, h)) for h in os.listdir(rt) if h.endswith('.h'))
+        hdr_t = max(os.path.getmtime(os.path.join(d, h)) for d in (rt, vk) if os.path.isdir(d)
+                    for h in os.listdir(d) if h.endswith(('.h', '.inc')))
         if os.path.exists(obj) and os.path.exists(stamp):
             t = os.path.getmtime(obj)
             src_t = os.path.getmtime(src)
@@ -139,7 +155,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
                 src_t = max(src_t, os.path.getmtime(os.path.join(rt, 'gpu.c')))
             if t >= src_t and t >= hdr_t:
                 return obj, 0, ''
-        code, out = sh(cc + flags + ['-c', src, '-o', obj])
+        code, out = sh((cxx if src.endswith('.cpp') else cc) + flags + ['-c', src, '-o', obj])
         if code == 0:
             for old in os.listdir(objdir):
                 if old.startswith(os.path.basename(obj) + '.'):
@@ -165,7 +181,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         if code:
             sys.exit('ICON FAILED\n' + out)
         objs.append(res)
-    link = cc + target + objs + sdl_libs + ['-o', exe]
+    link = (cxx + ['-static-libstdc++'] if cxx else cc) + target + objs + sdl_libs + ['-o', exe]
     if linux_cross:
         link += ['-lm', '-ldl', '-lpthread', '-Wl,-z,stack-size=16777216', '-s']
     elif IS_WIN:

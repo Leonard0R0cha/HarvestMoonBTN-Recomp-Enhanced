@@ -371,7 +371,7 @@ static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, in
     if (g_view2 > 0) {                  /* and farmer 2's window: frame2_... */
         static uint32_t *px2;
         static int w2, h2;
-        int up = gpu_upscale();
+        int up = g_cfg.upscale > 1 ? g_cfg.upscale : 1;   /* as frame_px (Vulkan: gpu_upscale is 1) */
         if (!px2) px2 = calloc((size_t)1024 * 512 * up * up, sizeof(uint32_t));
         if (!px2) return;
         if (p2view_swapped() || p2view_scene()) gpu_render_display(px2, &w2, &h2);              /* as the window */
@@ -1010,7 +1010,9 @@ void platform_frame(void) {
          * one), and an in-between picture has until then to be drawn */
         throttle();
     }
-    bool need_pixels = shown || shot || shot_request, same = false;
+    static int render_all = -1;     /* timing test: headless runs make every picture, as a window does */
+    if (render_all < 0) render_all = getenv("HMBTN_RENDER_ALL") != NULL;
+    bool need_pixels = shown || shot || shot_request || render_all, same = false;
     /* farmer 2's talk or menu: this window keeps the player's picture (farmer 2's shows the game's) */
     bool keep = p2view_swapped() && g_view2 != 2;
     if (keep) {
@@ -1026,7 +1028,7 @@ void platform_frame(void) {
         /* farmer 2's window has in-between pictures of its own, while it shows its own farm frames */
         int v2 = g_view2 > 0 && !turbo() && !p2view_held();
         if (v2) {
-            int up = gpu_upscale();
+            int up = g_cfg.upscale > 1 ? g_cfg.upscale : 1;
             if (!v2i_px) v2i_px = malloc((size_t)1024 * 512 * up * up * sizeof(uint32_t));
             v2i_shown = v2i_px && view2_gpu_render_interp(v2i_px, &v2i_w, &v2i_h);
         } else {
