@@ -49,7 +49,8 @@ BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
 # text, choice:a|b|c, edit:a|b|c (a choice that can also be typed)
 OPTIONS = [
-    ('video', 'video', 'upscale', 'choice:1|2|3|4'),
+    ('video', 'video', 'renderer', 'choice:cpu|vulkan'),
+    ('video', 'video', 'upscale', 'choice:1|2|3|4|5|6|8'),
     ('video', 'video', 'widescreen', 'choice:off|16:9|16:10|21:9'),
     ('video', 'video', 'pgxp', 'bool'),
     ('video', 'video', 'crackfix', 'bool:1'),
@@ -94,6 +95,28 @@ PRESETS = [
 ]
 PRESET_ALL = {'pgxp': '1', 'crackfix': '1', 'perspective': '1', 'interp': '1'}
 
+# Internal resolutions are shown with their size in pixels (as the picture is shown: widened for
+# widescreen), e.g. "4x  ·  1280x960"; the ini keeps the number. Above 4 only with Vulkan.
+RES_KEYS = ('upscale', 'p2view_upscale')
+KIND = {key: kind for page, section, key, kind in OPTIONS}
+
+
+def res_label(n, ws):
+    if not n.isdigit():
+        return n
+    k = int(n)
+    w, h = 320 * k, 240 * k
+    if ws and ws != 'off' and ':' in ws:
+        a, b = ws.split(':')
+        w = round(h * int(a) / int(b))
+    return '%dx  \u00b7  %dx%d' % (k, w, h)
+
+
+def res_values(key, ws, vulkan):
+    vals = KIND[key].split(':', 1)[1].split('|')
+    return [v for v in vals if not v.isdigit() or int(v) <= 4 or vulkan]
+
+
 # option -> (what it needs, as a text key): greyed out until it holds
 def _up2(v):
     return v('upscale') not in ('', '1')
@@ -110,9 +133,13 @@ REQUIRES = {
 # option -> (title, explanation)
 TEXT = {
     'en': {
+        'renderer': ('Renderer', 'cpu: the processor draws the picture (works on any PC). vulkan: the graphics '
+                     'card draws it (experimental, needs a graphics driver with Vulkan): much lighter on the '
+                     'processor, and resolutions up to 8x. Without Vulkan the game uses cpu.'),
         'upscale': ('Internal resolution', 'Draws the 3D 2, 3 or 4 times larger than the original 320x240, '
                     'for smoother edges (1 = original). The processor draws the picture, so each step costs a '
-                    'lot more: 2 for 2 cores, 3 for 4 cores, 4 for 6 or more.'),
+                    'lot more: 2 for 2 cores, 3 for 4 cores, 4 for 6 or more. With the Vulkan renderer the '
+                    'graphics card draws it, up to 8x.'),
         'widescreen': ('Widescreen', 'Shows more of the farm and town at the sides. Videos stay 4:3. With '
                        'resolution 2 or more, people and the HUD keep their shape, and the title '
                        'screen and menus fill the screen too.'),
@@ -174,9 +201,13 @@ TEXT = {
                     'of their own (stops at walls, fences and water; no tools yet). The host\'s choice counts.'),
     },
     'pt': {
+        'renderer': ('Renderizador', 'cpu: o processador desenha a imagem (funciona em qualquer PC). vulkan: a '
+                     'placa de vídeo desenha (experimental, precisa de um driver de vídeo com Vulkan): muito mais '
+                     'leve para o processador, e resoluções até 8x. Sem Vulkan, o jogo usa cpu.'),
         'upscale': ('Resolução interna', 'Desenha o 3D 2, 3 ou 4 vezes maior que o original 320x240, com bordas '
                     'mais lisas (1 = original). Quem desenha é o processador, então cada nível pesa bem mais: '
-                    '2 para 2 núcleos, 3 para 4 núcleos, 4 para 6 ou mais.'),
+                    '2 para 2 núcleos, 3 para 4 núcleos, 4 para 6 ou mais. Com o renderizador Vulkan quem '
+                    'desenha é a placa de vídeo, até 8x.'),
         'widescreen': ('Tela larga', 'Mostra mais da fazenda e da cidade nas laterais. Título, menus e vídeos '
                        'continuam 4:3. Com resolução 2 ou mais, pessoas e o HUD mantêm a forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Acaba com os polígonos tremendo, o tremido típico do PlayStation.'),
@@ -236,9 +267,13 @@ TEXT = {
                     'própria (para em paredes, cercas e água; ainda sem ferramentas). Vale a escolha do anfitrião.'),
     },
     'es': {
+        'renderer': ('Renderizador', 'cpu: el procesador dibuja la imagen (funciona en cualquier PC). vulkan: '
+                     'la tarjeta gráfica la dibuja (experimental, necesita un controlador de vídeo con Vulkan): '
+                     'mucho más liviano para el procesador, y resoluciones hasta 8x. Sin Vulkan, el juego usa cpu.'),
         'upscale': ('Resolución interna', 'Dibuja el 3D 2, 3 o 4 veces más grande que el original 320x240, con '
                     'bordes más suaves (1 = original). Dibuja el procesador, así que cada nivel cuesta mucho más: '
-                    '2 para 2 núcleos, 3 para 4 núcleos, 4 para 6 o más.'),
+                    '2 para 2 núcleos, 3 para 4 núcleos, 4 para 6 o más. Con el renderizador Vulkan dibuja la '
+                    'tarjeta gráfica, hasta 8x.'),
         'widescreen': ('Pantalla panorámica', 'Muestra más de la granja y del pueblo a los lados. Título, menús y '
                        'vídeos siguen en 4:3. Con resolución 2 o más, las personas y el HUD mantienen su forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Se acabaron los polígonos temblorosos, el temblor típico de PlayStation.'),
@@ -918,13 +953,28 @@ def main():
         if kind.startswith(('choice:', 'bool:')) and not start:
             start = kind.split(':')[1].split('|')[0]     # the game's default
         vars_[key] = tk.StringVar(value=start)
+    for key in RES_KEYS:
+        vars_[key].set(res_label(vars_[key].get().strip(), vars_['widescreen'].get().strip()))
 
     def val(k):
-        return vars_[k].get().strip()
+        v = vars_[k].get().strip()
+        return v.split()[0].rstrip('x') if k in RES_KEYS and v else v      # "4x  ·  1280x960" -> 4
+
+    res_boxes = {}                               # resolution choices: relabelled by refresh
 
     widgets = {}                                 # key -> (set_enabled, note label)
 
     def refresh():
+        ws, vulkan = val('widescreen'), val('renderer') == 'vulkan'
+        for key, box in res_boxes.items():
+            if not box.winfo_exists():
+                continue
+            box.configure(values=[res_label(v, ws) for v in res_values(key, ws, vulkan)])
+            cur = val(key)
+            if cur.isdigit() and int(cur) > 4 and not vulkan:
+                cur = '4'                        # the CPU renderer goes up to 4
+            if vars_[key].get() != res_label(cur, ws):
+                vars_[key].set(res_label(cur, ws))
         for key, (cond, why) in REQUIRES.items():
             if key in widgets:
                 ok = cond(val)
@@ -1163,6 +1213,8 @@ def main():
             w = ttk.Combobox(ctl, values=kind.split(':', 1)[1].split('|'), width=16, font=F['n'],
                              textvariable=var, state='readonly' if kind.startswith('choice:') else 'normal')
             w.pack()
+            if key in RES_KEYS:
+                res_boxes[key] = w
             enable = lambda ok, w=w, ro=kind.startswith('choice:'): w.configure(
                 state=('readonly' if ro else 'normal') if ok else 'disabled')
         elif kind.startswith('spin'):
@@ -1249,7 +1301,7 @@ def main():
             else:
                 def use(name=name, vals=vals):
                     for k, v in {**PRESET_ALL, **vals}.items():
-                        vars_[k].set(v)
+                        vars_[k].set(res_label(v, val('widescreen')) if k in RES_KEYS else v)
                     state['note'] = T('applied') % T(name)
                     show('start')
                     refresh()

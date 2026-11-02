@@ -317,7 +317,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     hdr[26] = 1; hdr[28] = 24;
     memcpy(hdr + 34, &img, 4);
     fwrite(hdr, 1, 54, f);
-    static uint8_t row[8192 * 3 + 4];   /* widest frame: 1024 at upscale 4, widened for widescreen */
+    static uint8_t row[16384 * 3 + 4];  /* widest frame: 1024 at upscale 8 (Vulkan), widened for widescreen */
     for (int y = h - 1; y >= 0; y--) {
         for (int x = 0; x < w; x++) {
             uint32_t p = px[y * w + x];
@@ -334,7 +334,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
 static uint32_t *widen(const uint32_t *px, int w, int h, int *ow) {
     int W = (int)lrint((double)w * 3.0 * g_cfg.ws_w / (4.0 * g_cfg.ws_h));
     uint32_t *out;
-    if (W > 8192) W = 8192;
+    if (W > 16384) W = 16384;
     out = malloc((size_t)W * (size_t)h * 4);
     if (!out) return NULL;
     for (int y = 0; y < h; y++) {

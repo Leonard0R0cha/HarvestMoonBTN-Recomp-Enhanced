@@ -305,7 +305,7 @@ static void usage(void) {
            "usage: hmbtn [options] [HarvestMoonBTN.pak|disc.cue|disc.bin]\n"
            "  --fullscreen          start in fullscreen (F11 toggles)\n"
            "  --scale N             initial window scale (default 3)\n"
-           "  --upscale N           internal resolution 1..4 (default 1 = original 320x240)\n"
+           "  --upscale N           internal resolution 1..4, 1..8 with Vulkan (default 1 = 320x240)\n"
            "  --drawthreads N       threads drawing the upscaled 3D, 0..4 (default: by processor)\n"
            "  --renderer R          cpu (default) or vulkan (experiment: parallel-psx draws the picture)\n"
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
@@ -482,7 +482,7 @@ int main(int argc, char **argv) {
         else { usage(); return 1; }
     }
     if (g_cfg.upscale < 1) g_cfg.upscale = 1;
-    if (g_cfg.upscale > 4) g_cfg.upscale = 4;
+    if (g_cfg.upscale > (g_cfg.renderer_vk ? 8 : 4)) g_cfg.upscale = g_cfg.renderer_vk ? 8 : 4;   /* Vulkan: up to 8 */
     if (!g_cfg.save_dir[0]) snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%ssaves", exe_dir);
     if (!log_file && !g_cfg.headless) {
         char lp[1200];
@@ -589,8 +589,10 @@ int main(int argc, char **argv) {
 #ifdef HMBTN_VULKAN
     /* experiment: parallel-psx draws the picture at the upscale (runtime/vk); the GPU (gpu.c) keeps
      * the native VRAM, and the upscaled copy's features are drawn by Vulkan */
-    if (g_cfg.renderer_vk && !(vk = vkr_init(g_cfg.upscale)))
+    if (g_cfg.renderer_vk && !(vk = vkr_init(g_cfg.upscale))) {
         LOGW("renderer vulkan: not available, using the CPU renderer");
+        if (g_cfg.upscale > 4) g_cfg.upscale = 4;
+    }
 #endif
     g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
     gpu_set_upscale(vk ? 1 : g_cfg.upscale);

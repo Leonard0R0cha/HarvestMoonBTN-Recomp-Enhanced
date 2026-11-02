@@ -223,7 +223,8 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 | `[video]` | `scale` | `3` | initial window size as a multiple of 320×240 |
 |  | `fullscreen` | `0` | start in fullscreen |
 |  | `scaling` | `sharp-bilinear` | `sharp-bilinear` = sharp pixels that stay even at any size, `sharp` = nearest pixel, `smooth` = bilinear |
-|  | `upscale` | `1` | internal resolution 1–4 (2–4 = smoother 3D edges, more CPU) |
+|  | `renderer` | `cpu` | `vulkan` = the graphics card draws the picture (experimental, Windows; falls back to `cpu` without Vulkan) |
+|  | `upscale` | `1` | internal resolution 1–4, 1–8 with `renderer = vulkan` (2+ = smoother 3D edges; 4 = 1280×960, 8 = 2560×1920) |
 |  | `pgxp` | `0` | `1` = precise 3D vertex positions, no wobble; 2D objects get smaller further away, like the 3D ground (needs `upscale` 2+) |
 |  | `crackfix` | `1` | `1` = close the thin cracks between models that `pgxp` opens; `0` is about 1 ms a frame faster at upscale 4 (needs `pgxp`) |
 |  | `perspective` | `0` | `1` = perspective-correct textures (needs `pgxp`) |
