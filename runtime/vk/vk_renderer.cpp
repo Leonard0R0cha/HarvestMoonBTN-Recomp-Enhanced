@@ -73,9 +73,9 @@ static bool drawn = true;   /* anything drawn or loaded since the kick */
  * last: a tag renderer for each picture renderer (2: the game's, 3: the in-between one) is sent
  * the same commands in tag mode, drawing each opaque primitive flat in its tag's colour (0x4000:
  * a moved 3D polygon, low 14 bits: the command's number, as gpu.c's cur_tag); see-through ones
- * and the crack fix's second drawing leave the tags. Textured ones are drawn with the tag
- * renderer's shaders (ppsx/glsl primitive.frag, TAG): their tag where a texel shows, so
- * transparent texels leave the tags as in gpu.c. */
+ * (but a textured one's opaque texels: STP clear, tag_stp) and the crack fix's second drawing
+ * leave the tags. Textured ones are drawn with the tag renderer's shaders (ppsx/glsl
+ * primitive.frag, TAG): their tag where a texel shows, so transparent texels leave the tags as in gpu.c. */
 static int cur_inst;        /* the renderer the calls go to (vkr_target) */
 static Renderer *renderers[8];  /* all of them: each is flushed at the VBlank (its frame's pools are reused) */
 static bool tagging;
@@ -90,8 +90,10 @@ static inline bool seams()     /* on a picture renderer (0, 1, 4, 5): its tags a
 static uint32_t tag_color(bool d3)
 {
 	uint32_t t = (d3 ? 0x4000u : 0u) | (tag_now & 0x3FFFu), c = 0;
-	for (int k = 0; k < 3; k++)     /* 15 bits as 5-bit channels, stored exactly (v * 255 / 31) */
-		c |= ((((t >> (5 * k)) & 31u) * 255u + 15u) / 31u) << (8 * k);
+	for (int k = 0; k < 3; k++)     /* 15 bits as 5-bit channels, each in the middle of its step: they
+	                                 * reach the seam pass as 15-bit colour, about the top 5 bits (v * 255
+	                                 * / 31 lost 1 at 8, 28 at 233) */
+		c |= (((t >> (5 * k)) & 31u) * 8u + 4u) << (8 * k);
 	return c;
 }
 
@@ -189,8 +191,11 @@ static void prim_state(int tex, int abe, int raw, uint32_t clut, PrimitiveType t
 	renderer->set_texture_color_modulate(!raw);
 	renderer->set_primitive_type(type);
 	/* the crack fix: opaque drawing sets the mask bit (unused by this game), so where it is still
-	 * clear the screen clear shows (see-through drawing leaves it, as gpu.c's fill marks) */
-	renderer->set_force_mask_bit(!tagging && (st.mask_set || (g_pgxp_cracks && !abe)));
+	 * clear the screen clear shows (see-through drawing leaves it, as gpu.c's fill marks). Not
+	 * rectangles: with it the rain's showed as streaks over water in the game's pictures only (not
+	 * in the in-between ones: they flickered), and a polygon's second drawing goes over earlier
+	 * rectangles only along its own edge, where it is in front of them anyway */
+	renderer->set_force_mask_bit(!tagging && (st.mask_set || (g_pgxp_cracks && !abe && type != PrimitiveType::Sprite)));
 	renderer->set_mask_test(!tagging && st.mask_check);
 }
 
@@ -345,7 +350,7 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		v[i].w = 1.0f;
 	if (tagging)    /* its tag where its texels show (the tag renderer's shaders), as the picture maps them */
 	{
-		if (abe)
+		if (abe && !tex)
 			return;
 		bool d3 = !xf && prec;
 		for (int i = 0; i < nv && d3; i++)
@@ -355,6 +360,7 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		prim_state(tex, 0, 0, clut, PrimitiveType::Polygon);
 		if (tex)
 			uv_limits(v, nv);
+		renderer->tag_stp = abe;    /* see-through: its opaque texels (STP clear) only, as gpu.c */
 		bool a = !culled(v[0], v[1], v[2]), b = quad && !culled(v[1], v[2], v[3]);
 		if (a && b)
 			renderer->draw_quad(v);
@@ -362,6 +368,7 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 			renderer->draw_triangle(v);
 		else if (b)
 			renderer->draw_triangle(v + 1);
+		renderer->tag_stp = false;
 		return;
 	}
 	cnt.poly++;
@@ -441,7 +448,7 @@ static void rect(const uint32_t *p, const VkXform *xf, int nxf, const VkRep *rep
 	case 2: w = h = 8; break;
 	default: w = h = 16; break;
 	}
-	if (!w || !h || nxf < 0 || (tagging && abe))
+	if (!w || !h || nxf < 0 || (tagging && abe && !tex))
 		return;
 	cnt.rect++;
 	/* a flipped sprite reads its texels backwards: start one past u and step down (the shader
@@ -451,7 +458,9 @@ static void rect(const uint32_t *p, const VkXform *xf, int nxf, const VkRep *rep
 	uint16_t ua = st.flip_x ? uint16_t(u + 1) : uint16_t(u), ub = st.flip_x ? uint16_t(u + 1 - w) : uint16_t(u + w);
 	uint16_t va = st.flip_y ? uint16_t(vv + 1) : uint16_t(vv), vb = st.flip_y ? uint16_t(vv + 1 - h) : uint16_t(vv + h);
 	uint32_t col = tagging ? tag_color(false) : p[0] & 0xFFFFFFu;
-	prim_state(tex, abe, tex && raw, clut, PrimitiveType::Sprite);
+	prim_state(tex, tagging ? 0 : abe, tex && raw, clut, PrimitiveType::Sprite);
+	if (tagging)
+		renderer->tag_stp = abe;    /* see-through: its opaque texels only (see polygon) */
 	if (tex)
 		renderer->set_UV_limits(uint16_t(st.flip_x ? u - w + 1 : u), uint16_t(st.flip_y ? vv - h + 1 : vv),
 		                        uint16_t(st.flip_x ? u : u + w - 1), uint16_t(st.flip_y ? vv : vv + h - 1));
@@ -488,6 +497,7 @@ static void rect(const uint32_t *p, const VkXform *xf, int nxf, const VkRep *rep
 		if (nxf && xf[k].clip1 > xf[k].clip0)
 			renderer->set_draw_rect(draw_rect);
 	}
+	renderer->tag_stp = false;
 }
 
 static Vertex line_pt(uint32_t col, uint32_t xy)

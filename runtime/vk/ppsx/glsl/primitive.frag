@@ -94,6 +94,9 @@ void main()
 
 #ifdef TAG
 	// HMBTN: a tag picture (seam pass): the primitive's flat colour (its tag) where a texel shows
+	// (0x800: a see-through primitive's, where it shows opaque: the STP bit clear)
+	if ((vParam.z & 0x800) != 0 && NNColor.a > 0.5)
+		discard;
 	FragColor = vec4(vColor.rgb, 0.0);
 #else
 	vec3 shaded = color.rgb * vColor.rgb * (255.0 / 128.0);

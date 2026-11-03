@@ -973,15 +973,17 @@ ImageHandle Renderer::scanout_vram_to_texture(bool scaled)
 	cmd->begin_render_pass(rp);
 	cmd->set_quad_state();
 
+	// HMBTN: nearest, it is a 1:1 copy (linear blended neighbouring pixels a little: the seam pass's
+	// tags at polygon edges read as other commands', differently each frame)
 	if (scaled)
 	{
 		cmd->set_program(*pipelines.scaled_quad_blitter);
-		cmd->set_texture(0, 0, *scaled_views[0], StockSampler::LinearClamp);
+		cmd->set_texture(0, 0, *scaled_views[0], StockSampler::NearestClamp);
 	}
 	else
 	{
 		cmd->set_program(*pipelines.unscaled_quad_blitter);
-		cmd->set_texture(0, 0, framebuffer->get_view(), StockSampler::LinearClamp);
+		cmd->set_texture(0, 0, framebuffer->get_view(), StockSampler::NearestClamp);
 	}
 
 	cmd->set_vertex_binding(0, *quad, 0, 8);
@@ -1599,6 +1601,8 @@ void Renderer::build_attribs(BufferVertex *output, const Vertex *vertices, unsig
 	// This is done here at the end of the function because the `allocate_depth`
 	// call above can call `reset_queue` which would invalidate the HdTextureHandle
 	int16_t param = int16_t(shift);
+	if (tag_stp)
+		param = param | 0x800;  // HMBTN: see tag_stp
 	if (hd_texture_vram.height > 0) { // This condition is just a dumb way to check that the rect was actually set to something
 		bool fastpath_capable_out = false;
 		bool cache_hit = false;
