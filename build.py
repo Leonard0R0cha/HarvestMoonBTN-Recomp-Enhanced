@@ -155,6 +155,31 @@ def behind_main():
               'gets another version. To have them: git merge %s/main\n' % remote)
 
 
+def build_launcher():
+    """(re)build dist-template/HarvestMoonBTN-Launcher.exe for the game folder when it is missing or older
+    than what it carries (tools/build_launcher.py). Not in git: releases are built on GitHub"""
+    if getattr(sys, 'frozen', False):
+        return                          # the launcher's own Build page: that launcher is already there
+    exe = os.path.join(ROOT, 'dist-template', 'HarvestMoonBTN-Launcher.exe')
+    srcs = [os.path.join(ROOT, 'build.py')]
+    for top in ('dist-template', 'runtime', 'tools'):
+        for d, dirs, names in os.walk(os.path.join(ROOT, top)):
+            dirs[:] = [n for n in dirs if n != '__pycache__']
+            srcs += [os.path.join(d, n) for n in names if n != os.path.basename(exe)]
+    if os.path.exists(exe) and os.path.getmtime(exe) >= max(map(os.path.getmtime, srcs)):
+        return
+    import importlib.util
+    if not importlib.util.find_spec('PyInstaller'):
+        print('\nNote: the game folder gets %s launcher exe (launcher.pyw, which runs with Python, is there).\n'
+              'To build the exe too: pip install pyinstaller' % ('an older' if os.path.exists(exe) else 'no'))
+        return
+    print('building the launcher (PyInstaller) ...')
+    r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'build_launcher.py')], capture_output=True,
+                       text=True, creationflags=native.NO_WINDOW)
+    if r.returncode:
+        print('WARNING: the launcher exe could not be built:\n' + (r.stdout + r.stderr)[-1500:])
+
+
 def main():
     args = sys.argv[1:]
     if '-h' in args or '--help' in args:
@@ -172,6 +197,8 @@ def main():
     recompile(opt('--clean'))
     exe = native.build(release=not opt('--debug'), linux_cross=opt('--linux'), clean=opt('--clean'), jobs=jobs)
     pak = make_pak(disc_path) if opt('--pak') else None
+    if not linux:
+        build_launcher()
 
     files = [(exe, os.path.basename(exe))]
     if exe.endswith('.exe'):
