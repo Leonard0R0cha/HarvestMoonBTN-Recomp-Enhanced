@@ -87,15 +87,17 @@ names; git ignores everything in it), or pass the path with `--disc`.
 
 ### Windows, without Python: the launcher
 
-`dist-template/HarvestMoonBTN-Launcher.exe` carries the build scripts and the runtime sources
-(nothing of the game). Put it in an empty folder and open it: its **Build from my disc** page
+`HarvestMoonBTN-Launcher.exe` ([Releases](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest))
+carries the build scripts and the runtime sources (nothing of the game). Put it in an empty folder and open it: its **Build from my disc** page
 asks for your disc image and builds the game into that folder. The first time it downloads
 only the parts of the compiler the build uses (about 65 MB, each file checked against
 `tools/toolchain.txt`; `python tools/fetch_deps.py --min` does the same). Your disc's files and
 the build stay in `build-files/` there. To give the game to a friend, give them the launcher;
-they build from their own disc. After changing the launcher, the runtime or the tools, rebuild
-the exe with `python tools/build_launcher.py` (needs `pip install pyinstaller`), and after
-changing an `#include` or the toolchain, rewrite the file list with `python tools/min_toolchain.py`.
+they build from their own disc. `build.py` also (re)builds the launcher exe for the game folder
+when it is missing or older than `launcher.pyw`, the runtime or the tools (needs
+`pip install pyinstaller`; without it the folder gets `launcher.pyw`, which runs with Python). The
+exe isn't in git. After changing an `#include` or the toolchain, rewrite the file list with
+`python tools/min_toolchain.py`.
 
 **Updates.** The launcher checks GitHub for a newer release when it opens. **Update** replaces
 the exe with the new one (checked against the SHA-256 GitHub gives for it) and rebuilds the game
@@ -309,7 +311,7 @@ disc/                 put your .cue/.bin here (ignored by git)
 tools/
   fetch_deps.py       downloads the Windows toolchain into deps/ (--min: only what the build reads)
   toolchain.txt       those files with their SHA-256 (written by min_toolchain.py)
-  build_launcher.py   builds dist-template/HarvestMoonBTN-Launcher.exe, with the sources in it
+  build_launcher.py   builds dist-template/HarvestMoonBTN-Launcher.exe, with the sources in it (build.py runs it)
   iso.py              disc image + ISO 9660 reader
   mips.py, mdis.py    MIPS decoder, disassembler / cross-reference helper
   recomp.py           the static recompiler (MIPS -> C)
