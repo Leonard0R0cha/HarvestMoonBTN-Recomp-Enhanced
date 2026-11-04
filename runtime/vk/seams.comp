@@ -4,17 +4,19 @@
 // the low 14 bits the command's number). Pass 0, a thread per row: the picture with runs across
 // filled, to uSnap. Pass 1, a thread per column: from uSnap, runs down filled, to uOut as
 // 0xAARRGGBB words (read back) and uColor (shown). A run of pixels under a console pixel (n) last
-// drawn before the moved 3D polygons on both sides of it, two different ones, is filled from its
-// sides.
+// drawn before the moved 3D polygons on both sides of it, two different ones, both in front of
+// what shows in it (uQpl: each tag's plane of 1/w over native pixels; a 2D object: far away), is
+// filled from its sides. The picture starts at native (ox, oy).
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 0, rgba8) uniform readonly image2D uPic;
 layout(set = 0, binding = 1, rgba8) uniform readonly image2D uTag;
 layout(set = 0, binding = 2, r32ui) uniform uimage2D uSnap;
 layout(set = 0, binding = 3, r32ui) uniform writeonly uimage2D uOut;
 layout(set = 0, binding = 4, rgba8) uniform writeonly image2D uColor;     // the same, to show
+layout(set = 0, binding = 5, rgba32f) uniform readonly image2D uQpl;
 layout(push_constant, std430) uniform Push
 {
-	int w, h, n, pass;
+	int w, h, n, pass, ox, oy;
 } p;
 
 uint tag_at(int x, int y)
@@ -31,6 +33,18 @@ bool older(uint a, uint b)     // a drawn before b
 bool d3(uint t)
 {
 	return (t & 0x4000u) != 0u;
+}
+
+float q(uint t, vec2 at)        // 1/w of what tag t drew at native at
+{
+	vec4 pl = imageLoad(uQpl, ivec2(int(t & 0x3FFFu), 0));
+	return pl.x + pl.y * at.x + pl.z * at.y;
+}
+
+bool behind(uint m, uint l, uint r, vec2 at)    // l and r in front of m (1% nearer, gpu.c SEAM_NEARER)
+{
+	float qm = d3(m) ? q(m, at) : 0.0;
+	return q(l, at) > qm * 1.01 && q(r, at) > qm * 1.01;
 }
 
 void across(int y)
@@ -56,7 +70,7 @@ void across(int y)
 		if (e >= p.w || e - x > p.n)
 			continue;
 		uint r = tag_at(e, y);
-		if (r != l && d3(r))
+		if (r != l && d3(r) && behind(m, l, r, vec2(p.ox, p.oy) + vec2(float(x + e - 1) * 0.5, float(y)) / float(p.n)))
 		{
 			uint a = imageLoad(uSnap, ivec2(x - 1, y)).r, b = imageLoad(uSnap, ivec2(e, y)).r;
 			for (int k = x; k < e; k++)
@@ -91,7 +105,7 @@ void down(int x)
 		if (e >= p.h || e - y > p.n)
 			continue;
 		uint b = tag_at(x, e);
-		if (b != a && d3(b))
+		if (b != a && d3(b) && behind(m, a, b, vec2(p.ox, p.oy) + vec2(float(x), float(y + e - 1) * 0.5) / float(p.n)))
 		{
 			uint up = imageLoad(uSnap, ivec2(x, y - 1)).r, dn = imageLoad(uSnap, ivec2(x, e)).r;
 			for (int k = y; k < e; k++)

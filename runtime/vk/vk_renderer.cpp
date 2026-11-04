@@ -81,6 +81,9 @@ static Renderer *renderers[8];  /* all of them: each is flushed at the VBlank (i
 static bool tagging;
 static uint32_t tag_now;
 static void use(int k);
+/* per picture renderer and tag, a moved 3D polygon's plane of 1/w over native pixels (drawing offset
+ * included): the seam pass fills a run only where both sides are in front of it (gpu.c seam_plane) */
+static float qpl[8][0x4000][4];
 
 static inline bool seams()     /* on a picture renderer (0, 1, 4, 5): its tags are on k + 2 */
 {
@@ -355,6 +358,21 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		bool d3 = !xf && prec;
 		for (int i = 0; i < nv && d3; i++)
 			d3 = prec[i * 3 + 2] > 0.0f;
+		float *pl = qpl[cur_inst & ~2][tag_now & 0x3FFFu];
+		pl[0] = pl[1] = pl[2] = 0.0f;
+		for (int k = 0; d3 && k <= quad; k++)   /* the first three corners, or the last three */
+		{
+			const float *a = &prec[k * 3], *b = &prec[k * 3 + 3], *c = &prec[k * 3 + 6];
+			double x1 = b[0] - a[0], y1 = b[1] - a[1], x2 = c[0] - a[0], y2 = c[1] - a[1], den = x1 * y2 - x2 * y1;
+			if (den == 0.0)
+				continue;
+			double q0 = 1.0 / a[2], q1 = 1.0 / b[2] - q0, q2 = 1.0 / c[2] - q0;
+			double qx = (q1 * y2 - q2 * y1) / den, qy = (x1 * q2 - x2 * q1) / den;
+			pl[0] = float(q0 - qx * (a[0] + st.offx) - qy * (a[1] + st.offy));
+			pl[1] = float(qx);
+			pl[2] = float(qy);
+			break;
+		}
 		for (int i = 0; i < nv; i++)
 			v[i].color = tag_color(d3);
 		prim_state(tex, 0, 0, clut, PrimitiveType::Polygon);
@@ -887,6 +905,16 @@ static void kick_all(int x, int y, int dw, int dh)
 	};
 	ImageHandle P = image(VK_FORMAT_R8G8B8A8_UNORM), T = image(VK_FORMAT_R8G8B8A8_UNORM);
 	ImageHandle snap = image(VK_FORMAT_R32_UINT), words = image(VK_FORMAT_R32_UINT);
+	/* the planes of this picture's tags, as a 16384 x 1 image */
+	ImageCreateInfo qi = ImageCreateInfo::render_target(0x4000, 1, VK_FORMAT_R32G32B32A32_SFLOAT);
+	qi.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	qi.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+	ImageHandle Q = device->create_image(qi, nullptr);
+	BufferCreateInfo qb;
+	qb.domain = BufferDomain::Host;
+	qb.size = sizeof qpl[0];
+	qb.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	BufferHandle qbuf = device->create_buffer(qb, qpl[cur_inst & ~2]);
 	pend.img = image(VK_FORMAT_R8G8B8A8_UNORM);
 	pend.buf.reset();
 
@@ -910,6 +938,11 @@ static void kick_all(int x, int y, int dw, int dh)
 		cmd->image_barrier(**img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
 		                   0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		                   VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+	cmd->image_barrier(*Q, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+	                   0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+	cmd->copy_buffer_to_image(*Q, *qbuf, 0, { 0, 0, 0 }, { 0x4000, 1, 1 }, 0, 0, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 });
+	cmd->image_barrier(*Q, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TRANSFER_BIT,
+	                   VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 	static Program *prog = device->request_program(seams_comp, sizeof seams_comp);
 	cmd->set_program(*prog);
 	cmd->set_storage_texture(0, 0, P->get_view());
@@ -917,10 +950,11 @@ static void kick_all(int x, int y, int dw, int dh)
 	cmd->set_storage_texture(0, 2, snap->get_view());
 	cmd->set_storage_texture(0, 3, words->get_view());
 	cmd->set_storage_texture(0, 4, pend.img->get_view());
+	cmd->set_storage_texture(0, 5, Q->get_view());
 	struct
 	{
-		int32_t w, h, n, pass;
-	} push = { int32_t(w), int32_t(h), scale, 0 };
+		int32_t w, h, n, pass, ox, oy;
+	} push = { int32_t(w), int32_t(h), scale, 0, x, y };
 	cmd->push_constants(&push, 0, sizeof push);
 	cmd->dispatch((h + 63) / 64, 1, 1);     /* across: a row each */
 	cmd->barrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
