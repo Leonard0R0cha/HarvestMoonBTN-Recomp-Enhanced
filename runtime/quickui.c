@@ -168,3 +168,10 @@ void quick_bag_filter(void) {
     MEM_W32(PLAYER_PAD_HELD, MEM_R32(PLAYER_PAD_HELD) & ~drop);
     MEM_W32(PLAYER_PAD_PRESSED, MEM_R32(PLAYER_PAD_PRESSED) & ~drop);
 }
+
+void quick_machine(MachineAdd add) {
+    /* music_held is not: the window decides it for the frame run next, as the buttons */
+    add("text_added", &text_added, sizeof text_added);
+    add("skipping", &skipping, sizeof skipping);
+    add("start_swallowed", &start_swallowed, sizeof start_swallowed);
+}

@@ -529,8 +529,10 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                       # the farm's frame (tick, drawing, HUD) is run once more first for the
                       # second farmer's window (runtime/p2view.c)
                       'GF_FARM': {0x800CA24C: 'p2_draw(c);', 0x800DB5CC: 'p2_tick(c);', 0x800C162C: 'cheats_tick(); p2_tick_begin();',
-                                  0x800C14A0: 'p2view_frame(c);',
+                                  0x800C14A0: 'machine_farm_frame(c); p2view_frame(c);',
                                   0x800DE3A0: 'if (p2_faint_skipped()) return;',
+                                  # farmer 2 in the second machine stays on the farm (runtime/p2.c)
+                                  0x800CD9A0: 'if (p2_way_out(c)) return;',
                                   0x800CC0F8: 'if (p2_thrown(c)) return;',
                                   # trading between the farmers in the storage menus (runtime/p2.c)
                                   0x800F7D34: 'if (p2_trade_move(c)) return;',

@@ -195,3 +195,9 @@ void dma_write(uint32_t off, uint32_t v) {
         return;
     }
 }
+
+void dma_machine(MachineAdd add) {
+    add("dma", ch, sizeof ch);
+    add("dpcr", &dpcr, sizeof dpcr);
+    add("dicr", &dicr, sizeof dicr);
+}
