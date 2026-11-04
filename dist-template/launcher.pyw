@@ -57,6 +57,7 @@ OPTIONS = [
     ('video', 'video', 'perspective', 'bool'),
     ('video', 'video', 'interp', 'bool'),
     ('video', 'video', 'texturepack', 'bool'),
+    ('video', 'video', 'portraits', 'bool'),
     ('video', 'video', 'dumptextures', 'bool'),
     ('video', 'video', 'drawthreads', 'choice:auto|0|1|2|3|4'),
     ('video', 'video', 'scale', 'spin8'),
@@ -127,6 +128,7 @@ REQUIRES = {
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'drawthreads': (_up2, 'need_up2'),
     'texturepack': (_up2, 'need_up2'),
+    'portraits': (_up2, 'need_up2'),
     'dumptextures': (_up2, 'need_up2'),
 }
 
@@ -153,6 +155,8 @@ TEXT = {
                    'at 30). Drawn on spare processor cores; F9 switches it while playing.'),
         'texturepack': ('Texture pack', 'Draws people, animals, field objects, text and the HUD with the images in '
                         'the textures folder (not the 3D world). See docs/GRAPHICS.md.'),
+        'portraits': ('Redrawn portraits', "Characters' faces in conversations drawn anew in high resolution "
+                      '(the images in textures/portraits). Off: the original portraits.'),
         'dumptextures': ('Dump textures', 'Writes each sprite texture the game shows to textures/dump, '
                          'to draw a texture pack from.'),
         'drawthreads': ('Drawing threads', 'Processor threads that draw the 3D together, each a share of the '
@@ -220,6 +224,8 @@ TEXT = {
                    '30). Usa núcleos livres do processador; F9 liga e desliga durante o jogo.'),
         'texturepack': ('Pacote de texturas', 'Desenha pessoas, animais, objetos do campo, texto e o HUD com as '
                         'imagens da pasta textures (não o mundo 3D). Veja docs/GRAPHICS.md.'),
+        'portraits': ('Retratos redesenhados', 'Rostos dos personagens nas conversas redesenhados em alta '
+                      'resolução (as imagens de textures/portraits). Desligado: os retratos originais.'),
         'dumptextures': ('Exportar texturas', 'Grava cada textura de sprite que o jogo mostra em textures/dump, '
                          'para criar um pacote de texturas.'),
         'drawthreads': ('Threads de desenho', 'Threads do processador que desenham o 3D juntas, cada uma uma '
@@ -286,6 +292,8 @@ TEXT = {
                    '30). Usa núcleos libres del procesador; F9 lo alterna durante el juego.'),
         'texturepack': ('Paquete de texturas', 'Dibuja personas, animales, objetos del campo, texto y el HUD con las '
                         'imágenes de la carpeta textures (no el mundo 3D). Ver docs/GRAPHICS.md.'),
+        'portraits': ('Retratos redibujados', 'Las caras de los personajes en las conversaciones redibujadas en '
+                      'alta resolución (las imágenes de textures/portraits). Desactivado: los retratos originales.'),
         'dumptextures': ('Exportar texturas', 'Guarda cada textura de sprite que el juego muestra en textures/dump, '
                          'para crear un paquete de texturas.'),
         'drawthreads': ('Hilos de dibujo', 'Hilos del procesador que dibujan el 3D juntos, cada uno una parte de '
