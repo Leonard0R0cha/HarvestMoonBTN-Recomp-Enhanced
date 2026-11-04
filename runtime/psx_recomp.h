@@ -248,6 +248,10 @@ void p2view_frame(CPU *c);      /* entry of the farm's frame: run once more for 
 extern int g_view2_run;         /* ... while that run goes */
 void p2_tick_begin(void);
 void cheats_tick(void);
+uint32_t farm_score_berries(uint32_t score);    /* fixes.c: the summary page's farm score */
+void first_house_cabinet(void);                 /* ... the first house's boxes open the cabinet */
+uint32_t crop_walk_mask(uint32_t mask, uint32_t why);   /* ... walking through crops */
+uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 void p2_tick_end(void);
 int p2_faint_skipped(void);
 int p2_sfx_quiet(void);

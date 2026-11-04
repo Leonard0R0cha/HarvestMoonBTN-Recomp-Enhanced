@@ -234,6 +234,8 @@ typedef struct {
     int  textspeed;             /* characters typed per step of the text printer (1 = original) */
     int  overclock;             /* CPU speed in percent of the console's (100 = original) */
     int  emptybag;              /* R1 / R2 do nothing with no tool / item to switch to */
+    int  earlycabinet;          /* the first house's pile of boxes opens the cabinet (fixes.c) */
+    int  cropwalk;              /* the player walks through planted crops (fixes.c) */
     int  cheat_money;           /* cheats (cheats.c): the money on the farm the first time (0 = off) */
     int  cheat_stamina;         /* the farmers never tire */
     int  cheat_clock;           /* the clock stands still */

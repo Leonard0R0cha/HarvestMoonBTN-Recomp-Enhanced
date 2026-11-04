@@ -75,6 +75,8 @@ OPTIONS = [
     ('game', 'behaviour', 'fastforward', 'bool'),
     ('game', 'behaviour', 'overclock', 'edit:100|150|200|300'),
     ('game', 'behaviour', 'emptybag', 'bool'),
+    ('game', 'behaviour', 'earlycabinet', 'bool'),
+    ('game', 'behaviour', 'cropwalk', 'bool'),
     ('game', 'behaviour', 'record', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
@@ -179,6 +181,10 @@ TEXT = {
                       'scenes), 200 = no slowdowns.'),
         'emptybag': ('Empty rucksack: R1 / R2 do nothing', 'So running doesn\'t stop when you press them by '
                      'accident.'),
+        'earlycabinet': ('Cabinet in the first house', 'The pile of boxes opens the cabinet, before the house '
+                         'is extended.'),
+        'cropwalk': ('Walk through crops', 'You can walk through your planted crops, so the one in the '
+                     'middle is always in reach.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
@@ -245,6 +251,10 @@ TEXT = {
         'overclock': ('Velocidade do processador', 'Em porcentagem: 100 = o PlayStation original (fica lento em '
                       'cenas cheias), 200 = sem lentidão.'),
         'emptybag': ('Mochila vazia: R1 / R2 não fazem nada', 'Para não parar de correr ao apertar sem querer.'),
+        'earlycabinet': ('Armário na primeira casa', 'A pilha de caixas abre o armário antes de a casa ser '
+                         'ampliada.'),
+        'cropwalk': ('Andar sobre as plantações', 'Dá para passar por cima das plantações, então a do meio '
+                     'sempre fica ao alcance.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
@@ -312,6 +322,10 @@ TEXT = {
         'overclock': ('Velocidad del procesador', 'En porcentaje: 100 = la PlayStation original (se ralentiza en '
                       'escenas cargadas), 200 = sin ralentizaciones.'),
         'emptybag': ('Mochila vacía: R1 / R2 no hacen nada', 'Para no dejar de correr si los pulsas sin querer.'),
+        'earlycabinet': ('Armario en la primera casa', 'La pila de cajas abre el armario antes de ampliar la '
+                         'casa.'),
+        'cropwalk': ('Caminar sobre los cultivos', 'Puedes pasar por encima de tus cultivos, así el del medio '
+                     'siempre queda al alcance.'),
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
         'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),

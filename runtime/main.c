@@ -208,6 +208,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "textspeed")) g_cfg.textspeed = atoi(val);
     else if (!strcmp(key, "overclock")) g_cfg.overclock = atoi(val);
     else if (!strcmp(key, "emptybag")) g_cfg.emptybag = atoi(val);
+    else if (!strcmp(key, "earlycabinet")) g_cfg.earlycabinet = atoi(val);
+    else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
     else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);
     else if (!strcmp(key, "cheat_clock")) g_cfg.cheat_clock = atoi(val);
