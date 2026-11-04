@@ -101,6 +101,16 @@ all runs across first, then all runs down from a copy of what the first pass lef
 picture is the same with any number of them: about 0.4 ms per picture at upscale 4 with four
 workers (0.9 ms on the game's thread alone).
 
+**Finding: spikes on outlines.** The first version gave some objects pointy pixels along their
+edges (the mailbox, bench and table legs). Where an edge between two ground tiles runs within a
+console pixel of an object's outline, the strip of ground in between has later 3D drawing on
+both sides, the object and the next ground tile, and was filled half with the object's colour.
+A gap shows something *behind* both sides; the next ground tile lies in the same plane as the
+strip. So each 3D polygon's plane of 1/w (over native pixels) is kept per drawing command, and a
+run is filled only where both sides are at least 1% nearer than what shows in it. At the mailbox
+the filled pixels went from 1,692 to 123 a frame, the shed's door frame from 1,340 to 22, while the
+doghouse nameplate's seams are still filled.
+
 ## 2D objects on a 3D field
 
 Stumps, rocks, weeds, flowers, villagers and the player are not 3D models. The game

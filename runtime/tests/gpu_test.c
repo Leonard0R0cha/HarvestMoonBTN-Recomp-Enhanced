@@ -955,12 +955,14 @@ static void test_pgxp(void)
     free(out);
 }
 
-/* flat quad (colour col) at native corners P[i], tagged at precise positions F[i]; words at addr.. */
+/* flat quad (colour col) at native corners P[i], tagged at precise positions F[i] and depth z (the
+ * ground is at 200, further away than what stands on it); words at addr.. */
 static void pgxp_quad(uint32_t col, const int P[4][2], const float F[4][2], uint32_t addr)
 {
     int i;
+    float z = col == 0x00FF00 ? 200.0f : 100.0f;
     for (i = 0; i < 4; i++)
-        gpu_pgxp_store(addr + 4u * (uint32_t)i, xy(P[i][0], P[i][1]), 1, F[i][0], F[i][1], 100.0f);
+        gpu_pgxp_store(addr + 4u * (uint32_t)i, xy(P[i][0], P[i][1]), 1, F[i][0], F[i][1], z);
     gp0(0x28000000 | col);
     for (i = 0; i < 4; i++)
         gp0_at(xy(P[i][0], P[i][1]), addr + 4u * (uint32_t)i);
@@ -1038,6 +1040,21 @@ static void test_pgxp_seams(void)
         for (gap = 0, x = 156; x < 164; x++)
             gap += (out[160 * w + x] & 0xFFFFFFu) == 0x00FF00u;
         CHECK(gap == 0, "seam: filled between perspective-correct textured quads (%d px)", gap);
+    }
+    {   /* an outline next to an edge between two ground tiles in one plane: no seam, no spike */
+        static const int G1[4][2] = { { 10, 10 }, { 38, 10 }, { 10, 90 }, { 38, 90 } };
+        static const float G1F[4][2] = { { 10, 10 }, { 38, 10 }, { 10, 90 }, { 38, 90 } };
+        static const int G2[4][2] = { { 38, 10 }, { 90, 10 }, { 38, 90 }, { 90, 90 } };
+        static const float G2F[4][2] = { { 38, 10 }, { 90, 10 }, { 38, 90 }, { 90, 90 } };
+        static const int P[4][2] = { { 20, 20 }, { 37, 20 }, { 20, 60 }, { 37, 60 } };
+        static const float PF[4][2] = { { 20, 20 }, { 37.5f, 20 }, { 20, 60 }, { 37.5f, 60 } };
+        screen_320();
+        pgxp_quad(0x00FF00, G1, G1F, 0x3000);   /* ground, two tiles meeting at x 38 */
+        pgxp_quad(0x00FF00, G2, G2F, 0x3010);
+        pgxp_quad(0x0000FF, P, PF, 0x3020);      /* an object on it, its edge at 37.5 */
+        gpu_render_display(out, &w, &h);
+        CHECK((out[160 * w + 150] & 0xFFFFFFu) == 0x00FF00u && (out[160 * w + 151] & 0xFFFFFFu) == 0x00FF00u,
+              "seam: an outline next to an edge of the ground stays as drawn");
     }
     g_pgxp_cracks = 0;                          /* crackfix = 0: drawn as before */
     gpu_set_upscale(4);
