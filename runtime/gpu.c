@@ -36,6 +36,28 @@
 #include <time.h>
 #include <stdatomic.h>
 #include "workers.h"
+/* Experiment: parallel-psx (vk/) draws the picture shown (renderer = vulkan); hooks in the GPU,
+ * the second view's (gpu_view2.c) and the replay copies that redraw their in-between pictures
+ * (gpu_replay.c, gpu_view2_replay1.c: GPU_VK_REPLAY; they don't draw on the CPU then) */
+#if defined(HMBTN_VULKAN) && ((!defined(GPU_REPLAY) && !defined(GPU_BAND)) || defined(GPU_VK_REPLAY))
+#include "vk/vk_renderer.h"
+#define VK_MAIN 1
+/* the second view's copies (GPU_VK_SET 4) use renderers of their own: their calls switch to them */
+#ifdef GPU_VK_SET
+#define VK(call) do { int vk_o_ = vkr_enter(GPU_VK_SET); call; vkr_target(vk_o_); } while (0)
+#else
+#define GPU_VK_SET 0
+#define VK(call) call
+#endif
+#define CPU_DRAW (!g_vk_cpu_off && !(g_vk && replaying))
+#define VK_TAGS (g_vk && g_sprite_tags)     /* the sprite / HUD tags move what Vulkan draws */
+#define VK_ON g_vk
+#else
+#define VK_MAIN 0
+#define CPU_DRAW 1
+#define VK_TAGS 0
+#define VK_ON 0
+#endif
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
@@ -735,6 +757,27 @@ static inline int32_t sprite_cx(const PgxpWord *t)
         return t->cx + S.offs_x;
     return S.offs_x + ((S.disp_mode & 0x40u) ? 368 : disp_w[S.disp_mode & 3u]) / 2;
 }
+
+#if VK_MAIN
+/* Vulkan: how the command being run moves (what the upscaled copy would draw it with), handed to
+ * vkr_gp0: per copy, scale (sx, sy) about (cx, cy) after the anchor's offset (dx, dy); x, y: the
+ * rectangle's corner (a menu tile's repeated copies are drawn at other places) */
+static VkXform vk_xf[16];
+static int vk_nxf, vk_edge;
+static float vk_prec[4][3];         /* PGXP corners x, y, depth (0: none) when vk_has_prec */
+static int vk_has_prec;
+static int32_t vk_nat[4][2];         /* the console's corners (offset included) for vk_under */
+static int vk_under;
+static VkRep vk_rep;              /* its texture pack image (vk_has_rep) */
+static int vk_has_rep;
+
+static void vk_sprite(const PgxpWord *t, float sx, float sy, int32_t x, int32_t y, int32_t clip0, int32_t clip1)
+{
+    if (vk_nxf >= 0 && vk_nxf < 16)
+        vk_xf[vk_nxf++] = (VkXform){ (float)sprite_cx(t), (float)(t->cy + S.offs_y), t->x, t->y, sx, sy, x, y,
+                                     clip0, clip1 };
+}
+#endif
 
 /* ---- Frame interpolation (prototype) ----
  * The game shows each frame for two VBlanks, and the next frame is already drawn (into the other
@@ -1922,7 +1965,7 @@ static void cmd_polygon(const uint32_t *p)
         c.flat_r == 0x80 && c.flat_g == 0x80 && c.flat_b == 0x80)
         c.raw = 1;
 
-    if (!replaying) {           /* a redraw only needs the upscaled copy */
+    if (!replaying && CPU_DRAW) {           /* a redraw only needs the upscaled copy */
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
         if (tex_pend_any) {     /* over a texture a queued polygon reads? */
             int32_t x0 = v[0].x, x1 = v[0].x, y0 = v[0].y, y1 = v[0].y;
@@ -1939,7 +1982,7 @@ static void cmd_polygon(const uint32_t *p)
         if (quad)
             draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
     }
-    if (TH.buf) {
+    if (TH.buf || VK_TAGS) {
         const PgxpWord *st = NULL;
         const TexImage *rep = NULL;
         PgxpWord stmp;
@@ -1980,6 +2023,40 @@ static void cmd_polygon(const uint32_t *p)
             if (st && tex && quad && (g_texpack || g_texdump))
                 rep = texpack_quad(st, v, nv);
         }
+#if VK_MAIN
+        if (g_vk) {
+            int precise = 0, moved = 0;
+            for (i = 0; i < nv; i++) {      /* PGXP: where the GTE projected the corner (moved in a redraw) */
+                float *f = vk_prec[i], ox, oy;
+                vk_nat[i][0] = v[i].x;      /* and the console's corner (moved as far, rounded) */
+                vk_nat[i][1] = v[i].y;
+                f[2] = 0.0f;
+                if (!g_pgxp || !pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &f[0], &f[1], &f[2]))
+                    continue;
+                ox = f[0];
+                oy = f[1];
+                if (replaying) {
+                    interp_point(&f[0], &f[1], &f[2]);
+                    vk_nat[i][0] += (int32_t)lrintf(f[0] - ox);
+                    vk_nat[i][1] += (int32_t)lrintf(f[1] - oy);
+                }
+                precise = 1;
+                moved |= vk_nat[i][0] * TH.n != (int32_t)lrintf((f[0] + (float)S.offs_x) * (float)TH.n) ||
+                         vk_nat[i][1] * TH.n != (int32_t)lrintf((f[1] + (float)S.offs_y) * (float)TH.n);
+            }
+            vk_has_prec = g_pgxp;
+            /* the crack fix: drawn once more at the console's corners where the screen clear shows */
+            vk_under = g_pgxp_cracks && precise && moved && !st && !abe;
+            if (st)
+                vk_sprite(st, sprite_sx(st), sprite_sy(st), 0, 0, 0, 0);
+            if (rep) {
+                vk_rep = (VkRep){ rep->key, rep->px, rep->w, rep->h, rep_u0, rep_v0, rep_su, rep_sv };
+                vk_has_rep = 1;
+            }
+            vk_edge = edge;
+            return;
+        }
+#endif
         /* u: the console's corners, for the background a 3D polygon leaves showing (under); in an
          * in-between picture, moved as far as the precise ones, rounded (corners that meet on the
          * console move alike and still meet; rounding each moved position could split them) */
@@ -2055,7 +2132,7 @@ static void draw_line(LinePt p0, LinePt p1, int gouraud, int blend)
     uint32_t cr, cg, cb;
     int32_t i;
 
-    if (adx >= 1024 || ady >= 512)
+    if (adx >= 1024 || ady >= 512 || !CPU_DRAW)
         return;
 
     if (p0.x > p1.x && k) {
@@ -2150,7 +2227,7 @@ static void cmd_line(const uint32_t *p)
         line_xy(&b, p[2]);
     }
 
-    if (TH.buf && g_sprite_ws != 1.0f) {   /* a HUD line (window border), or a line after the HUD */
+    if ((TH.buf || VK_TAGS) && g_sprite_ws != 1.0f) {   /* a HUD line (window border), or a line after the HUD */
         const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         int tagged = t && t->w < 0.0f && t->value == p[1];
         if (tagged && t->cx == HUD_CX && hud_sx() != 1.0f)
@@ -2158,6 +2235,10 @@ static void cmd_line(const uint32_t *p)
         if (hud_after && (!tagged || t->cx == HUD_CX)) {
             line_sq = g_sprite_ws;
             line_c = sprite_cx(&hud_word);
+#if VK_MAIN
+            if (g_vk)
+                vk_sprite(&hud_word, line_sq, 1.0f, 0, 0, 0, 0);
+#endif
         }
     }
     draw_line(a, b, gouraud, abe ? (int)S.abr : -1);
@@ -2177,6 +2258,10 @@ static void polyline_word(uint32_t w)
     int abe = (S.pl_op >> 1) & 1;
     LinePt b;
 
+#if VK_MAIN
+    if (g_vk)
+        VK(vkr_polyline(w));
+#endif
     if (S.pl_count == 0 && (w & 0xF000F000u) == 0x50005000u) {
         S.gp0_state = GP0_STATE_COMMAND;
         return;
@@ -2215,6 +2300,8 @@ static void draw_sprite(int32_t x0, int32_t y0, int32_t w, int32_t h,
     int u_inc = 1, v_inc = 1;
     int32_t x, y;
 
+    if (!CPU_DRAW)
+        return;
     if (tex) {
         if (S.flip_x) {
             u_inc = -1;
@@ -2291,6 +2378,12 @@ static void draw_sprite_scaled(int32_t x0, int32_t y0, int32_t w, int32_t h, uin
     int u_inc = 1, v_inc = 1;
     int32_t px, py;
 
+#if VK_MAIN
+    if (g_vk) {
+        vk_sprite(t, sx, sy, x0, y0, cx0, cx1);
+        return;
+    }
+#endif
     if (tex) {
         if (S.flip_x) {
             u_inc = -1;
@@ -2363,6 +2456,10 @@ static void bg_wide(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t u, uint
             draw_sprite_scaled(x + k * period, y, w, h, u, v, color, tex, raw, blend, &hud_word, s, 1.0f,
                                A < x0 * n ? x0 * n : A, B > x1 * n ? x1 * n : B);
     }
+#if VK_MAIN
+    if (g_vk && !vk_nxf)
+        vk_nxf = -1;    /* no copy shown: Vulkan draws nothing either */
+#endif
 }
 
 static void cmd_rect(const uint32_t *p)
@@ -2409,7 +2506,7 @@ static void cmd_rect(const uint32_t *p)
     PgxpWord ttmp;
     float sx = 1.0f, sy = 1.0f;
     int32_t period = 0;
-    if (TH.buf && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
+    if ((TH.buf || VK_TAGS) && g_sprite_tags) {      /* sprite built at a projected point, or HUD */
         t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         if (t && !(t->w < 0.0f && t->value == p[1]))
             t = NULL;
@@ -2431,10 +2528,14 @@ static void cmd_rect(const uint32_t *p)
     }
     /* texture packs: any textured rectangle (field objects, HUD, text, menus), by its texels; not
      * flipped ones (the hardware reads those from another box) */
-    if (TH.buf && tex && (g_texpack || g_texdump) && !S.flip_x && !S.flip_y &&
+    if ((TH.buf || VK_TAGS) && tex && (g_texpack || g_texdump) && !S.flip_x && !S.flip_y &&
         (rep = texpack_box((int32_t)u, (int32_t)v, w, h)) != NULL) {
         rep_su = (float)rep->w / (float)w;
         rep_sv = (float)rep->h / (float)h;
+#if VK_MAIN
+        vk_rep = (VkRep){ rep->key, rep->px, rep->w, rep->h, (float)u, (float)v, rep_su, rep_sv };
+        vk_has_rep = 1;
+#endif
     }
     if (rep || sx != 1.0f || sy != 1.0f || period > 0) {   /* scaled or replaced: native as usual, then the copy */
         static const PgxpWord untagged = { 0, 0.0f, 0.0f, -1.0f, 0, 0, 0.0f };
@@ -2454,6 +2555,10 @@ static void cmd_rect(const uint32_t *p)
     if (t) {
         sprite_ox = sprite_coord(0, 0, t->x, 1.0f);
         sprite_oy = sprite_coord(0, 0, t->y, 1.0f);
+#if VK_MAIN
+        if (g_vk)
+            vk_sprite(t, 1.0f, 1.0f, x, y, 0, 0);
+#endif
     }
     draw_sprite(x, y, w, h, u, v, color, tex, tex && raw, abe ? (int)S.abr : -1);
     sprite_ox = sprite_oy = 0;
@@ -2578,6 +2683,10 @@ static void vram_write_word(uint32_t w)
             S.wr_cy++;
             if (S.wr_cy == S.wr_y + S.wr_h) {
                 S.gp0_state = GP0_STATE_COMMAND;
+#if VK_MAIN
+                if (g_vk)
+                    VK(vkr_upload(S.wr_x, S.wr_y, S.wr_w, S.wr_h, S.vram));
+#endif
                 break;
             }
         }
@@ -2715,11 +2824,22 @@ static void gp0_execute(const uint32_t *p)
         S.rd_cx = S.rd_x;
         S.rd_cy = S.rd_y;
         S.rd_active = 1;
+#if VK_MAIN
+        if (g_vk)
+            VK(vkr_download(S.rd_x, S.rd_y, S.rd_w, S.rd_h, S.vram));
+#endif
         break;
     default:
         gp0_env(p[0]);
         break;
     }
+#if VK_MAIN
+    if (g_vk) {     /* after it ran: the moves its tags gave it (vk_xf) */
+        VK(vkr_gp0(p, vk_xf, vk_nxf, vk_edge, vk_has_rep ? &vk_rep : NULL, vk_has_prec ? vk_prec[0] : NULL,
+                   vk_under ? vk_nat[0] : NULL));
+        vk_nxf = vk_edge = vk_has_rep = vk_has_prec = vk_under = 0;
+    }
+#endif
     if (g_interp && !replaying)
         frame_record(p, op);
 }
@@ -2778,7 +2898,7 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
         build_dither_lut();
     band_y0 = y0;
     band_y1 = y1;
-    for (y = j->y0; y < j->y1; y++) {
+    for (y = j->y0; y < j->y1 && j->th.buf; y++) {
         if (y < (uint32_t)y0 * (uint32_t)j->th.n || y >= (uint32_t)y1 * (uint32_t)j->th.n)
             continue;
         uint32_t row = (y % (512u * (uint32_t)j->th.n)) << j->th.sh;
@@ -2814,6 +2934,21 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
     ipcy = j->pcy;
     hud_after = 0;
     memset(buf_menu, 0, sizeof buf_menu);
+#if VK_MAIN
+    if (g_vk) {     /* the frame's drawing state at its start, as GP0 words */
+        uint32_t e[6] = {
+            0xE1000000u | (S.tp_x / 64u) | (S.tp_y ? 0x10u : 0u) | S.abr << 5 | S.tex_mode << 7 | S.dither << 9 |
+                S.dfe << 10 | S.flip_x << 12 | S.flip_y << 13,
+            0xE2000000u | S.tww | S.twh << 5 | S.twx << 10 | S.twy << 15,
+            0xE3000000u | (uint32_t)S.clip_x0 | (uint32_t)S.clip_y0 << 10,
+            0xE4000000u | (uint32_t)S.clip_x1 | (uint32_t)S.clip_y1 << 10,
+            0xE5000000u | ((uint32_t)S.offs_x & 0x7FFu) | ((uint32_t)S.offs_y & 0x7FFu) << 11,
+            0xE6000000u | (S.mask_set ? 1u : 0u) | (S.mask_check ? 2u : 0u),
+        };
+        for (k = 0; k < 6; k++)
+            VK(vkr_gp0(&e[k], NULL, 0, 0, NULL, NULL, NULL));
+    }
+#endif
     replaying = 1;
     for (k = 0; k < (uint32_t)j->n; k += (uint32_t)len) {
         len = gp0_cmd_len(j->w[k] >> 24);
@@ -2918,13 +3053,13 @@ void gpu_set_camera(const int16_t r[9], int32_t tx, int32_t ty, int32_t tz, uint
 
 void gpu_interp_enable(void)
 {
-    if (!TH.buf || frec)
+    if ((!TH.buf && !VK_ON) || frec)
         return;
     frec = calloc(2, sizeof *frec);
     job = malloc(sizeof *job);
-    interp_buf = malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof(uint16_t));
+    interp_buf = TH.buf ? malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof(uint16_t)) : NULL;   /* Vulkan: its own */
     interp_tags = TH.tag ? malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *interp_tags) : NULL;
-    g_interp = frec && job && interp_buf && (interp_tags || !TH.tag);
+    g_interp = frec && job && (interp_buf || VK_ON) && (interp_tags || !TH.tag);
     ilog = getenv("HMBTN_INTERP_LOG") != NULL;
     interp_qpl = TH.qpl ? calloc(0x4000 * 3, sizeof *interp_qpl) : NULL;
     g_interp = g_interp && (interp_qpl || !TH.tag);
@@ -2972,6 +3107,15 @@ int gpu_render_interp(uint32_t *out, int *w, int *h)
         return 0;
     if (ilog && since_flip > 2)
         fprintf(stderr, "interp: held\n");
+#if VK_MAIN
+    if (g_vk) {     /* drawn by Vulkan's second renderer (gpu_interp_prepare) */
+        int vk_o = vkr_enter(GPU_VK_SET);
+        vkr_target(GPU_VK_SET + 1);
+        vkr_display(out, w, h, d.vram_x, disp_y[!b], d.width, d.height);
+        vkr_target(vk_o);
+        return 1;
+    }
+#endif
     hb = TH.buf;
     ht = TH.tag;
     hq = TH.qpl;
@@ -3000,7 +3144,7 @@ int gpu_interp_prepare(void)
 
     BAND_SYNC();
 
-    if (!g_interp || !frec || !TH.buf || since_flip != 1)
+    if (!g_interp || !frec || (!TH.buf && !VK_ON) || since_flip != 1)
         return 0;
     job_gen = 0;
     gpu_get_display(&d);
@@ -3068,6 +3212,17 @@ int gpu_interp_prepare(void)
     job->band[0] = 0;
     job->band[INTERP_WORKERS] = 1024;
     job_gen = cur->gen;
+#if VK_MAIN
+    if (g_vk) {     /* redrawn here into Vulkan's second renderer (the GPU draws it), no workers */
+        int vk_o = vkr_enter(GPU_VK_SET);
+        vkr_target(GPU_VK_SET + 1);
+        vkr_upload(0, 0, 1024, 512, job->vram);
+        gpu_replay_run(job, 0, 1024);
+        vkr_kick(d.vram_x, disp_y[!b], d.width, d.height);
+        vkr_target(vk_o);
+        return 0;
+    }
+#endif
     return 1;
 }
 
@@ -3364,6 +3519,13 @@ uint32_t gpu_read_status(void)
 void gpu_vblank(void)
 {
     ROUTE(gpu_vblank());
+#if VK_MAIN
+    if (g_vk) {
+        GpuDisplay d;
+        gpu_get_display(&d);
+        VK(vkr_vblank(d.enabled && !d.is_24bit, d.vram_x, d.vram_y, d.width, d.height));
+    }
+#endif
     hud_after = 0;
     anchor_gen++;
     if (S.disp_mode & 0x20u)
@@ -3488,6 +3650,12 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
             out[y] = 0xFF000000u;
         return;
     }
+#if VK_MAIN
+    if (g_vk && !d.is_24bit) {      /* 24-bit video: from the native VRAM, below */
+        VK(vkr_display(out, w, h, d.vram_x, d.vram_y, d.width, d.height));
+        return;
+    }
+#endif
 
     if (!rgb_lut[0])
         build_rgb_lut();
@@ -3527,6 +3695,15 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
 
 const uint16_t *gpu_vram(void)
 {
+#if VK_MAIN
+    static uint32_t synced = ~0u;
+    if (g_vk_cpu_off && synced != changes) {    /* the display area is read here (display_black): the GPU's */
+        GpuDisplay d;
+        gpu_get_display(&d);
+        VK(vkr_sync(d.vram_x, d.vram_y, d.width, d.height, S.vram));
+        synced = changes;
+    }
+#endif
     return S.vram;
 }
 
@@ -3566,6 +3743,9 @@ void gpu_set_upscale(int n)
     TH.tag = NULL;
     TH.qpl = NULL;
     seam_snap = NULL;
+#if VK_MAIN
+    TH.n = g_vk;        /* Vulkan's scale, for the sprites' moves (sprite_coord) */
+#endif
     if (n < 2)
         return;
     if (n > 4)

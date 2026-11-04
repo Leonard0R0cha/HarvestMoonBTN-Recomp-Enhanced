@@ -19,6 +19,7 @@ DEPS = os.path.join(ROOT, 'deps')
 # the programs (and what they load) the build runs; the compiler and linker read the rest
 PROGRAMS = ['llvm-mingw/bin/' + n for n in (
     'clang.exe', 'clang-23.exe', 'clang-target-wrapper.exe', 'x86_64-w64-mingw32-clang.exe', 'ld.lld.exe',
+    'clang++.exe', 'x86_64-w64-mingw32-clang++.exe',   # the Vulkan renderer (runtime/vk) is C++
     'x86_64-w64-mingw32-windres.exe', 'libLLVM-23.dll', 'libclang-cpp.dll', 'libc++.dll', 'libunwind.dll',
     'libwinpthread-1.dll', 'mingw32-common.cfg', 'x86_64-w64-windows-gnu.cfg', 'x86_64-pc-windows-gnu.cfg')] + [
     'SDL2-2.32.10/x86_64-w64-mingw32/bin/SDL2.dll']

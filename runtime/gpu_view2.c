@@ -7,6 +7,7 @@
 static char guard_head[64] __attribute__((aligned(64), used));
 static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define GPU_VIEW2 1
+#define GPU_VK_SET 4        /* with renderer = vulkan: its own renderers (vk/vk_renderer.h) */
 #define g_pgxp view2_g_pgxp
 #define g_pgxp_persp view2_g_pgxp_persp
 #define g_pgxp_cracks view2_g_pgxp_cracks

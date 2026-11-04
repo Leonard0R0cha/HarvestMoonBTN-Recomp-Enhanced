@@ -14,6 +14,10 @@
 #ifdef _WIN32
 #include <direct.h>
 #endif
+#ifdef HMBTN_VULKAN
+#include "vk/vk_renderer.h"
+#include <SDL_syswm.h>
+#endif
 
 uint16_t g_pad_buttons[2];
 bool g_pad_connected[2];
@@ -33,6 +37,9 @@ static SDL_Window *win2;
 static SDL_Renderer *ren2;
 static uint32_t *v2i_px;            /* farmer 2's window's in-between picture, when v2i_shown */
 static int v2i_shown, v2i_w, v2i_h;
+/* Vulkan shows the pictures in the windows (vkp, vkp2): main_gpu, v2i_gpu: the picture is the GPU's
+ * (kept in slot 0, 2), not the CPU's in frame_px, v2i_px */
+static int vkp, vkp2, main_gpu, v2i_gpu;
 static SDL_Texture *tex2;
 static uint32_t *frame2_px;
 static int fullscreen2;
@@ -317,7 +324,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
     hdr[26] = 1; hdr[28] = 24;
     memcpy(hdr + 34, &img, 4);
     fwrite(hdr, 1, 54, f);
-    static uint8_t row[8192 * 3 + 4];   /* widest frame: 1024 at upscale 4, widened for widescreen */
+    static uint8_t row[16384 * 3 + 4];  /* widest frame: 1024 at upscale 8 (Vulkan), widened for widescreen */
     for (int y = h - 1; y >= 0; y--) {
         for (int x = 0; x < w; x++) {
             uint32_t p = px[y * w + x];
@@ -334,7 +341,7 @@ static void write_bmp(const char *path, const uint32_t *px, int w, int h) {
 static uint32_t *widen(const uint32_t *px, int w, int h, int *ow) {
     int W = (int)lrint((double)w * 3.0 * g_cfg.ws_w / (4.0 * g_cfg.ws_h));
     uint32_t *out;
-    if (W > 8192) W = 8192;
+    if (W > 16384) W = 16384;
     out = malloc((size_t)W * (size_t)h * 4);
     if (!out) return NULL;
     for (int y = 0; y < h; y++) {
@@ -371,7 +378,7 @@ static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, in
     if (g_view2 > 0) {                  /* and farmer 2's window: frame2_... */
         static uint32_t *px2;
         static int w2, h2;
-        int up = gpu_upscale();
+        int up = g_cfg.upscale > 1 ? g_cfg.upscale : 1;   /* as frame_px (Vulkan: gpu_upscale is 1) */
         if (!px2) px2 = calloc((size_t)1024 * 512 * up * up, sizeof(uint32_t));
         if (!px2) return;
         if (p2view_swapped() || p2view_scene()) gpu_render_display(px2, &w2, &h2);              /* as the window */
@@ -490,6 +497,31 @@ int platform_init(void) {
     perf_next = SDL_GetPerformanceCounter();
     LOGI("platform init took %.0f ms", (double)(perf_next - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency());
     return 0;
+}
+
+/* renderer = vulkan: the windows show its pictures from the GPU (a swapchain each, vkr_present)
+ * instead of SDL's renderer, which lets go of them. HMBTN_VK_COPY=1: through the CPU, as before. */
+void platform_vulkan(void) {
+#ifdef HMBTN_VULKAN
+    SDL_SysWMinfo wi;
+    if (g_cfg.headless || getenv("HMBTN_VK_COPY")) return;
+    SDL_VERSION(&wi.version);
+    if (win && SDL_GetWindowWMInfo(win, &wi) && vkr_window(0, wi.info.win.window)) {
+        SDL_DestroyTexture(tex);        /* (the sharp-bilinear target is made at the first present) */
+        SDL_DestroyRenderer(ren);
+        tex = NULL;
+        ren = NULL;
+        vkp = 1;
+    }
+    SDL_VERSION(&wi.version);
+    if (vkp && win2 && SDL_GetWindowWMInfo(win2, &wi) && vkr_window(1, wi.info.win.window)) {
+        if (tex2) SDL_DestroyTexture(tex2);
+        if (ren2) SDL_DestroyRenderer(ren2);
+        tex2 = NULL;
+        ren2 = NULL;
+        vkp2 = 1;
+    }
+#endif
 }
 
 void platform_shutdown(void) {
@@ -663,6 +695,12 @@ static double display_aspect(int w, int h, int wide) {
 }
 
 static void present(int w, int h, int wide, bool same) {
+#ifdef HMBTN_VULKAN
+    if (vkp) {
+        vkr_present(0, main_gpu ? 0 : -1, main_gpu ? NULL : frame_px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
+        return;
+    }
+#endif
     uint64_t f = SDL_GetPerformanceFrequency(), t0 = SDL_GetPerformanceCounter();
     int ww, wh;
     SDL_Rect src = { 0, 0, w, h }, dst = { 0, 0, 0, 0 };
@@ -718,18 +756,30 @@ static void present(int w, int h, int wide, bool same) {
  * (the player's menu) keeps the shape it was made with. Shown again only when it changed (the game
  * draws every other VBlank) or the window did (win2_due) */
 static int win2_due = 1;            /* 2: the texture may have lost the picture too */
+
+/* farmer 2's window under Vulkan: the picture just made is the GPU's (kept in slot), or the CPU's */
+static int keep2(int slot) {
+#ifdef HMBTN_VULKAN
+    return vkp2 && vkr_keep(slot) ? slot : 0;
+#else
+    (void)slot;
+    return 0;
+#endif
+}
 static void present2(int wide_now) {
     static uint32_t changes;
     static int w, h, valid, wide;
+    static int gpu;                     /* the picture is the GPU's (Vulkan): 1 slot 1, 2 slot 2 (in-between) */
     int ww, wh, fresh = win2_due;
-    if (!tex2) return;
+    if (!tex2 && !vkp2) return;
     win2_due = 0;
     if (p2view_swapped() || p2view_scene()) {   /* farmer 2 has the game (or a scene): the game's picture */
         gpu_render_display(frame2_px, &w, &h);
         wide = wide_now;
         valid = 0;
         fresh = 1;
-        if (w > 0 && h > 0) {
+        gpu = keep2(1);
+        if (w > 0 && h > 0 && !vkp2) {
             SDL_Rect src = { 0, 0, w, h };
             SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
         }
@@ -739,8 +789,9 @@ static void present2(int wide_now) {
         wide = wide_now;
         valid = 0;                      /* the next one is the frame's own again */
         fresh = 1;
+        gpu = v2i_gpu ? 2 : 0;
         SDL_Rect src = { 0, 0, w, h };
-        SDL_UpdateTexture(tex2, &src, v2i_px, w * 4);
+        if (!vkp2) SDL_UpdateTexture(tex2, &src, v2i_px, w * 4);
     } else if ((!valid && !p2view_held()) || (view2_gpu_changes() != changes && !p2view_held())) {
         /* a picture kept (the player's menu) is the last one shown: drawn again from the second
          * GPU's VRAM after an in-between picture, it was whatever the menu's loads left there */
@@ -749,12 +800,20 @@ static void present2(int wide_now) {
         wide = wide_now;
         valid = 1;
         fresh = 1;
-        if (w > 0 && h > 0) {
+        gpu = keep2(1);
+        if (w > 0 && h > 0 && !vkp2) {
             SDL_Rect src = { 0, 0, w, h };
             SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
         }
     }
     if (!fresh) return;
+#ifdef HMBTN_VULKAN
+    if (vkp2) {     /* in-between pictures of the CPU stay in v2i_px */
+        const uint32_t *px = gpu ? NULL : (v2i_shown && w == v2i_w && h == v2i_h && !valid) ? v2i_px : frame2_px;
+        vkr_present(1, gpu == 2 ? 2 : gpu ? 1 : -1, px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
+        return;
+    }
+#endif
     if (fresh == 2 && w > 0 && h > 0) {
         SDL_Rect src = { 0, 0, w, h };
         SDL_UpdateTexture(tex2, &src, frame2_px, w * 4);
@@ -1010,7 +1069,15 @@ void platform_frame(void) {
          * one), and an in-between picture has until then to be drawn */
         throttle();
     }
-    bool need_pixels = shown || shot || shot_request, same = false;
+    static int render_all = -1;     /* timing test: headless runs make every picture, as a window does */
+    if (render_all < 0) render_all = getenv("HMBTN_RENDER_ALL") != NULL;
+    bool need_pixels = shown || shot || shot_request || render_all, same = false;
+#ifdef HMBTN_VULKAN
+    if (vkp) {
+        vkr_want_pixels(shot || shot_request);
+        vkr_keep(-1);
+    }
+#endif
     /* farmer 2's talk or menu: this window keeps the player's picture (farmer 2's shows the game's) */
     bool keep = p2view_swapped() && g_view2 != 2;
     if (keep) {
@@ -1026,9 +1093,12 @@ void platform_frame(void) {
         /* farmer 2's window has in-between pictures of its own, while it shows its own farm frames */
         int v2 = g_view2 > 0 && !turbo() && !p2view_held();
         if (v2) {
-            int up = gpu_upscale();
+            int up = g_cfg.upscale > 1 ? g_cfg.upscale : 1;
             if (!v2i_px) v2i_px = malloc((size_t)1024 * 512 * up * up * sizeof(uint32_t));
             v2i_shown = v2i_px && view2_gpu_render_interp(v2i_px, &v2i_w, &v2i_h);
+#ifdef HMBTN_VULKAN
+            v2i_gpu = vkp2 && v2i_shown && vkr_keep(2);
+#endif
         } else {
             v2i_shown = 0;
         }
@@ -1075,6 +1145,12 @@ void platform_frame(void) {
         } else {
             px_valid = false;   /* an in-between picture in frame_px */
         }
+#ifdef HMBTN_VULKAN
+        if (vkp) {                      /* made now: the GPU's or the CPU's (a video); else as before */
+            if (vkr_keep(0)) main_gpu = 1;
+            else if (!same) main_gpu = 0;
+        }
+#endif
         if (!interp_pending && !turbo()) {
             int jobs = gpu_interp_prepare() | (v2 && view2_gpu_interp_prepare()) << 1;
             if (jobs) interp_start(jobs);

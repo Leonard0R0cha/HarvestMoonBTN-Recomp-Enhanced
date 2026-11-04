@@ -1,0 +1,124 @@
+#version 450
+// The seam pass (gpu.c seam_across, seam_down) on the GPU, for the Vulkan renderer (vk_renderer.cpp):
+// uPic, uTag: the picture and its tags (15 bits as 5-bit colour channels: 0x4000 a moved 3D polygon,
+// the low 14 bits the command's number). Pass 0, a thread per row: the picture with runs across
+// filled, to uSnap. Pass 1, a thread per column: from uSnap, runs down filled, to uOut as
+// 0xAARRGGBB words (read back) and uColor (shown). A run of pixels under a console pixel (n) last
+// drawn before the moved 3D polygons on both sides of it, two different ones, both in front of
+// what shows in it (uQpl: each tag's plane of 1/w over native pixels; a 2D object: far away), is
+// filled from its sides. The picture starts at native (ox, oy).
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, rgba8) uniform readonly image2D uPic;
+layout(set = 0, binding = 1, rgba8) uniform readonly image2D uTag;
+layout(set = 0, binding = 2, r32ui) uniform uimage2D uSnap;
+layout(set = 0, binding = 3, r32ui) uniform writeonly uimage2D uOut;
+layout(set = 0, binding = 4, rgba8) uniform writeonly image2D uColor;     // the same, to show
+layout(set = 0, binding = 5, rgba32f) uniform readonly image2D uQpl;
+layout(push_constant, std430) uniform Push
+{
+	int w, h, n, pass, ox, oy;
+} p;
+
+uint tag_at(int x, int y)
+{
+	uvec3 v = uvec3(round(imageLoad(uTag, ivec2(x, y)).rgb * 31.0));
+	return v.r | (v.g << 5) | (v.b << 10);
+}
+
+bool older(uint a, uint b)     // a drawn before b
+{
+	return ((b - a) & 0x3FFFu) - 1u < 0x1FFFu;
+}
+
+bool d3(uint t)
+{
+	return (t & 0x4000u) != 0u;
+}
+
+float q(uint t, vec2 at)        // 1/w of what tag t drew at native at
+{
+	vec4 pl = imageLoad(uQpl, ivec2(int(t & 0x3FFFu), 0));
+	return pl.x + pl.y * at.x + pl.z * at.y;
+}
+
+bool behind(uint m, uint l, uint r, vec2 at)    // l and r in front of m (1% nearer, gpu.c SEAM_NEARER)
+{
+	float qm = d3(m) ? q(m, at) : 0.0;
+	return q(l, at) > qm * 1.01 && q(r, at) > qm * 1.01;
+}
+
+void across(int y)
+{
+	for (int x = 0; x < p.w; x++)
+	{
+		uvec3 c = uvec3(round(imageLoad(uPic, ivec2(x, y)).rgb * 255.0));
+		imageStore(uSnap, ivec2(x, y), uvec4(0xFF000000u | (c.r << 16) | (c.g << 8) | c.b));
+	}
+	for (int x = 1; x < p.w - 1; x++)
+	{
+		uint l = tag_at(x - 1, y), m = tag_at(x, y);
+		if (m == l || !d3(l) || !older(m, l))
+			continue;
+		int e = x + 1;
+		while (e < p.w && e - x <= p.n)
+		{
+			uint t = tag_at(e, y);
+			if (t != m && !older(t, m))
+				break;
+			e++;
+		}
+		if (e >= p.w || e - x > p.n)
+			continue;
+		uint r = tag_at(e, y);
+		if (r != l && d3(r) && behind(m, l, r, vec2(p.ox, p.oy) + vec2(float(x + e - 1) * 0.5, float(y)) / float(p.n)))
+		{
+			uint a = imageLoad(uSnap, ivec2(x - 1, y)).r, b = imageLoad(uSnap, ivec2(e, y)).r;
+			for (int k = x; k < e; k++)
+				imageStore(uSnap, ivec2(k, y), uvec4(k - x < (e - x + 1) / 2 ? a : b));
+		}
+		x = e - 1;
+	}
+}
+
+void put(int x, int y, uint c)
+{
+	imageStore(uOut, ivec2(x, y), uvec4(c));
+	imageStore(uColor, ivec2(x, y), vec4(uvec4(c >> 16, c >> 8, c, 255u) & 255u) / 255.0);
+}
+
+void down(int x)
+{
+	for (int y = 0; y < p.h; y++)
+		put(x, y, imageLoad(uSnap, ivec2(x, y)).r);
+	for (int y = 1; y < p.h; y++)
+	{
+		uint m = tag_at(x, y), a = tag_at(x, y - 1);
+		if (m == a || !d3(a) || !older(m, a))
+			continue;
+		int e = y + 1;
+		for (; e < p.h && e - y <= p.n; e++)
+		{
+			uint t = tag_at(x, e);
+			if (t != m && !older(t, m))
+				break;
+		}
+		if (e >= p.h || e - y > p.n)
+			continue;
+		uint b = tag_at(x, e);
+		if (b != a && d3(b) && behind(m, a, b, vec2(p.ox, p.oy) + vec2(float(x), float(y + e - 1) * 0.5) / float(p.n)))
+		{
+			uint up = imageLoad(uSnap, ivec2(x, y - 1)).r, dn = imageLoad(uSnap, ivec2(x, e)).r;
+			for (int k = y; k < e; k++)
+				put(x, k, k - y < (e - y + 1) / 2 ? up : dn);
+		}
+	}
+}
+
+void main()
+{
+	int i = int(gl_GlobalInvocationID.x);
+	if (p.pass == 0 && i < p.h)
+		across(i);
+	else if (p.pass == 1 && i < p.w)
+		down(i);
+}
