@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Rebuild the shaders this port adds (ppsx/glsl/prebuilt/textured.tag*.inc, seams.comp.inc),
-with glslang (deps/glslang-*/bin/glslang.exe, from github.com/KhronosGroup/glslang releases).
+"""Rebuild the shaders this port adds or changes (ppsx/glsl/prebuilt/textured.tag*.inc, seams.comp.inc;
+the textured ones: vUV is highp), with glslang (deps/glslang-*/bin/glslang.exe, from github.com/KhronosGroup/glslang releases).
 Only needed after changing ppsx/glsl; the build uses the .inc files.
 
 usage: python runtime/vk/build_shaders.py"""
@@ -14,6 +14,16 @@ SHADERS = {
     'ppsx/glsl/prebuilt/textured.tag.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED', 'TAG']),
     'ppsx/glsl/prebuilt/textured.tag.unscaled.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED', 'UNSCALED', 'TAG']),
     'seams.comp.inc': ('seams.comp', []),
+    'ppsx/glsl/prebuilt/textured.vert.inc': ('ppsx/glsl/primitive.vert', ['TEXTURED']),
+    'ppsx/glsl/prebuilt/textured.unscaled.vert.inc': ('ppsx/glsl/primitive.vert', ['TEXTURED', 'UNSCALED']),
+    'ppsx/glsl/prebuilt/textured.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED']),
+    'ppsx/glsl/prebuilt/textured.unscaled.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED', 'UNSCALED']),
+    'ppsx/glsl/prebuilt/textured.msaa.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED', 'MSAA']),
+    'ppsx/glsl/prebuilt/textured.msaa.unscaled.frag.inc': ('ppsx/glsl/primitive.frag', ['TEXTURED', 'MSAA', 'UNSCALED']),
+    'ppsx/glsl/prebuilt/feedback.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED']),
+    'ppsx/glsl/prebuilt/feedback.unscaled.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'UNSCALED']),
+    'ppsx/glsl/prebuilt/feedback.msaa.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'MSAA']),
+    'ppsx/glsl/prebuilt/feedback.msaa.unscaled.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'MSAA', 'UNSCALED']),
 }
 
 

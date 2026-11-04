@@ -8,7 +8,9 @@ layout(location = 3) in mediump ivec3 Param;
 layout(location = 4) in ivec4 UV;
 layout(location = 5) in mediump uvec4 UVRange;
 
-layout(location = 1) out mediump vec2 vUV;
+// HMBTN: highp: as mediump (16-bit on Intel) a texel's border moved by up to 1/8 texel, differently
+// in the two display buffers: sprites shook
+layout(location = 1) out highp vec2 vUV;
 layout(location = 2) flat out mediump ivec3 vParam;
 layout(location = 3) flat out mediump ivec2 vBaseUV;
 layout(location = 4) flat out mediump ivec4 vWindow;
