@@ -58,7 +58,9 @@ uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32
  * goes through 80014FAC (a0 the ordering table's entry, a1-a3 x / y / width, the height and the
  * colours on the stack from +16); the clock is the one at 230,18, 74x28, with two rows of text
  * (the glyph routine 80019070: a0 the entry before the window's, a1 where the primitive goes, a2 the
- * letter, a3 x, then y, r, g, b and two more on the stack; it returns where the next goes). When the
+ * letter, a3 x, then y, r, g, b, the palette and semi-transparency (+36: GP0 66h instead of 64h; the
+ * clock turns it on and off every 5 minutes, so it is never copied) on the stack; it returns where
+ * the next goes). When the
  * clock opens, a window of the same size opens under it with the game's own routines: a row for the
  * stamina (S, a bar of what is left of the most, the number) and one for the tiredness (F, of 100).
  * The primitives come from the game's allocator (80011F5C, the size in a0). In the second window
@@ -99,7 +101,8 @@ static uint32_t call4(CPU *c, uint32_t at, uint32_t a0, uint32_t a1, uint32_t a2
 static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y) {
     uint32_t sp = c->r[29];
     MEM_W32(sp + 16, (uint32_t)y);
-    for (int i = 1; i < 6; i++) MEM_W32(sp + 16 + (uint32_t)i * 4, glyph_args[i]);
+    for (int i = 1; i < 5; i++) MEM_W32(sp + 16 + (uint32_t)i * 4, glyph_args[i]);
+    MEM_W32(sp + 36, 0);    /* +36 non-zero: a semi-transparent letter (the clock's blinks every 5 minutes) */
     return call4(c, GLYPH_AT, ot, p, (uint32_t)letter, (uint32_t)x);
 }
 
