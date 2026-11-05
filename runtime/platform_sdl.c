@@ -176,6 +176,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "emptybag=", 9)) { g_cfg.emptybag = atoi(tok + 9); continue; }
         if (!strncmp(tok, "earlycabinet=", 13)) { g_cfg.earlycabinet = atoi(tok + 13); continue; }
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
             int *v = cheat_ev[n_cheat_ev].v;
             if (sscanf(tok + 7, "%d=%d:%d:%d:%d:%d:%d", &cheat_ev[n_cheat_ev].frame, &v[0], &v[1], &v[2], &v[3],
@@ -444,6 +445,7 @@ int platform_init(void) {
             fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
+            if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
                     g_cfg.cheat_bag, g_cfg.cheat_items, g_cfg.cheat_tools);
             atexit(record_close);

@@ -430,6 +430,11 @@ ENTRY_HOOKS.update({a: 'HUD_BEGIN();' for a in HUD_BUILDERS})
 # with the position 800D6F78 gets (x in a3, y in the 5th argument at sp+16).
 ENTRY_HOOKS[0x800D6F78] = 'ITEM_BEGIN(R[7], MEM_R16(R[29] + 16u));'
 ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
+# The stamina and tiredness under the clock (runtime/fixes.c): every window goes through 80014FAC
+# (x, y, width in a1-a3, height and colours on the stack); the clock is the one at 230,18, 74x28.
+# The glyph routine (80019070) is watched for the arguments it is given.
+ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
+ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c);'   # 80019070 is a HUD builder too (keep its tag)
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
 # VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would

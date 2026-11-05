@@ -77,6 +77,7 @@ OPTIONS = [
     ('game', 'behaviour', 'emptybag', 'bool'),
     ('game', 'behaviour', 'earlycabinet', 'bool'),
     ('game', 'behaviour', 'cropwalk', 'bool'),
+    ('game', 'behaviour', 'staminabar', 'bool'),
     ('game', 'behaviour', 'record', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
@@ -185,6 +186,8 @@ TEXT = {
                          'is extended.'),
         'cropwalk': ('Walk through crops', 'You can walk through your planted crops, so the one in the '
                      'middle is always in reach.'),
+        'staminabar': ('Stamina under the clock', 'A window under the clock shows your stamina (S) and '
+                       'tiredness (F) with bars and numbers.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
@@ -255,6 +258,8 @@ TEXT = {
                          'ampliada.'),
         'cropwalk': ('Andar sobre as plantações', 'Dá para passar por cima das plantações, então a do meio '
                      'sempre fica ao alcance.'),
+        'staminabar': ('Stamina embaixo do relógio', 'Uma janela embaixo do relógio mostra a stamina (S) e o '
+                       'cansaço (F) com barras e números.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
@@ -326,6 +331,8 @@ TEXT = {
                          'casa.'),
         'cropwalk': ('Caminar sobre los cultivos', 'Puedes pasar por encima de tus cultivos, así el del medio '
                      'siempre queda al alcance.'),
+        'staminabar': ('Energía bajo el reloj', 'Una ventana bajo el reloj muestra tu energía (S) y tu '
+                       'cansancio (F) con barras y números.'),
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
         'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),

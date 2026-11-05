@@ -250,6 +250,9 @@ void p2_tick_begin(void);
 void cheats_tick(void);
 uint32_t farm_score_berries(uint32_t score);    /* fixes.c: the summary page's farm score */
 void first_house_cabinet(void);                 /* ... the first house's boxes open the cabinet */
+void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
+void stamina_glyph_seen(CPU *c);
+int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
 uint32_t crop_walk_mask(uint32_t mask, uint32_t why);   /* ... walking through crops */
 uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 void p2_tick_end(void);
