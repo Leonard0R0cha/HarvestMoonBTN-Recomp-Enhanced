@@ -389,8 +389,14 @@ static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, in
 }
 
 /* ------------------------------------------------------------------ init */
+/* SDL also sends SDL_CONTROLLERDEVICEADDED at start for the controllers opened at init: opened again,
+ * the same controller (SDL hands back the same one) was the first and the second, so with farmer 2
+ * the first controller moved both farmers */
 static void open_pad(int index) {
     if (!SDL_IsGameController(index)) return;
+    SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(index);
+    for (int i = 0; i < MAX_PADS; i++)
+        if (pads[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == id) return;
     for (int i = 0; i < MAX_PADS; i++) {
         if (!pads[i]) {
             pads[i] = SDL_GameControllerOpen(index);
