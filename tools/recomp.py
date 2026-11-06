@@ -479,7 +479,17 @@ MODULE_SITE_HOOKS = {
     # the farm's tick (800C162C) ends at 800C1874: a second farmer's menu turn ends (runtime/p2.c)
     # the X action's target (800C7AC0: v1 = its kind - 1, a jump table of 49): farmer 2 does not
     # open the whole game's things (runtime/p2.c)
+    # the summary page's farm score (800FB908): v0 is the sum just before it is stored at
+    # 800FBDF0; the Power Berries and the Mystic Berry are added (runtime/fixes.c)
     'GF_FARM': {0x800C41C8: 'quick_bag_filter();', 0x800C1874: 'p2_tick_end();',
+                0x800FBDEC: 'R[2] = farm_score_berries(R[2]);',
+                # an area's things to look at are in place (800BCF54, after its jal at 800BD0B0):
+                # the first house's pile of boxes opens the cabinet (runtime/fixes.c)
+                0x800BD0B8: 'first_house_cabinet();',
+                # walking through crops: the player's walk's collision mask (800CB114, after the
+                # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
+                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
+                0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
                 0x800C7B70: 'R[3] = p2_x_target(R[3]);',
                 # the map screen (SELECT) draws the map picture (320x240 in quads: the map and a
                 # row of cloud strips under it) with the jal at 8011ED54 (8011ECC4), and while it
