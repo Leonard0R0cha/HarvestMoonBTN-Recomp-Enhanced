@@ -59,8 +59,9 @@ void log_msg(int level, const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    fprintf(stderr, "[%s] %s\n", tag[level], buf);
-    if (log_file) { fprintf(log_file, "[%s] f%llu %s\n", tag[level], (unsigned long long)frame_count(), buf); fflush(log_file); }
+    const char *who = g_machine ? "B " : "";     /* the second machine (machine.c) */
+    fprintf(stderr, "[%s] %s%s\n", tag[level], who, buf);
+    if (log_file) { fprintf(log_file, "[%s] f%llu %s%s\n", tag[level], (unsigned long long)frame_count(), who, buf); fflush(log_file); }
 }
 
 void fatal(const char *fmt, ...) {
@@ -196,6 +197,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
     else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
+    else if (!strcmp(key, "portraits")) g_cfg.portraits = atoi(val);
     else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
@@ -212,6 +214,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
+    else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
     else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);
     else if (!strcmp(key, "cheat_clock")) g_cfg.cheat_clock = atoi(val);
@@ -320,6 +323,7 @@ static void usage(void) {
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
            "  --texturepack         draw 2D sprites with the images in textures/ (needs --upscale 2+)\n"
+           "  --portraits           redrawn dialogue portraits from textures/portraits/ (needs --upscale 2+)\n"
            "  --dumptextures        write the 2D sprites' textures to textures/dump/ (needs --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
@@ -420,6 +424,10 @@ int main(int argc, char **argv) {
         const char *nx = i + 1 < argc ? argv[i + 1] : "";
         if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(); return 0; }
         else if (!strcmp(a, "--fullscreen")) g_cfg.fullscreen = 1;
+        else if (!strcmp(a, "--mirror")) g_mirror = 1;
+        else if (!strcmp(a, "--split")) g_split = 1;
+        else if (!strcmp(a, "--mirror-park") && nx[0]) { g_mirror = 1; g_mirror_park = atoi(nx); i++; }
+        else if (!strcmp(a, "--mirror-resume") && nx[0]) { g_mirror_resume = atoi(nx); i++; }
         else if (!strcmp(a, "--scale")) { g_cfg.scale = atoi(nx); i++; }
         else if (!strcmp(a, "--upscale")) { g_cfg.upscale = atoi(nx); i++; }
         else if (!strcmp(a, "--renderer")) { g_cfg.renderer_vk = !strcmp(nx, "vulkan"); i++; }
@@ -433,6 +441,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--no-interp")) g_cfg.interp = 0;
         else if (!strcmp(a, "--texturepack")) g_cfg.texturepack = 1;
         else if (!strcmp(a, "--no-texturepack")) g_cfg.texturepack = 0;
+        else if (!strcmp(a, "--portraits")) g_cfg.portraits = 1;
+        else if (!strcmp(a, "--no-portraits")) g_cfg.portraits = 0;
         else if (!strcmp(a, "--dumptextures")) g_cfg.dumptextures = 1;
         else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
@@ -623,12 +633,19 @@ int main(int argc, char **argv) {
         g_scene_3d = platform_3d_scene;
         LOGI("widescreen %d:%d", g_cfg.ws_w, g_cfg.ws_h);
     }
-    if ((g_cfg.texturepack || g_cfg.dumptextures) && gpu_upscale() < 2 && !(vk && g_cfg.upscale > 1))
+    if ((g_cfg.texturepack || g_cfg.portraits || g_cfg.dumptextures) && gpu_upscale() < 2 && !(vk && g_cfg.upscale > 1))
         LOGW("texture packs need upscale 2 or more");
-    else if (g_cfg.texturepack || g_cfg.dumptextures) {
+    else if (g_cfg.texturepack || g_cfg.portraits || g_cfg.dumptextures) {
         char dir[1200];
+        int n = 0;
         snprintf(dir, sizeof dir, "%stextures", exe_dir);
-        if (g_cfg.texturepack) LOGI("texture pack: %d images in %s", texpack_load(dir), dir);
+        if (g_cfg.texturepack) LOGI("texture pack: %d images in %s", (n = texpack_load(dir)), dir);
+        if (g_cfg.portraits) {
+            /* the redrawn portraits are a pack of their own, so they can be switched on and off alone;
+             * texpack_load keeps the images it already has and returns the total */
+            snprintf(dir, sizeof dir, "%stextures/portraits", exe_dir);
+            LOGI("portraits: %d images in %s", texpack_load(dir) - n, dir);
+        }
         if (g_cfg.dumptextures) {
             snprintf(dir, sizeof dir, "%stextures/dump", exe_dir);
             texpack_dump_to(dir);
@@ -651,6 +668,7 @@ int main(int argc, char **argv) {
     g_cpu.sr = 0x40000401u;   /* COP2 enabled, IRQs enabled (I_MASK is still 0) */
     g_pad_connected[0] = true;
 
+    machine_init(load_exe);
     load_exe();
     netplay_quit();
     memcard_flush();

@@ -15,6 +15,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
 | `texturepack = 1` | 2D sprites drawn with replacement images from `textures/` | upscale 2+ |
+| `portraits = 1` | Dialogue portraits drawn with redrawn images from `textures/portraits/`, on and off apart from `texturepack` | upscale 2+ |
 | `dumptextures = 1` | 2D sprites' textures written to `textures/dump/`, to draw a pack from | upscale 2+ |
 
 The launcher (`launcher.pyw` in the build folder, needs Python) edits all of these.
@@ -400,6 +401,10 @@ title screen's pictures.
    screen pixel at `upscale = 4`). Pixels with alpha below 128 are transparent. Save as 8-bit RGB or
    RGBA PNG in `textures/`, under the dump's name. Leave out what you don't redraw.
 3. Play with `texturepack = 1`. The images are read when the game starts; the log says how many.
+
+Redrawn dialogue portraits (the 80×80 faces in conversations) are a pack of their own in
+`textures/portraits/`, same names and format, switched with `portraits = 1` (`--portraits`; launcher:
+Video → Redrawn portraits), so they can be turned off without turning off the rest of the pack.
 
 `tools/texpack_sample.py` makes a sample pack from dumps: each image enlarged 4× with Scale2x applied
 twice (smooth diagonals instead of 4×4 blocks). It is made from your own dump, so no game art is

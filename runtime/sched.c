@@ -37,7 +37,7 @@ void irq_write_stat(uint32_t v) {
 }
 void irq_write_mask(uint32_t v) { g_imask = v & 0x7FF; g_cpu.next_event = 0; }
 void irq_check(CPU *c) {
-    if (g_in_exception || g_view2_run) return;
+    if (g_in_exception || g_view2_run || g_machine_probe) return;
     if ((g_istat & g_imask) && (c->sr & 1) && (c->sr & 0x400))
         bios_exception_irq(c);
 }
@@ -67,6 +67,28 @@ void sched_update_next(CPU *c) {
 /* ------------------------------------------------------------------------- SPU audio */
 static uint64_t spu_cycle;
 static int16_t spu_buf[4096 * 2];
+/* the second machine's sound (the farmers apart: its effects, spu.c), mixed into the first's a frame
+ * later */
+#define MIX 16384
+static int16_t mix_ring[MIX * 2];
+static unsigned mix_rd, mix_wr;
+
+static void mix_put(const int16_t *s, int n) {
+    for (int k = 0; k < n; k++) {
+        if (mix_wr - mix_rd >= MIX) mix_rd++;      /* the first fell behind: the oldest goes */
+        mix_ring[(mix_wr % MIX) * 2] = s[k * 2];
+        mix_ring[(mix_wr % MIX) * 2 + 1] = s[k * 2 + 1];
+        mix_wr++;
+    }
+}
+
+static void mix_into(int16_t *s, int n) {
+    for (int k = 0; k < n && mix_rd != mix_wr; k++, mix_rd++)
+        for (int c = 0; c < 2; c++) {
+            int32_t v = s[k * 2 + c] + mix_ring[(mix_rd % MIX) * 2 + c];
+            s[k * 2 + c] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
+}
 
 void spu_catch_up(void) {
     if (g_view2_run) return;        /* no sound from the second view's run (p2view.c) */
@@ -76,7 +98,12 @@ void spu_catch_up(void) {
     while (n > 0) {
         int chunk = n > 4096 ? 4096 : (int)n;
         spu_run(chunk, spu_buf);
-        platform_audio_push(spu_buf, chunk);
+        if (g_spu_effects_only) {
+            mix_put(spu_buf, chunk);    /* the second machine: its effects, into the first's sound */
+        } else if (g_machine == g_heard) {
+            mix_into(spu_buf, chunk);
+            platform_audio_push(spu_buf, chunk);
+        }
         n -= (uint64_t)chunk;
         spu_cycle += (uint64_t)chunk * CYCLES_PER_SAMPLE;
     }
@@ -297,7 +324,7 @@ static void on_vblank(void) {
     gpu_vblank();
     bios_vblank();
     spu_catch_up();
-    platform_frame();
+    if (!machine_vblank()) platform_frame();    /* the second machine: no window, input from the first's */
     uint64_t next_line = (line_at(g_cpu.cycles) / LINES_PER_FRAME + 1) * LINES_PER_FRAME + VBLANK_LINE;
     sched_set(EV_VBLANK, line_start(next_line));
 }
@@ -307,6 +334,7 @@ static int in_events;
 
 void events_run(CPU *c) {
     if (g_view2_run) { p2view_events(c); return; }
+    if (g_machine_probe) { c->next_event = UINT64_MAX; return; }   /* machine_hold's question */
     in_events++;
     for (;;) {
         uint64_t now = c->cycles;
@@ -338,8 +366,19 @@ void events_run(CPU *c) {
     }
     if (call_pending && in_events == 0 && !g_in_exception) run_call_test(c);
     sched_update_next(c);
-    if (g_quit) {
+    if (g_quit && !g_machine) {
         memcard_flush();
         exit(0);
     }
+}
+
+void sched_machine(MachineAdd add) {
+    add("events", ev_time, sizeof ev_time);
+    add("timers", tm, sizeof tm);
+    add("istat", &g_istat, sizeof g_istat);
+    add("imask", &g_imask, sizeof g_imask);
+    add("frame", &g_frame, sizeof g_frame);
+    add("spu_cycle", &spu_cycle, sizeof spu_cycle);
+    add("call_pending", &call_pending, sizeof call_pending);
+    add("in_events", &in_events, sizeof in_events);
 }

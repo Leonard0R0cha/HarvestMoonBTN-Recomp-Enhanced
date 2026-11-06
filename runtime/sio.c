@@ -249,3 +249,7 @@ void sio_write(uint32_t off, uint32_t v, int width) {
 void sio_card_changed(int port) {
     s.mc_flag[port] |= 0x08;
 }
+
+void sio_machine(MachineAdd add) {
+    add("sio", &s, sizeof s);
+}

@@ -1029,3 +1029,13 @@ void gte_load_state(const void *src)
     memcpy(&g, src, sizeof g);
     memset(pg, 0, sizeof pg);
 }
+
+#ifndef MACHINE_ADD
+#define MACHINE_ADD
+typedef void (*MachineAdd)(const char *name, void *p, size_t n);
+#endif
+void gte_machine(MachineAdd add) {
+    add("gte", &g, sizeof g);
+    add("gte_pgxp", pg, sizeof pg);
+    add("gte_rtp", &rtp_count, sizeof rtp_count);
+}

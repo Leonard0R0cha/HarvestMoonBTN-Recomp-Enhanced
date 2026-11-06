@@ -175,3 +175,12 @@ void mem_write32_slow(uint32_t a, uint32_t v) {
     if ((a & 0xFFFFFF00u) == 0xFFFE0100u) { cache_ctrl = v; return; }
     io_write(a & 0x1FFFFFFF, v, 4);
 }
+
+void mem_machine(MachineAdd add) {
+    add("ram", g_ram, sizeof g_ram);
+    add("scratch", g_scratch, sizeof g_scratch);
+    add("port_text", g_port_text, sizeof g_port_text);
+    add("memctrl", memctrl, sizeof memctrl);
+    add("ram_size", &ram_size_reg, sizeof ram_size_reg);
+    add("cache_ctrl", &cache_ctrl, sizeof cache_ctrl);
+}

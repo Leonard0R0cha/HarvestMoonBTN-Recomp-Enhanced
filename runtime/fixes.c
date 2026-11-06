@@ -145,15 +145,15 @@ static uint32_t stamina_row(CPU *c, uint32_t ot, uint32_t p, int y, int letter, 
  * (and the stamina window under it), every part of them is built semi-transparent: the window
  * builders and the glyph routine have a flag for it on the stack (hud_fade). The blending of
  * untextured parts is the drawing mode's in effect (a cave's or a lake's can subtract): the window
- * gets one of its own, the glyphs' (E100060Eh, 50% / 50%), drawn first. Kept apart for the game
- * and the second window's run. */
+ * gets one of its own, the glyphs' (E100060Eh, 50% / 50%), drawn first. Kept apart for the game,
+ * the second window's run and the second machine. */
 int g_clock_draw;
 static uint32_t clock_ot;
 #define FADE_BODY 40                    /* how high the farmer is above its feet */
 #define FADE_HOLD 20                    /* frames it stays see-through after (no blinking) */
-static struct { int x0, y0, x1, y1, seen, on, hold; } fade_at[2];
+static struct { int x0, y0, x1, y1, seen, on, hold; } fade_at[3];
 
-static int fade_slot(void) { return g_view2_run ? 1 : 0; }
+static int fade_slot(void) { return g_machine ? 2 : g_view2_run ? 1 : 0; }
 
 void hud_fade_anchor(int x, int y, int kind) {
     int i = fade_slot();

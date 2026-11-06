@@ -57,6 +57,7 @@ OPTIONS = [
     ('video', 'video', 'perspective', 'bool'),
     ('video', 'video', 'interp', 'bool'),
     ('video', 'video', 'texturepack', 'bool'),
+    ('video', 'video', 'portraits', 'bool'),
     ('video', 'video', 'dumptextures', 'bool'),
     ('video', 'video', 'drawthreads', 'choice:auto|0|1|2|3|4'),
     ('video', 'video', 'scale', 'spin8'),
@@ -84,7 +85,7 @@ OPTIONS = [
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
-     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4')] \
+     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
   + [('cheats', 'cheats', 'cheat_money', 'edit:0|10000|100000|1000000|9999999'), ('cheats', 'cheats', 'cheat_stamina', 'bool'),
      ('cheats', 'cheats', 'cheat_clock', 'bool'), ('cheats', 'cheats', 'cheat_bag', 'bool'),
      ('cheats', 'cheats', 'cheat_items', 'bool'), ('cheats', 'cheats', 'cheat_tools', 'bool')]
@@ -131,6 +132,7 @@ REQUIRES = {
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'drawthreads': (_up2, 'need_up2'),
     'texturepack': (_up2, 'need_up2'),
+    'portraits': (_up2, 'need_up2'),
     'dumptextures': (_up2, 'need_up2'),
 }
 
@@ -157,6 +159,8 @@ TEXT = {
                    'at 30). Drawn on spare processor cores; F9 switches it while playing.'),
         'texturepack': ('Texture pack', 'Draws people, animals, field objects, text and the HUD with the images in '
                         'the textures folder (not the 3D world). See docs/GRAPHICS.md.'),
+        'portraits': ('Redrawn portraits', "Characters' faces in conversations drawn anew in high resolution "
+                      '(the images in textures/portraits). Off: the original portraits.'),
         'dumptextures': ('Dump textures', 'Writes each sprite texture the game shows to textures/dump, '
                          'to draw a texture pack from.'),
         'drawthreads': ('Drawing threads', 'Processor threads that draw the 3D together, each a share of the '
@@ -196,6 +200,11 @@ TEXT = {
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
+        'split': ('Farmer 2 goes into buildings alone (experimental)', 'On the farm, farmer 2 can go through a '
+                  'door on its own (X at a door outside): it plays in its own window, in a second copy of the game, '
+                  'while farmer 1 stays where it is. Time, money and the farm are the same for both. They are '
+                  'together again when both are in the same place. Uses about twice the processor while apart. '
+                  'Online: the host\'s choice counts, and each one sees and hears their own farmer.'),
         'p2view_upscale': ('Farmer 2\'s window resolution', 'auto = the same as the game\'s window. 1 is the '
                            'lightest (original 320x240), for a slower PC, but at 30 pictures a second; above the '
                            'game\'s does nothing.'),
@@ -232,6 +241,8 @@ TEXT = {
                    '30). Usa núcleos livres do processador; F9 liga e desliga durante o jogo.'),
         'texturepack': ('Pacote de texturas', 'Desenha pessoas, animais, objetos do campo, texto e o HUD com as '
                         'imagens da pasta textures (não o mundo 3D). Veja docs/GRAPHICS.md.'),
+        'portraits': ('Retratos redesenhados', 'Rostos dos personagens nas conversas redesenhados em alta '
+                      'resolução (as imagens de textures/portraits). Desligado: os retratos originais.'),
         'dumptextures': ('Exportar texturas', 'Grava cada textura de sprite que o jogo mostra em textures/dump, '
                          'para criar um pacote de texturas.'),
         'drawthreads': ('Threads de desenho', 'Threads do processador que desenham o 3D juntas, cada uma uma '
@@ -270,6 +281,12 @@ TEXT = {
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
+        'split': ('Fazendeiro 2 entra nas construções sozinho (experimental)', 'Na fazenda o fazendeiro 2 pode '
+                  'passar por uma porta sozinho (X na porta, do lado de fora): ele joga na janela dele, numa segunda '
+                  'cópia do jogo, e o fazendeiro 1 fica onde está. Hora, dinheiro e fazenda são os mesmos para os '
+                  'dois. Eles se juntam de novo quando os dois estão no mesmo lugar. Usa cerca do dobro do '
+                  'processador enquanto estão separados. No coop online vale a escolha do anfitrião, e cada um '
+                  'vê e ouve o seu fazendeiro.'),
         'p2view_upscale': ('Resolução da janela do fazendeiro 2', 'auto = a mesma da janela do jogo. 1 é a mais '
                            'leve (original 320x240), para PC mais fraco, mas a 30 imagens por segundo; acima da do '
                            'jogo não muda nada.'),
@@ -306,6 +323,8 @@ TEXT = {
                    '30). Usa núcleos libres del procesador; F9 lo alterna durante el juego.'),
         'texturepack': ('Paquete de texturas', 'Dibuja personas, animales, objetos del campo, texto y el HUD con las '
                         'imágenes de la carpeta textures (no el mundo 3D). Ver docs/GRAPHICS.md.'),
+        'portraits': ('Retratos redibujados', 'Las caras de los personajes en las conversaciones redibujadas en '
+                      'alta resolución (las imágenes de textures/portraits). Desactivado: los retratos originales.'),
         'dumptextures': ('Exportar texturas', 'Guarda cada textura de sprite que el juego muestra en textures/dump, '
                          'para crear un paquete de texturas.'),
         'drawthreads': ('Hilos de dibujo', 'Hilos del procesador que dibujan el 3D juntos, cada uno una parte de '
@@ -346,6 +365,12 @@ TEXT = {
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
+        'split': ('El granjero 2 entra solo en los edificios (experimental)', 'En la granja el granjero 2 puede '
+                  'pasar solo por una puerta (X en la puerta, desde fuera): juega en su ventana, en una segunda '
+                  'copia del juego, y el granjero 1 se queda donde está. La hora, el dinero y la granja son los '
+                  'mismos para los dos. Se juntan otra vez cuando los dos están en el mismo lugar. Usa cerca del '
+                  'doble de procesador mientras están separados. En el coop online vale lo que elija el anfitrión, '
+                  'y cada uno ve y oye a su granjero.'),
         'p2view_upscale': ('Resolución de la ventana del granjero 2', 'auto = la misma que la ventana del juego. 1 '
                            'es la más ligera (original 320x240), para un PC más lento, pero a 30 imágenes por segundo; '
                            'más que la del juego no cambia nada.'),

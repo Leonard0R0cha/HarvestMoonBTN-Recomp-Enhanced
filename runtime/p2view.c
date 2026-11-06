@@ -46,6 +46,7 @@ static jmp_buf jb;
 static unsigned runs, dropped;
 
 static int p2view_built(void);
+static uint64_t rejoin_until;
 
 void p2view_init(void) {
     if (g_view2 <= 0) return;
@@ -116,7 +117,7 @@ static void load(CPU *c) {
 
 /* entry of the farm's frame */
 void p2view_frame(CPU *c) {
-    if (g_view2 <= 0 || g_view2_run) return;
+    if (g_view2 <= 0 || g_view2_run || g_machine || machine_split()) return;   /* apart: the second machine draws it */
     if (p2_menu() >= 0) return;     /* a talk or menu: the game stands still, the windows are held */
     tried_frame = frame_count();
     save(c);
@@ -179,6 +180,7 @@ static void track(void) {
 /* the lists the main loop draws were built by the farm's frame; when it ran last, not long ago.
  * NULL: the last run was dropped, the second window keeps its picture */
 const uint8_t *p2view_ram(void) {
+    if (machine_split()) return g_ram;
     track();
     if (p2_menu() >= 0) return built_ok ? NULL : g_ram;    /* a talk or menu: held */
     if (!built_ok) return g_ram;
@@ -200,7 +202,7 @@ static int p2view_built(void) {
 }
 
 int p2view_held(void) {
-    return g_view2 > 0 && !p2view_ram();
+    return g_view2 > 0 && !machine_split() && (frame_count() < rejoin_until || !p2view_ram());
 }
 
 /* Each window shows its own farmer's talks and menus. The game stands still while one is open, so
@@ -209,10 +211,18 @@ int p2view_held(void) {
  * and the game's window keeps its own (platform_sdl.c). */
 /* a scene no farmer started (p2.c): farmer 2's window shows the game's picture too */
 int p2view_scene(void) {
-    return g_view2 > 0 && p2_scene();
+    return g_view2 > 0 && !machine_split() && p2_scene();
 }
 
 int p2view_swapped(void) {
     track();
-    return g_view2 > 0 && swapped;
+    return g_view2 > 0 && !machine_split() && swapped;
+}
+
+/* the farmers meet again (machine.c): the second GPU is given the game's (its VRAM is the game's
+ * again) and shows what it drew a frame or two before, the player's view: the second window keeps
+ * the second machine's last picture till its own runs show */
+#define REJOIN_HOLD 4
+void p2view_rejoin(void) {
+    rejoin_until = frame_count() + REJOIN_HOLD;
 }
