@@ -177,6 +177,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "earlycabinet=", 13)) { g_cfg.earlycabinet = atoi(tok + 13); continue; }
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
         if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
             int *v = cheat_ev[n_cheat_ev].v;
             if (sscanf(tok + 7, "%d=%d:%d:%d:%d:%d:%d", &cheat_ev[n_cheat_ev].frame, &v[0], &v[1], &v[2], &v[3],
@@ -392,8 +393,14 @@ static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, in
 }
 
 /* ------------------------------------------------------------------ init */
+/* SDL also sends SDL_CONTROLLERDEVICEADDED at start for the controllers opened at init: opened again,
+ * the same controller (SDL hands back the same one) was the first and the second, so with farmer 2
+ * the first controller moved both farmers */
 static void open_pad(int index) {
     if (!SDL_IsGameController(index)) return;
+    SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(index);
+    for (int i = 0; i < MAX_PADS; i++)
+        if (pads[i] && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == id) return;
     for (int i = 0; i < MAX_PADS; i++) {
         if (!pads[i]) {
             pads[i] = SDL_GameControllerOpen(index);
@@ -446,6 +453,7 @@ int platform_init(void) {
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
+            if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
                     g_cfg.cheat_bag, g_cfg.cheat_items, g_cfg.cheat_tools);
             atexit(record_close);

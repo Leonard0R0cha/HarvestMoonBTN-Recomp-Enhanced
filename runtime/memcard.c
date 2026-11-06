@@ -68,6 +68,7 @@ void memcard_touch(void) {
 void memcard_mark_dirty(int slot) { card_dirty[slot] = true; }
 
 void memcard_flush(void) {
+    if (g_machine) return;      /* the second machine's cards are its own (machine.c) */
     for (int s = 0; s < 2; s++) {
         if (!card_dirty[s] || !card_path[s][0]) continue;
         char tmp[1100];
@@ -325,10 +326,11 @@ static void relist(void) {
 #define DIARY_CURSOR   0x80137587u
 #define DELETE_HOLD    120   /* frames TRIANGLE is held to delete (2 s) */
 
+static uint16_t prev;
+static uint64_t held_since;
+static bool wait_release;
+
 uint32_t memcard_diary_menu(uint32_t result, int loading) {
-    static uint16_t prev;
-    static uint64_t held_since;
-    static bool wait_release;
     uint16_t pad = g_pad_buttons[0], down = (uint16_t)(pad & ~prev);
     prev = pad;
     if (relist_from != UINT64_MAX && frame_count() > relist_from) relist_from = UINT64_MAX;   /* list is back */
@@ -365,4 +367,22 @@ uint32_t memcard_diary_menu(uint32_t result, int loading) {
     if (b < 0 || !memcard_switch_bank(b, true)) return result;
     relist();
     return 3;
+}
+
+/* the second machine (machine.c): what each machine keeps (the cards' files are written only by
+ * the first) */
+void memcard_machine(MachineAdd add) {
+    add("card", card, sizeof card);
+    add("card_dirty", card_dirty, sizeof card_dirty);
+    add("card_access", &last_access, sizeof last_access);
+    add("card_menu", &slot_answered, sizeof slot_answered);
+    add("card_busy", &busy_text, sizeof busy_text);
+    add("card_relist", &relist_from, sizeof relist_from);
+    add("card_deleting", &deleting, sizeof deleting);
+    add("card_bank", &bank, sizeof bank);
+    add("card_diary", &diary_menu_frame, sizeof diary_menu_frame);
+    add("card_req", &requested_bank, sizeof requested_bank);
+    add("card_prev", &prev, sizeof prev);
+    add("card_held", &held_since, sizeof held_since);
+    add("card_wait", &wait_release, sizeof wait_release);
 }

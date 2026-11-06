@@ -32,7 +32,7 @@ typedef int sock_t;
 #define close_sock close
 #endif
 
-#define NET_VERSION 3
+#define NET_VERSION 4
 #define RING 256                /* frames of input kept (more than any delay) */
 #define HASH_EVERY 60
 #define TIMEOUT_MS 15000
@@ -213,7 +213,7 @@ static uint32_t ram_hash(void) {
     const uint32_t *w = (const uint32_t *)ram_ptr(0x80000000u);
     uint32_t h = 2166136261u;
     for (int i = 0; i < 0x200000 / 4; i++) h = (h ^ w[i]) * 16777619u;
-    return h;
+    return machine_hash(h);         /* the second machine's too, the farmers apart */
 }
 
 /* ------------------------------------------------------------------ start */
@@ -226,18 +226,18 @@ static const char *card_name(char *out, size_t n, const char *dir, int b) {
 /* the settings that change what the game does: both sides must use the host's */
 static void settings_line(char *s, size_t n) {
     snprintf(s, n, "fastcd=%d autoslot=%d quickui=%d ws=%d:%d skipscenes=%d textspeed=%d overclock=%d emptybag=%d "
-             "earlycabinet=%d cropwalk=%d fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d staminabar=%d\n", g_cfg.fast_cd, g_cfg.autoslot, g_cfg.quickui,
+             "earlycabinet=%d cropwalk=%d fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d split=%d staminabar=%d\n", g_cfg.fast_cd, g_cfg.autoslot, g_cfg.quickui,
              g_cfg.ws_w, g_cfg.ws_h, g_cfg.skipscenes, g_cfg.textspeed, g_cfg.overclock, g_cfg.emptybag, g_cfg.earlycabinet, g_cfg.cropwalk, g_cfg.fastcard,
              g_cfg.fastload, g_p2_enabled, g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock, g_cfg.cheat_bag,
-             g_cfg.cheat_items, g_cfg.cheat_tools, g_cfg.staminabar);
+             g_cfg.cheat_items, g_cfg.cheat_tools, g_split, g_cfg.staminabar);
 }
 
 static void apply_settings(const char *s) {
     sscanf(s, "fastcd=%d autoslot=%d quickui=%d ws=%d:%d skipscenes=%d textspeed=%d overclock=%d emptybag=%d "
-           "earlycabinet=%d cropwalk=%d fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d staminabar=%d", &g_cfg.fast_cd, &g_cfg.autoslot, &g_cfg.quickui,
+           "earlycabinet=%d cropwalk=%d fastcard=%d fastload=%d p2=%d cheats=%d:%d:%d:%d:%d:%d split=%d staminabar=%d", &g_cfg.fast_cd, &g_cfg.autoslot, &g_cfg.quickui,
            &g_cfg.ws_w, &g_cfg.ws_h, &g_cfg.skipscenes, &g_cfg.textspeed, &g_cfg.overclock, &g_cfg.emptybag, &g_cfg.earlycabinet, &g_cfg.cropwalk,
            &g_cfg.fastcard, &g_cfg.fastload, &g_p2_enabled, &g_cfg.cheat_money, &g_cfg.cheat_stamina,
-           &g_cfg.cheat_clock, &g_cfg.cheat_bag, &g_cfg.cheat_items, &g_cfg.cheat_tools, &g_cfg.staminabar);
+           &g_cfg.cheat_clock, &g_cfg.cheat_bag, &g_cfg.cheat_items, &g_cfg.cheat_tools, &g_split, &g_cfg.staminabar);
     g_p2_demo = 0;
 }
 

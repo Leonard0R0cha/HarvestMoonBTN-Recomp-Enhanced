@@ -245,6 +245,8 @@ void quick_bag_filter(void);
 /* p2.c: a second farmer, drawn by the player's drawing routine */
 void p2_draw(CPU *c);
 void p2_tick(CPU *c);
+void machine_farm_frame(CPU *c);  /* the farm's frame begins: the second machine parks / is taken up (machine.c) */
+int p2_way_out(CPU *c);           /* p2.c: the second machine's farmer 2 does not leave the farm */
 void p2view_frame(CPU *c);      /* entry of the farm's frame: run once more for farmer 2's window (p2view.c) */
 extern int g_view2_run;         /* ... while that run goes */
 void p2_tick_begin(void);

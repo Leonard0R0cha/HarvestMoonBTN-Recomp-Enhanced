@@ -233,6 +233,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `widescreen` | `off` | `16:9`, `16:10` or `21:9` = wider 3D view; 2D objects and the HUD keep their shape with `upscale` 2+ |
 |  | `interp` | `0` | `1` = in-between pictures: the camera and the 3D scenery move at 60 fps while the game runs at 30 (needs `pgxp`; 3 extra CPU threads) |
 |  | `texturepack` | `0` | `1` = draw 2D sprites (people, animals, field objects, text, HUD) with the replacement images in `textures/` next to the game ([texture packs](docs/GRAPHICS.md#texture-packs); needs `upscale` 2+) |
+|  | `portraits` | `0` | `1` = draw the dialogue portraits with the redrawn images in `textures/portraits/` (same format as a texture pack, switched on and off on its own; needs `upscale` 2+) |
 |  | `dumptextures` | `0` | `1` = write each 2D sprite texture the game shows to `textures/dump/`, to draw a texture pack from (needs `upscale` 2+) |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
@@ -251,7 +252,7 @@ learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPHICS.md).
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
 | `[launcher]` | `language` |  | the launcher's language, `en`, `pt` or `es` (its flags set it); not set: the system's |
 
-Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--no-crackfix`, `--perspective`, `--no-sprite-depth`, `--widescreen W:H`, `--interp`, `--texturepack`, `--dumptextures`, `--fastcd`,
+Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--upscale N`, `--pgxp`, `--no-crackfix`, `--perspective`, `--no-sprite-depth`, `--widescreen W:H`, `--interp`, `--texturepack`, `--portraits`, `--dumptextures`, `--fastcd`,
 `--no-autoslot`, `--card N`, `--overclock N`, `--savedir DIR`, `--verify-data`, `--log 0..4`, and a disc image or data pack path. Testing
 options are described in [docs/TECHNICAL.md](docs/TECHNICAL.md#testing-and-debugging).
 

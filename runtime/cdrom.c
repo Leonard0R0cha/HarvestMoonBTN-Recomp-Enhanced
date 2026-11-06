@@ -679,3 +679,12 @@ void cdrom_dma_read(uint32_t *dst, int words) {
         dst[i] = w;
     }
 }
+
+void cdrom_machine(MachineAdd add) {
+    add("cdrom", &cd, sizeof cd);
+    add("xa_buf", xa_buf, sizeof xa_buf);
+    add("xa_rd", &xa_rd, sizeof xa_rd);
+    add("xa_wr", &xa_wr, sizeof xa_wr);
+    add("xa_count", &xa_count, sizeof xa_count);
+    add("xa_sectors", &xa_sectors, sizeof xa_sectors);
+}

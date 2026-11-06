@@ -2986,6 +2986,9 @@ void view2_replay_run3(const InterpJob *j, int32_t y0, int32_t y1);
 #define gpu_replay_run3 view2_replay_run3
 #endif
 
+#ifdef GPU_VIEW2
+int view2_follows_player;           /* machine.c: the second machine draws here (the farmers apart) */
+#endif
 static FrameRec *frec;              /* [2] */
 static Camera cam_cur;
 static InterpJob *job;
@@ -3012,12 +3015,22 @@ static void frame_record(const uint32_t *p, uint32_t op)
         if (anchor_gen - cam_cur.gen > 3)
             r->cam.gen = 0;
 #ifdef GPU_VIEW2
-        /* the second view follows the second farmer: its half step, not the player's */
-        r->player = farmer2_gen + 3 >= anchor_gen;
-        r->pcx = farmer2_map.cx;
-        r->pcy = farmer2_map.cy;
-        r->px = (float)farmer2_map.cx + farmer2_map.dx;
-        r->py = (float)farmer2_map.cy + farmer2_map.dy;
+        /* the second view follows the second farmer: its half step, not the player's; but the
+         * second machine (machine.c), which draws here while the farmers are apart, has farmer 2
+         * as its player (with the second farmer's, farmer 2 shook in the in-between pictures) */
+        if (view2_follows_player) {
+            r->player = player_gen + 3 >= anchor_gen;
+            r->pcx = player_map.cx;
+            r->pcy = player_map.cy;
+            r->px = (float)player_map.cx + player_map.dx;
+            r->py = (float)player_map.cy + player_map.dy;
+        } else {
+            r->player = farmer2_gen + 3 >= anchor_gen;
+            r->pcx = farmer2_map.cx;
+            r->pcy = farmer2_map.cy;
+            r->px = (float)farmer2_map.cx + farmer2_map.dx;
+            r->py = (float)farmer2_map.cy + farmer2_map.dy;
+        }
 #else
         r->player = player_gen + 3 >= anchor_gen;
         r->pcx = player_map.cx;
