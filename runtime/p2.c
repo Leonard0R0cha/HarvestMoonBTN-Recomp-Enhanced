@@ -239,7 +239,7 @@ static int trade_kind;          /* 0 the tools, 1 the items */
 static int trade_next;          /* the farmer whose items' menu opens next */
 static int trade_places_n;      /* the other farmer's places in the storage */
 static uint8_t trade_store[STORE_PLACES * 6];
-#define LENT_MAX 17             /* what farmer 2 put away for a save: where, from where, what */
+#define LENT_MAX 18             /* what farmer 2 put away for a save: where, from where, what */
 static int lent_n;
 static uint32_t lent_at[LENT_MAX];
 static uint16_t lent_slot[LENT_MAX];
@@ -248,6 +248,7 @@ static uint8_t lent_e[LENT_MAX][6];
 #define STORAGES_SIZE (3 * STORE_PLACES * 6)
 static uint8_t lent_snap[STORAGES_SIZE];
 static int lent_exchanged;      /* put away while farmer 2 had the game: "me" was the player's */
+static uint32_t lent_hold;      /* the +06C flags of the item held up in the arms, put away too */
 
 static int16_t half(const uint8_t *s, int at) { return (int16_t)(s[at] | s[at + 1] << 8); }
 static void set_half(uint8_t *s, int at, int v) { s[at] = (uint8_t)v; s[at + 1] = (uint8_t)(v >> 8); }
@@ -905,7 +906,7 @@ void p2_aim_view(void) {
 #define STATE(X) X(me) X(my_globals) X(my_pad) X(my_log) X(my_anims) X(placed) X(inside) X(ticks) \
     X(owner) X(exchanged) X(asked) X(thrown_by_p2) X(flying_before) X(landing) X(loaded) X(seen_x) X(seen_z) X(last_tick) X(buttons) X(rested_day) X(area) X(held) X(count) X(fainted) X(idle_clock) \
     X(trade_who) X(trade_kind) X(trade_next) X(trade_places_n) X(trade_store) \
-    X(lent_n) X(lent_at) X(lent_slot) X(lent_e) X(lent_snap) X(lent_exchanged)
+    X(lent_n) X(lent_at) X(lent_slot) X(lent_e) X(lent_snap) X(lent_exchanged) X(lent_hold)
 #define SIZE(v) + sizeof v
 #define SAVE(v) memcpy(o, &v, sizeof v); o += sizeof v;
 #define LOAD(v) memcpy(&v, i, sizeof v); i += sizeof v;
@@ -1139,12 +1140,14 @@ static uint32_t storage_of(uint16_t id, int tool) {
     return 0;
 }
 
-/* farmer 2's tools (in hand and in the rucksack) and the items in its rucksack go to the storages,
- * each to the first free place; lend: noted, to be taken back (p2_take_back) */
+/* farmer 2's tools (in hand and in the rucksack), the items in its rucksack and the item held up
+ * in its arms (+08A, with the +06C flags that hold it up) go to the storages, each to the first free
+ * place; lend: noted, to be taken back (p2_take_back) */
 static void put_away(int lend) {
     if (!placed) return;
-    for (int k = 0; k < 17; k++) {
-        int at = k == 0 ? CARRIED : k < 9 ? 0x90 + (k - 1) * 6 : 0xC0 + (k - 9) * 6;
+    lent_hold = 0;
+    for (int k = 0; k < 18; k++) {
+        int at = k == 0 ? CARRIED : k < 9 ? 0x90 + (k - 1) * 6 : k < 17 ? 0xC0 + (k - 9) * 6 : 0x8A;
         uint8_t *e = me + at;
         if (!(e[0] | e[1])) continue;
         uint32_t st = storage_of((uint16_t)(e[0] | e[1] << 8), k < 9);
@@ -1158,6 +1161,13 @@ static void put_away(int lend) {
                     memcpy(lent_e[lent_n++], e, 6);
                 }
                 memset(e, 0, 6);
+                if (k == 17) {          /* nothing held up any more */
+                    uint32_t f;
+                    memcpy(&f, me + 0x6C, 4);
+                    if (lend) lent_hold = f & HOLDING;
+                    f &= ~HOLDING;
+                    memcpy(me + 0x6C, &f, 4);
+                }
                 break;
             }
     }
@@ -1206,6 +1216,15 @@ void p2_take_back(void) {
             MEM_W8(p + i, 0);
             if (in_place) MEM_W8(to + i, lent_e[k][i]);
             else e[i] = lent_e[k][i];
+        }
+        if (lent_slot[k] == 0x8A) {     /* held up in the arms again */
+            if (in_place) MEM_W32(PLAYER + 0x6C, (MEM_R32(PLAYER + 0x6C) & ~HOLDING) | lent_hold);
+            else {
+                uint32_t f;
+                memcpy(&f, me + 0x6C, 4);
+                f = (f & ~HOLDING) | lent_hold;
+                memcpy(me + 0x6C, &f, 4);
+            }
         }
     }
     lent_n = 0;
