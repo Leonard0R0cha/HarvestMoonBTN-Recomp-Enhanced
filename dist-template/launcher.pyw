@@ -78,6 +78,7 @@ OPTIONS = [
     ('game', 'behaviour', 'earlycabinet', 'bool'),
     ('game', 'behaviour', 'cropwalk', 'bool'),
     ('game', 'behaviour', 'staminabar', 'bool'),
+    ('game', 'behaviour', 'bulkfood', 'bool'),
     ('game', 'behaviour', 'record', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
@@ -188,6 +189,8 @@ TEXT = {
                      'middle is always in reach.'),
         'staminabar': ('Stamina under the clock', 'A window under the clock shows your stamina (S) and '
                        'tiredness (F) with bars and numbers.'),
+        'bulkfood': ('Buy food in bulk', 'At a shop shelf you choose how many to buy: one stays in your '
+                     'hands, the rest go to the rucksack and then to the fridge.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
@@ -260,6 +263,8 @@ TEXT = {
                      'sempre fica ao alcance.'),
         'staminabar': ('Stamina embaixo do relógio', 'Uma janela embaixo do relógio mostra a stamina (S) e o '
                        'cansaço (F) com barras e números.'),
+        'bulkfood': ('Comprar comida em lote', 'Na prateleira da loja você escolhe quantas comprar: uma '
+                     'fica na mão, o resto vai para a mochila e depois para a geladeira.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
@@ -333,6 +338,8 @@ TEXT = {
                      'siempre queda al alcance.'),
         'staminabar': ('Energía bajo el reloj', 'Una ventana bajo el reloj muestra tu energía (S) y tu '
                        'cansancio (F) con barras y números.'),
+        'bulkfood': ('Comprar comida por lotes', 'En el estante de la tienda eliges cuántas comprar: una '
+                     'queda en tus manos, el resto va a la mochila y luego a la nevera.'),
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
         'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),
