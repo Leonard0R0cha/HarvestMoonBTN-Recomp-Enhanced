@@ -7,8 +7,8 @@
  * buildings 10, recipes 8, the hearts of wife, child, dog and horse 10 each, chickens 10, cows
  * and sheep 20, Power Berries 10 and the Mystic Berry 2. The page counts the Power Berries (its
  * berry row) but never adds them, nor the Mystic Berry, so a complete farm stops at 88. The sum
- * is in v0 just before it is stored (800FBDF0); this adds them, as Back to nature+'s farm score
- * fix does. The score is worked out each time the page opens, so old saves read right at once. */
+ * is in v0 just before it is stored (800FBDF0); this adds them. The score is worked out each
+ * time the page opens, so old saves read right at once. */
 #define POWER_BERRIES 0x800712BCu   /* halfword: Power Berries eaten (10 in all) */
 #define BERRY_FLAGS 0x80071A6Cu     /* word: 0x200 = the Mystic Berry eaten */
 
@@ -21,7 +21,7 @@ uint32_t farm_score_berries(uint32_t score) {
 }
 
 /* The cabinet in the first house: the pile of boxes there is a thing X looks at (kind 16) that does
- * nothing; it opens the cabinet (kind 23), as in Back to nature+. An area's things to look at are
+ * nothing; it opens the cabinet (kind 23). An area's things to look at are
  * copied to 8009F78C when it loads (800BCF54; the pointer to them is stored at 800BD0B4): its map
  * number, then from +16 up to 50 of 44 bytes, the kind at +2. Maps 80-83 are the first house. */
 #define AREA_THINGS 0x8009F78Cu
@@ -40,7 +40,7 @@ void first_house_cabinet(void) {
 /* Walking through crops: the player's walk asks for collisions at 800CB114 (a2 in s2: 56 when it
  * looks ahead, 0 for the step itself; the mask in t2) and the farm's field answers at 800BE6E4
  * (the query in s1, its mask at +20): a field thing is solid when its picture says so (v0 after
- * 800BE818, with the item's record in v1 and its class byte, +3, in t1). As in Back to nature+, the
+ * 800BE818, with the item's record in v1 and its class byte, +3, in t1). Here the
  * walk's mask gets 0x100000 and a planted crop (record flags 4040h, a class) is not solid then. */
 #define CROP_WALK 0x100000u
 #define CROP_FLAGS 0x4040u
@@ -256,7 +256,7 @@ void clock_window_done(CPU *c) {
 /* An item's picture (800D6A94: in the hands, the rucksack, the menus) comes from the area's own copy
  * when the area has one (800D688C: a crop of the field or the hothouse), else from the disc. That copy
  * draws the crop in the field: its two halves can sit on different pictures, and the item shown with
- * them gets wrong colours (the hothouse eggplant held up). As in Back to nature+, such a copy (and
+ * them gets wrong colours (the hothouse eggplant held up). Such a copy (and
  * always item 235's) is not used: the picture is read from the disc */
 #define AREA_PICTURES 0x800A0378u   /* -> the area: +10 its list of pictures (-1 none) */
 #define PICTURE_IDS 0x80126254u     /* -> the list's items: a count, then the item numbers (halfwords) */
@@ -303,7 +303,7 @@ int item_picture_from_disc(CPU *c) {
 
 /* Bulk food (bulkfood): a thing on a shop's shelf is taken in the hands and 8011C298 asks whether to
  * buy it (its state at 8012D524, the next one at 8012D528; a1 / a2 the question, a3 how it is sold:
- * 0 the shelf's; s1 the item, s3 the price). As in Back to nature+, a yes for food asks how many with
+ * 0 the shelf's; s1 the item, s3 the price). A yes for food asks how many with
  * the game's own number window (the fodder's: 8011CF40 the number, the text 77; 8012D538: +4 the
  * window's text, +8 the number, +10 the price; 8012D52C = 1 shows it), as many as the rucksack's empty
  * places and the fridge (once the house has the kitchen) can take: one stays in the hands, the rest
