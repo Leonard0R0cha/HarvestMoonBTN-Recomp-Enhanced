@@ -401,7 +401,8 @@ def R(n):
 # is a menu, from its first frame and with or without a black screen before it, and widens it:
 # g_menu_tile is the pattern's period across, 96 (four animals in turn, the next row starting one
 # later, so the stripes run diagonally).
-SITE_HOOKS = {0x8001E02C: 'SPRITE_ANCHOR(R[3], R[2], R[4] == 0x80128B88u ? (p2_drawing() ? 3 : 1) : 0);',
+SITE_HOOKS = {0x8001E02C: '{ int k_ = R[4] == 0x80128B88u ? (p2_drawing() ? 3 : 1) : 0; '
+                          'SPRITE_ANCHOR(R[3], R[2], k_); hud_fade_anchor((int16_t)R[3], (int16_t)R[2], k_); }',
               0x800D9590: 'SPRITE_ALIAS(MEM_R16(R[29] + 48u), MEM_R16(R[29] + 52u), MEM_R32(R[29] + 16u), R[2]);',
               0x8001D45C: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
               0x8001D4A4: 'R[4] = (uint32_t)gte_widescreen_angle((int32_t)R[4]);',
@@ -434,7 +435,16 @@ ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
 # (x, y, width in a1-a3, height and colours on the stack); the clock is the one at 230,18, 74x28.
 # The glyph routine (80019070) is watched for the arguments it is given.
 ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
-ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c);'   # 80019070 is a HUD builder too (keep its tag)
+ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
+# The clock (and the stamina) see-through while the farmer is behind them (runtime/fixes.c): the
+# window builders' semi-transparency flag on the stack (background +40, border lines +28, corner
+# pixels +20), set while the clock routine (GF_FARM 800FB674) builds. Its window (800136D4 through
+# 80022580, back at 800225A8) gets a drawing mode first, for the blending (clock_window_done).
+ENTRY_HOOKS[0x800153BC] = 'HUD_BEGIN(); hud_fade(c, 40);'
+ENTRY_HOOKS[0x8001530C] = 'HUD_BEGIN(); hud_fade(c, 28);'
+ENTRY_HOOKS[0x8001526C] = 'HUD_BEGIN(); hud_fade(c, 20);'
+ENTRY_HOOKS[0x800136D4] = 'clock_window(c);'
+SITE_HOOKS[0x800225A8] = 'clock_window_done(c);'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
 # VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would
@@ -495,6 +505,7 @@ MODULE_SITE_HOOKS = {
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
                 0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
                 0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
+                0x800FB664: 'g_clock_draw = 0;',     # back from the clock routine (jal at 800FB65C)
                 0x800C7B70: 'R[3] = p2_x_target(R[3]);',
                 # the map screen (SELECT) draws the map picture (320x240 in quads: the map and a
                 # row of cloud strips under it) with the jal at 8011ED54 (8011ECC4), and while it
@@ -541,7 +552,10 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   0x800F7D34: 'if (p2_trade_move(c)) return;',
                                   0x800D57A4: 'if (p2_trade_kind(c)) return;',
                                   # what bumps into the player (animals) bumps into the second farmer too
-                                  0x800BE4A8: 'if (p2_bump(c)) return;'}}
+                                  0x800BE4A8: 'if (p2_bump(c)) return;',
+                                  # the clock: what it builds goes to the right edge in widescreen and
+                                  # turns see-through over the farmer (runtime/fixes.c)
+                                  0x800FB674: 'clock_begin(c);'}}
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 

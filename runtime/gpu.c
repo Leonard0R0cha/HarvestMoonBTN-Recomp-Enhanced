@@ -274,6 +274,8 @@ static int hud_after;
 int g_sprite_tags, g_sprite_on, g_sprite_depth, g_hud_call, g_held_call, g_item_call, g_menu_tile;
 #define HUD_CX INT16_MIN            /* scale centre of HUD tags: the middle of the drawing area */
 #define MENU_CX (INT16_MIN + 1)     /* tag of a full-screen menu's background tile */
+#define HUD_RIGHT_CX (INT16_MIN + 2)    /* a HUD tag kept at the right edge (the clock) */
+#define IS_HUD(cx) ((cx) == HUD_CX || (cx) == HUD_RIGHT_CX)
 static const PgxpWord hud_word = { 0, 0.0f, 0.0f, -1.0f, HUD_CX, 0, 0.0f };   /* a HUD tag */
 float g_sprite_ws = 1.0f;
 
@@ -380,12 +382,14 @@ void gpu_menu_begin(int period)
     sprite_map = menu;
 }
 
+/* on: 1 the HUD (scaled about the middle), 2 the HUD at the right edge (scaled about it) */
 void gpu_hud_begin(int on)
 {
     static const SpriteMap hud = { 0.0f, 0.0f, 1.0f, 0.0f, HUD_CX, 0 };
+    static const SpriteMap right = { 0.0f, 0.0f, 1.0f, 0.0f, HUD_RIGHT_CX, 0 };
     ROUTE_BUILD(gpu_hud_begin(on));
-    g_sprite_on = on;
-    sprite_map = hud;
+    g_sprite_on = on != 0;
+    sprite_map = on == 2 ? right : hud;
 }
 
 void gpu_sprite_alias(int ax, int ay, int bx, int by)
@@ -736,7 +740,7 @@ static inline float hud_sx(void)
  * widescreen squeeze. */
 static inline float sprite_sx(const PgxpWord *t)
 {
-    if (t->cx == HUD_CX)
+    if (IS_HUD(t->cx))
         return hud_sx();
     return (g_sprite_depth ? -t->w : 1.0f) * g_sprite_ws;
 }
@@ -753,9 +757,10 @@ static inline float sprite_sy(const PgxpWord *t)
 static inline int32_t sprite_cx(const PgxpWord *t)
 {
     static const int16_t disp_w[4] = { 256, 320, 512, 640 };
-    if (t->cx != HUD_CX)
+    if (!IS_HUD(t->cx))
         return t->cx + S.offs_x;
-    return S.offs_x + ((S.disp_mode & 0x40u) ? 368 : disp_w[S.disp_mode & 3u]) / 2;
+    int32_t w = (S.disp_mode & 0x40u) ? 368 : disp_w[S.disp_mode & 3u];
+    return S.offs_x + (t->cx == HUD_RIGHT_CX ? w : w / 2);
 }
 
 #if VK_MAIN
@@ -811,7 +816,7 @@ static void interp_point(float *x, float *y, float *z)
 static const PgxpWord *interp_tag(const PgxpWord *t, PgxpWord *tmp)
 {
     float x, y, z;
-    if (!replaying || !t || t->cx == HUD_CX || t->cx == MENU_CX)
+    if (!replaying || !t || IS_HUD(t->cx) || t->cx == MENU_CX)
         return t;
     *tmp = *t;
     if (t->cx == ipcx && t->cy == ipcy) {
@@ -1836,7 +1841,7 @@ static const TexImage *texpack_quad(const PgxpWord *t, const TriVtx *v, int nv)
 {
     int32_t u0 = v[0].u, u1 = v[0].u, v0 = v[0].v, v1 = v[0].v, i;
     const TexImage *r;
-    if (t->cx == HUD_CX || t->cx == MENU_CX)
+    if (IS_HUD(t->cx) || t->cx == MENU_CX)
         return NULL;
     for (i = 1; i < nv; i++) {
         u0 = v[i].u < u0 ? v[i].u : u0;
@@ -2003,7 +2008,7 @@ static void cmd_polygon(const uint32_t *p)
                 edge = tex && quad;
                 st = &hud_word;
             }
-            if (st && st->cx == HUD_CX && hud_sx() != 1.0f)
+            if (st && IS_HUD(st->cx) && hud_sx() != 1.0f)
                 hud_after = 1;
             if (!st && hud_after && hud_sx() != 1.0f) {
                 /* a flat 2D polygon after the HUD is HUD too (the rucksack's selection box is four
@@ -2230,14 +2235,15 @@ static void cmd_line(const uint32_t *p)
     if ((TH.buf || VK_TAGS) && g_sprite_ws != 1.0f) {   /* a HUD line (window border), or a line after the HUD */
         const PgxpWord *t = cmd_addr[1] != 0xFFFFFFFFu ? &pgxp_mem[(cmd_addr[1] & 0x1FFFFCu) >> 2] : NULL;
         int tagged = t && t->w < 0.0f && t->value == p[1];
-        if (tagged && t->cx == HUD_CX && hud_sx() != 1.0f)
+        if (tagged && IS_HUD(t->cx) && hud_sx() != 1.0f)
             hud_after = 1;
-        if (hud_after && (!tagged || t->cx == HUD_CX)) {
+        if (hud_after && (!tagged || IS_HUD(t->cx))) {
+            const PgxpWord *h = tagged && t->cx == HUD_RIGHT_CX ? t : &hud_word;
             line_sq = g_sprite_ws;
-            line_c = sprite_cx(&hud_word);
+            line_c = sprite_cx(h);
 #if VK_MAIN
             if (g_vk)
-                vk_sprite(&hud_word, line_sq, 1.0f, 0, 0, 0, 0);
+                vk_sprite(h, line_sq, 1.0f, 0, 0, 0, 0);
 #endif
         }
     }
@@ -2515,7 +2521,7 @@ static void cmd_rect(const uint32_t *p)
             hud_after = 1;                  /* what is drawn over it keeps its 4:3 shape */
             period = t->cy;
             t = period > 0 ? NULL : &hud_word;  /* no background to repeat (Natsume logo): like the HUD */
-        } else if (t && t->cx == HUD_CX) {
+        } else if (t && IS_HUD(t->cx)) {
             if (hud_sx() != 1.0f)
                 hud_after = 1;
         } else if (!t && hud_after && !(x <= S.clip_x0 && x + w > S.clip_x1))

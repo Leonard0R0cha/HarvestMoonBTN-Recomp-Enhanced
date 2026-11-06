@@ -81,6 +81,7 @@ uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32
 #define BAR_H 6
 
 static uint32_t glyph_args[6];          /* the last glyph's stack arguments (+16 to +36) */
+static int fade_now;                    /* the clock is see-through this frame */
 static int glyph_known, stamina_drawing;
 
 void stamina_glyph_seen(CPU *c) {
@@ -102,7 +103,7 @@ static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y)
     uint32_t sp = c->r[29];
     MEM_W32(sp + 16, (uint32_t)y);
     for (int i = 1; i < 5; i++) MEM_W32(sp + 16 + (uint32_t)i * 4, glyph_args[i]);
-    MEM_W32(sp + 36, 0);    /* +36 non-zero: a semi-transparent letter (the clock's blinks every 5 minutes) */
+    MEM_W32(sp + 36, (uint32_t)fade_now);    /* +36 non-zero: a semi-transparent letter (the clock's blinks every 5 minutes) */
     return call4(c, GLYPH_AT, ot, p, (uint32_t)letter, (uint32_t)x);
 }
 
@@ -111,9 +112,11 @@ static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y)
 static uint32_t tile(uint32_t ot, uint32_t p, int x, int y, int w, int h, uint32_t rgb) {
     MEM_W32(p, 3u << 24 | (MEM_R32(ot) & 0xFFFFFFu));
     MEM_W32(ot, (MEM_R32(ot) & 0xFF000000u) | (p & 0xFFFFFFu));
-    MEM_W32(p + 4, 0x60000000u | rgb);
+    MEM_W32(p + 4, (fade_now ? 0x62000000u : 0x60000000u) | rgb);     /* 62h: semi-transparent */
     MEM_W32(p + 8, (uint32_t)(uint16_t)y << 16 | (uint16_t)x);
     MEM_W32(p + 12, (uint32_t)h << 16 | (uint32_t)w);
+    HUD_BEGIN();                        /* widescreen: with the clock */
+    SPRITE_TAG(p + 8);
     return p + 16;
 }
 
@@ -133,11 +136,73 @@ static uint32_t stamina_row(CPU *c, uint32_t ot, uint32_t p, int y, int letter, 
     return p;
 }
 
+/* The clock (GF_FARM 800FB674: its window through 80022580 / 800136D4 at 228,16, 78x32, the date,
+ * the time and the weather icon) sets g_clock_draw while it builds: in widescreen what it builds
+ * keeps to the right edge (HUD_BEGIN), the stamina window under it too.
+ * The clock see-through over the farmer: the game projects the farmer (the anchor at 8001E02C,
+ * its feet, kind 1; farmer 2 is kind 3, the one the second window follows) after it builds the HUD,
+ * so the clock uses where the farmer was in the frame before. While the farmer is behind the clock
+ * (and the stamina window under it), every part of them is built semi-transparent: the window
+ * builders and the glyph routine have a flag for it on the stack (hud_fade). The blending of
+ * untextured parts is the drawing mode's in effect (a cave's or a lake's can subtract): the window
+ * gets one of its own, the glyphs' (E100060Eh, 50% / 50%), drawn first. Kept apart for the game
+ * and the second window's run. */
+int g_clock_draw;
+static uint32_t clock_ot;
+#define FADE_BODY 40                    /* how high the farmer is above its feet */
+#define FADE_HOLD 20                    /* frames it stays see-through after (no blinking) */
+static struct { int x0, y0, x1, y1, seen, on, hold; } fade_at[2];
+
+static int fade_slot(void) { return g_view2_run ? 1 : 0; }
+
+void hud_fade_anchor(int x, int y, int kind) {
+    int i = fade_slot();
+    if (kind != (i == 1 ? 3 : 1))
+        return;
+    if (!fade_at[i].seen) {
+        fade_at[i].x0 = fade_at[i].x1 = x;
+        fade_at[i].y0 = fade_at[i].y1 = y;
+        fade_at[i].seen = 1;
+    }
+    if (x < fade_at[i].x0) fade_at[i].x0 = x;
+    if (x > fade_at[i].x1) fade_at[i].x1 = x;
+    if (y < fade_at[i].y0) fade_at[i].y0 = y;
+    if (y > fade_at[i].y1) fade_at[i].y1 = y;
+    fade_at[i].on = 0;                  /* the HUD of this frame is built */
+}
+
+void hud_fade(CPU *c, uint32_t flag) {
+    if (g_clock_draw && fade_at[fade_slot()].on)
+        MEM_W16(c->r[29] + flag, 1);
+}
+
+void clock_begin(CPU *c) {
+    (void)c;
+    int f = fade_slot(), bottom = CLOCK_Y + CLOCK_H + (g_cfg.staminabar && glyph_known ? 2 + CLOCK_H : 0);
+    g_clock_draw = 1;
+    clock_ot = 0;
+    if (fade_at[f].seen && fade_at[f].x0 < CLOCK_X + CLOCK_W + 8 && fade_at[f].x1 > CLOCK_X - 8
+        && fade_at[f].y0 - FADE_BODY < bottom && fade_at[f].y1 > CLOCK_Y - 2)
+        fade_at[f].hold = FADE_HOLD;
+    else if (fade_at[f].hold > 0)
+        fade_at[f].hold--;
+    fade_at[f].on = fade_at[f].hold > 0;
+    fade_at[f].seen = 0;
+}
+
+void clock_window(CPU *c) {
+    if (g_clock_draw)
+        clock_ot = c->r[4];
+}
+
 void stamina_window(CPU *c) {
     uint32_t sp = c->r[29];
-    if (!g_cfg.staminabar || stamina_drawing || !glyph_known || (int16_t)c->r[5] != CLOCK_X || (int16_t)c->r[6] != CLOCK_Y
+    if (stamina_drawing || (int16_t)c->r[5] != CLOCK_X || (int16_t)c->r[6] != CLOCK_Y
         || (int16_t)c->r[7] != CLOCK_W || (int16_t)MEM_R32(sp + 16) != CLOCK_H)
         return;
+    if (!g_cfg.staminabar || !glyph_known)
+        return;
+    fade_now = g_clock_draw && fade_at[fade_slot()].on;
     int16_t now, most, tired;
     if (!g_view2_run || !p2_stamina(&now, &most, &tired)) {
         now = (int16_t)MEM_R16(PLAYER_STAMINA);
@@ -157,7 +222,33 @@ void stamina_window(CPU *c) {
     p = stamina_row(c, ot - 4, p, (int)y + 1, LETTER('S'), now, most, RGB(72, 200, 80));
     stamina_row(c, ot - 4, p, (int)y + 15, LETTER('F'), tired, 100, RGB(232, 104, 48));
     stamina_drawing = 0;
+    fade_now = 0;
     memcpy(c->r, regs, sizeof regs);
     c->hi = hi;
     c->lo = lo;
+}
+
+/* A call of a game routine from a hook: every register is kept (the routine's frame goes below the
+ * hook's), only v0 comes back */
+static uint32_t game_call(CPU *c, uint32_t at, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    c->r[29] = regs[29] - 0x80;
+    uint32_t v = call4(c, at, a0, a1, a2, a3);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    return v;
+}
+
+/* After the clock's window is built (back from 800136D4 at 800225A8): see-through, its drawing mode
+ * (50% / 50%, the glyphs' own) goes first in its table entry, drawn before it */
+void clock_window_done(CPU *c) {
+    if (!g_clock_draw || !clock_ot || !fade_at[fade_slot()].on)
+        return;
+    uint32_t p = game_call(c, ALLOC_AT, 8, 0, 0, 0);
+    MEM_W32(p, 1u << 24 | (MEM_R32(clock_ot) & 0xFFFFFFu));
+    MEM_W32(p + 4, 0xE100060Eu);
+    MEM_W32(clock_ot, (MEM_R32(clock_ot) & 0xFF000000u) | (p & 0xFFFFFFu));
+    clock_ot = 0;
 }
