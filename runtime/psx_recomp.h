@@ -123,9 +123,10 @@ static inline void FIELD_RANGE(uint32_t a) {
 
 /* Widescreen: the HUD (windows, text, portraits, HUD icons) is tagged to keep its 4:3 shape,
  * centred, while the picture is shown wide; g_hud_call is set while the HUD icon routine calls
- * the sprite builder. */
+ * the sprite builder. The clock (g_clock_draw) keeps to the right edge instead. */
+extern int g_clock_draw;
 static inline void HUD_BEGIN(void) {
-    if (g_sprite_tags) gpu_hud_begin(g_sprite_ws != 1.0f);
+    if (g_sprite_tags) gpu_hud_begin(g_sprite_ws != 1.0f ? 1 + (g_clock_draw != 0) : 0);
 }
 static inline void SPRITE_BEGIN(uint32_t x, uint32_t y) {
     if (g_menu_tile && g_sprite_ws != 1.0f) { if (g_sprite_tags) gpu_menu_begin(g_menu_tile); }
@@ -252,6 +253,15 @@ void p2_tick_begin(void);
 void cheats_tick(void);
 uint32_t farm_score_berries(uint32_t score);    /* fixes.c: the summary page's farm score */
 void first_house_cabinet(void);                 /* ... the first house's boxes open the cabinet */
+void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
+void stamina_glyph_seen(CPU *c);
+void hud_fade_anchor(int x, int y, int kind);     /* fixes.c: the clock see-through over the farmer */
+void hud_fade(CPU *c, uint32_t flag);
+void clock_begin(CPU *c);
+void clock_window(CPU *c);
+void clock_window_done(CPU *c);
+extern int g_clock_draw;                          /* fixes.c: the clock routine is building */
+int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
 uint32_t crop_walk_mask(uint32_t mask, uint32_t why);   /* ... walking through crops */
 uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 void p2_tick_end(void);

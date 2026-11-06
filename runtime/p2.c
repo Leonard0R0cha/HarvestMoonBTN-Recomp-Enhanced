@@ -1230,6 +1230,14 @@ void p2_take_back(void) {
     lent_n = 0;
 }
 
+/* the stamina under the clock (fixes.c): the second window shows farmer 2's own */
+int p2_stamina(int16_t *now, int16_t *most, int16_t *tired) {
+    if (!g_p2_enabled || !placed || away || exchanged) return 0;
+    *now = half(me, STAMINA);
+    *most = half(me, STAMINA_MAX);
+    *tired = half(me, TIRED);
+    return 1;
+}
 
 /* the second machine (machine.c): everything this file keeps is each machine's, but the buttons
  * and the options */
