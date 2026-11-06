@@ -177,6 +177,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "earlycabinet=", 13)) { g_cfg.earlycabinet = atoi(tok + 13); continue; }
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
         if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "bulkfood=", 9)) { g_cfg.bulkfood = atoi(tok + 9); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
             int *v = cheat_ev[n_cheat_ev].v;
@@ -453,6 +454,7 @@ int platform_init(void) {
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
+            if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
                     g_cfg.cheat_bag, g_cfg.cheat_items, g_cfg.cheat_tools);

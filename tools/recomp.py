@@ -505,6 +505,10 @@ MODULE_SITE_HOOKS = {
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
                 0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
                 0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
+                # bulk food: the shelf's buy question (8011C298): its yes / no (s0 after the jal at
+                # 8011C468) and the payment (a0 = minus the price, 8011C514) (runtime/fixes.c)
+                0x8011C470: 'R[16] = bulk_food_yes(c, R[16]);',
+                0x8011C514: 'R[4] = bulk_food_pay(c, R[4]);',
                 0x800FB664: 'g_clock_draw = 0;',     # back from the clock routine (jal at 800FB65C)
                 0x800C7B70: 'R[3] = p2_x_target(R[3]);',
                 # the map screen (SELECT) draws the map picture (320x240 in quads: the map and a
@@ -555,9 +559,14 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   0x800D57A4: 'if (p2_trade_kind(c)) return;',
                                   # what bumps into the player (animals) bumps into the second farmer too
                                   0x800BE4A8: 'if (p2_bump(c)) return;',
+                                  # an item's picture: not the area's copy when its halves are on two
+                                  # pictures (wrong colours, the hothouse eggplant) (runtime/fixes.c)
+                                  0x800D688C: 'if (item_picture_from_disc(c)) { R[2] = 0; return; }',
                                   # the clock: what it builds goes to the right edge in widescreen and
                                   # turns see-through over the farmer (runtime/fixes.c)
-                                  0x800FB674: 'clock_begin(c);'}}
+                                  0x800FB674: 'clock_begin(c);',
+                                  # bulk food: the shelf's buy question's new states (runtime/fixes.c)
+                                  0x8011C298: 'if (bulk_food_state(c)) { R[2] = 0; return; }'}}
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 

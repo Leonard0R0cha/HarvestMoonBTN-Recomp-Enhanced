@@ -252,3 +252,225 @@ void clock_window_done(CPU *c) {
     MEM_W32(clock_ot, (MEM_R32(clock_ot) & 0xFF000000u) | (p & 0xFFFFFFu));
     clock_ot = 0;
 }
+
+/* An item's picture (800D6A94: in the hands, the rucksack, the menus) comes from the area's own copy
+ * when the area has one (800D688C: a crop of the field or the hothouse), else from the disc. That copy
+ * draws the crop in the field: its two halves can sit on different pictures, and the item shown with
+ * them gets wrong colours (the hothouse eggplant held up). As in Back to nature+, such a copy (and
+ * always item 235's) is not used: the picture is read from the disc */
+#define AREA_PICTURES 0x800A0378u   /* -> the area: +10 its list of pictures (-1 none) */
+#define PICTURE_IDS 0x80126254u     /* -> the list's items: a count, then the item numbers (halfwords) */
+#define PICTURE_AT 0x80125528u      /* -> where each is, from 800957F8 (words, from the second) */
+#define PICTURES_BASE 0x800957F8u
+#define PICTURE_CALLER 0x800D6B20u  /* where 800D6A94's call of 800D688C returns */
+
+/* the picture's part (its frame, from the header's tables; 0: none) as 800D6A94 finds it */
+static uint32_t picture_part(uint32_t p, uint32_t which) {
+    uint32_t frames = p + MEM_R32(p + 24), parts = p + MEM_R32(p + 20);
+    uint32_t list = p + MEM_R32(p + 28), cells = p + MEM_R32(p + 32);
+    uint32_t h = MEM_R16(cells + MEM_R16(list + which));
+    if (h > 0xFFFDu) return 0;
+    uint32_t e = parts + h * 4;
+    return frames + MEM_R16(e + 2) + (uint32_t)((int16_t)MEM_R16(e) * 12 - 12);
+}
+
+static int area_picture_mixed(int16_t item) {
+    uint32_t area = MEM_R32(AREA_PICTURES);
+    if (!area) return 0;
+    int16_t k = (int16_t)MEM_R16(area + 10);
+    if (k == -1) return 0;
+    uint32_t ids = MEM_R32(PICTURE_IDS + (uint32_t)k * 4), at = MEM_R32(PICTURE_AT + (uint32_t)k * 4);
+    if (!ids) return 0;
+    int16_t n = (int16_t)MEM_R16(ids);
+    for (int i = 1; i <= n; i++) {
+        if ((int16_t)MEM_R16(ids + (uint32_t)i * 2) != item) continue;
+        uint32_t p = MEM_R32(at + (uint32_t)i * 4) + PICTURES_BASE;
+        uint32_t a = picture_part(p, 2), b = picture_part(p, 6);
+        if (!a || !b) return 0;
+        uint32_t rects = p + MEM_R32(p + 16);
+        uint32_t ra = rects + MEM_R16(a + 2) * 8, rb = rects + MEM_R16(b + 2) * 8;
+        return MEM_R16(ra) != MEM_R16(rb) || MEM_R16(ra + 2) != MEM_R16(rb + 2);
+    }
+    return 0;
+}
+
+/* entry of 800D688C (a0 = the item): 1 = answer "no copy here" */
+int item_picture_from_disc(CPU *c) {
+    if (c->r[31] != PICTURE_CALLER) return 0;
+    int16_t item = (int16_t)c->r[4];
+    return item == 235 || area_picture_mixed(item);
+}
+
+/* Bulk food (bulkfood): a thing on a shop's shelf is taken in the hands and 8011C298 asks whether to
+ * buy it (its state at 8012D524, the next one at 8012D528; a1 / a2 the question, a3 how it is sold:
+ * 0 the shelf's; s1 the item, s3 the price). As in Back to nature+, a yes for food asks how many with
+ * the game's own number window (the fodder's: 8011CF40 the number, the text 77; 8012D538: +4 the
+ * window's text, +8 the number, +10 the price; 8012D52C = 1 shows it), as many as the rucksack's empty
+ * places and the fridge (once the house has the kitchen) can take: one stays in the hands, the rest
+ * go to the rucksack, then to the fridge (64 places of 6 bytes at 80070D42: the item, 0, how many;
+ * up to 99 in a place). States 15 and 16 are new: the question and the number */
+#define SHOP_STATE 0x8012D524u
+#define SHOP_NEXT 0x8012D528u
+#define SHOP_SHOWN 0x8012D52Cu
+#define NUMBER_BOX 0x8012D538u
+#define MONEY 0x80071A5Cu
+#define BAG_SIZE 0x80071A1Eu        /* the rucksack: 2 << it places, at 80071AC0 */
+#define BAG_ITEMS 0x80071AC0u
+#define FRIDGE 0x80070D42u
+#define HAS_KITCHEN 0x80070D06u
+#define ITEMS_TABLE 0x8006C858u     /* -> 40 bytes an item: flags at +24 */
+#define FOOD_FLAGS 0xC0000000u      /* food, kept in the fridge */
+#define STATE_ASK 15
+#define STATE_NUMBER 16
+#define TEXT_HOW_MANY 77
+#define TEXT_THANKS 187
+#define TEXT_NO_MONEY 79
+#define TEXT_NOT_BOUGHT 216
+#define SET_TEXT 0x8002261Cu
+#define TEXT_CLOSE 0x80022738u
+#define TEXT_DONE 0x800226D8u
+#define TEXT_SOUND 0x80017B18u
+#define NUMBER_PICK 0x8011CF40u
+#define ITEM_PICTURE 0x800D6A94u
+
+static int bulk_on, bulk_price;
+static int16_t bulk_item;
+/* the second window's run of the frame (p2view.c) throws its RAM away: so are these */
+#define BULK_KEEP int keep_on = bulk_on, keep_price = bulk_price; int16_t keep_item = bulk_item
+#define BULK_BACK if (g_view2_run) { bulk_on = keep_on; bulk_price = keep_price; bulk_item = keep_item; }
+
+static void shop_go(uint32_t state, uint32_t next) {
+    MEM_W32(SHOP_STATE, state);
+    MEM_W32(SHOP_NEXT, next);
+}
+
+static int is_food(int16_t item) {
+    uint32_t f = MEM_R32(MEM_R32(ITEMS_TABLE) + (uint32_t)item * 40 + 24);
+    return (f & 0xF0000000u) == FOOD_FLAGS;
+}
+
+/* how many more of the item the rucksack and the fridge take; with put, puts that many there */
+static int bulk_room(CPU *c, int16_t item, int put) {
+    int room = 0, places = 2 << MEM_R16(BAG_SIZE);
+    for (int i = 0; i < places; i++) {
+        uint32_t e = BAG_ITEMS + (uint32_t)i * 6;
+        if (MEM_R16(e)) continue;
+        room++;
+        if (put > 0) {
+            game_call(c, ITEM_PICTURE, (uint32_t)(int32_t)item, 0, 0, 0);
+            MEM_W16(e, (uint16_t)item);
+            MEM_W16(e + 2, 0);
+            MEM_W16(e + 4, 1);
+            put--;
+        }
+    }
+    if (!MEM_R16(HAS_KITCHEN) || !is_food(item)) return room;
+    for (int pass = 0; pass < 2; pass++)
+        for (int i = 0; i < 64; i++) {
+            uint32_t e = FRIDGE + (uint32_t)i * 6;
+            int16_t id = (int16_t)MEM_R16(e);
+            if (pass == 0 ? id != item : id != 0) continue;
+            int n = pass == 0 ? 99 - (int16_t)MEM_R16(e + 4) : 99;
+            if (n <= 0) continue;
+            room += n;
+            if (put > 0) {
+                if (n > put) n = put;
+                if (pass == 1) {
+                    MEM_W16(e, (uint16_t)item);
+                    MEM_W16(e + 2, 0);
+                    MEM_W16(e + 4, 0);
+                }
+                MEM_W16(e + 4, (uint16_t)(MEM_R16(e + 4) + n));
+                put -= n;
+            }
+        }
+    return room;
+}
+
+/* right after the yes / no of 8011C298 (8011C470: s0 the answer, 1 yes): a yes for food that more of
+ * fit and the money is enough for asks how many; the answer becomes 0 (still asking) */
+static uint32_t food_yes(CPU *c, uint32_t answer) {
+    int16_t item = (int16_t)c->r[17];
+    int price = (int16_t)c->r[19];
+    if (!g_cfg.bulkfood || answer != 1 || (int16_t)c->r[18] != 0 || !is_food(item)
+        || (int32_t)MEM_R32(MONEY) < price || bulk_room(c, item, 0) < 1)
+        return answer;
+    bulk_on = 1;
+    bulk_item = item;
+    bulk_price = price;
+    MEM_W32(NUMBER_BOX, 0);
+    MEM_W16(NUMBER_BOX + 8, 1);
+    MEM_W16(NUMBER_BOX + 10, (uint16_t)price);
+    game_call(c, TEXT_CLOSE, 0, 0, 0, 0);
+    MEM_W32(NUMBER_BOX + 4, MEM_R32(0x80054BC0u) + 0x8005181Au);
+    shop_go(STATE_ASK, 0);
+    return 0;
+}
+
+/* entry of 8011C298: the new states (1: done here, the routine answers 0, not finished) */
+static int food_state(CPU *c) {
+    uint32_t state = MEM_R32(SHOP_STATE);
+    if (state == 0) bulk_on = 0;
+    if (!bulk_on || (state != STATE_ASK && state != STATE_NUMBER)) return 0;
+    if (state == STATE_ASK) {
+        game_call(c, TEXT_DONE, 0, 0, 0, 0);
+        game_call(c, TEXT_SOUND, 0, 0, 0, 0);
+        game_call(c, SET_TEXT, 2, TEXT_HOW_MANY, 0, 0);
+        shop_go(3, STATE_NUMBER);       /* 3: waits for the text, then the next state */
+        return 1;
+    }
+    MEM_W32(SHOP_SHOWN, 1);
+    int most = bulk_room(c, bulk_item, 0) + 1;
+    if (most > 99) most = 99;
+    uint32_t r = game_call(c, NUMBER_PICK, (uint32_t)most, NUMBER_BOX + 8, 0, 0);
+    if (r == 1) {                       /* chosen */
+        game_call(c, TEXT_CLOSE, 0, 0, 0, 0);
+        if ((int32_t)MEM_R32(MONEY) >= (int16_t)MEM_R16(NUMBER_BOX + 8) * bulk_price) {
+            MEM_W32(SHOP_SHOWN, 3);
+            game_call(c, SET_TEXT, 2, TEXT_THANKS, 0, 0);
+            shop_go(2, 6);              /* 2: waits for the text; 6: pays */
+        } else {
+            game_call(c, SET_TEXT, 2, TEXT_NO_MONEY, 0, 0);
+            shop_go(2, STATE_ASK);
+        }
+    } else if (r == 3) {                /* cancelled: 7 puts the thing back */
+        MEM_W32(SHOP_SHOWN, 3);
+        game_call(c, TEXT_CLOSE, 0, 0, 0, 0);
+        game_call(c, SET_TEXT, 2, TEXT_NOT_BOUGHT, 0, 0);
+        shop_go(2, 7);
+        bulk_on = 0;
+    }
+    return 1;
+}
+
+/* 8011C514 (state 6, a0 = minus the price, for the money): the price of all, the rest are put away */
+static uint32_t food_pay(CPU *c, uint32_t minus_price) {
+    if (!bulk_on) return minus_price;
+    bulk_on = 0;
+    int n = (int16_t)MEM_R16(NUMBER_BOX + 8);
+    if (n < 2) return minus_price;
+    bulk_room(c, bulk_item, n - 1);
+    MEM_W16(NUMBER_BOX + 8, 1);
+    return (uint32_t)(-(n * bulk_price));
+}
+
+uint32_t bulk_food_yes(CPU *c, uint32_t answer) {
+    BULK_KEEP;
+    answer = food_yes(c, answer);
+    BULK_BACK;
+    return answer;
+}
+
+int bulk_food_state(CPU *c) {
+    BULK_KEEP;
+    int r = food_state(c);
+    BULK_BACK;
+    return r;
+}
+
+uint32_t bulk_food_pay(CPU *c, uint32_t minus_price) {
+    BULK_KEEP;
+    minus_price = food_pay(c, minus_price);
+    BULK_BACK;
+    return minus_price;
+}
