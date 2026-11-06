@@ -145,7 +145,13 @@ void psx_syscall(CPU *c, uint32_t pc) {
 }
 
 void psx_break(CPU *c, uint32_t pc, uint32_t code) {
-    LOGW("break %X at %08X (func %08X) - ignored", code, pc, c->cur_func);
+    /* the game loops on some of them for ever (a picture not found): the log grew to gigabytes */
+    static uint32_t last_pc;
+    static unsigned repeats;
+    repeats = pc == last_pc ? repeats + 1 : 0;
+    last_pc = pc;
+    if (repeats < 20) LOGW("break %X at %08X (func %08X) - ignored", code, pc, c->cur_func);
+    else if (repeats == 20) LOGW("break %X at %08X: again and again (not logged any more)", code, pc);
 }
 
 void psx_invalid(CPU *c, uint32_t pc, uint32_t word) {

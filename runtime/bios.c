@@ -908,3 +908,13 @@ void bios_init(void) {
     ram_w32(K_DEFAULT_EXIT + 0, FAKE_B0 + 0x17 * 0x10);
     ram_w32(K_DEFAULT_EXIT + 4, EXC_STACK_TOP - 4);
 }
+
+void bios_machine(MachineAdd add) {
+    add("kernel", &k, sizeof k);
+    add("fds", fds, sizeof fds);
+    add("search", &search, sizeof search);
+    add("exc_jb", &exc_jb, sizeof exc_jb);          /* each machine's own stack (machine.c) */
+    add("exc_jb_valid", &exc_jb_valid, sizeof exc_jb_valid);
+    add("exc_saved", &exc_saved, sizeof exc_saved);
+    add("in_exception", &g_in_exception, sizeof g_in_exception);
+}

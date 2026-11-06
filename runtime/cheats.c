@@ -84,3 +84,12 @@ void cheats_tick(void) {
         for (uint32_t k = 0; k < TOOLS; k++) MEM_W16(PLAYER + TOOL_LEVELS + k * 2, 0xFFFF);
     p2_cheats(g_cfg.cheat_stamina, g_cfg.cheat_bag, g_cfg.cheat_tools);
 }
+
+void cheats_machine(MachineAdd add) {
+    add("money_done", &money_done, sizeof money_done);
+    add("frozen", &frozen, sizeof frozen);
+    add("frozen_day", &frozen_day, sizeof frozen_day);
+    add("frozen_hour", &frozen_hour, sizeof frozen_hour);
+    add("frozen_minute", &frozen_minute, sizeof frozen_minute);
+    add("frozen_time", &frozen_time, sizeof frozen_time);
+}

@@ -186,6 +186,45 @@ void sched_load_state(const void *src);
 int quick_state(void);
 void quick_set_state(int s);
 
+/* ---- the second machine (machine.c): a second copy of the game on its own stack ---- */
+#ifndef MACHINE_ADD
+#define MACHINE_ADD
+typedef void (*MachineAdd)(const char *name, void *p, size_t n);
+#endif
+extern int g_machine;               /* the machine running now: 0 the first (the game), 1 the second */
+extern int g_mirror;                /* testing: the second runs as the first does, compared each frame */
+void machine_init(void (*boot)(void));
+int machine_vblank(void);           /* at each vblank: 1 = the second machine (no window) */
+extern int g_mirror_park, g_mirror_resume;
+void mem_machine(MachineAdd add);
+void gte_machine(MachineAdd add);
+void sched_machine(MachineAdd add);
+void dma_machine(MachineAdd add);
+void cdrom_machine(MachineAdd add);
+void sio_machine(MachineAdd add);
+void bios_machine(MachineAdd add);
+void memcard_machine(MachineAdd add);
+void spu_machine(MachineAdd add);
+void quick_machine(MachineAdd add);
+void cheats_machine(MachineAdd add);
+void p2_machine(MachineAdd add);
+extern int g_split;                 /* the farmers in different places: farmer 2 through a door gets the second machine */
+extern int g_machine_probe;         /* machine_hold: a question run with everything put back after (no events) */
+extern int g_spu_effects_only;      /* spu.c: the music not heard (the second machine's sound, the farmers apart) */
+void machine_hold(void);
+void machine_unhold(void);
+void machine_split_request(void);   /* farmer 2 goes through a door (p2.c) */
+int machine_split(void);            /* the farmers are in different places */
+uint32_t machine_hash(uint32_t h);  /* netplay's RAM hash goes on over the second machine's RAM (apart) */
+extern int g_heard;                 /* the machine heard on this PC: 1 the second (online guest, apart) */
+void p2_away(void);
+void p2_become_player(void);
+void p2_come_back(const uint8_t *b, int beside);
+void machine_bring_back(void);
+void p2view_rejoin(void);
+int machine_split_player(void);
+int p2_player_at_door(void);
+
 /* ---- online co-op (netplay.c) ---- */
 void netplay_host(int port);
 void netplay_join(const char *address);

@@ -12,6 +12,8 @@
  * All state (including the 512 KiB of SPU RAM) lives in one static struct so that
  * save states are a plain memcpy. */
 #include "spu.h"
+#include "psx_recomp.h"
+
 #include <string.h>
 
 #define SPU_RAM_BYTES 0x80000u
@@ -333,12 +335,49 @@ static void volume_write(int32_t *level, uint16_t *counter, uint16_t v)
  * run as usual (the game sees the same sound chip) but are not heard here (p2_sfx_quiet) */
 int g_sfx_quiet;
 static uint32_t quiet_voices;
+/* The farmers apart (machine.c): farmer 2's window is heard with the effects only, the music being
+ * the player's. Who keys a voice on tells nothing (libsnd keys all on together in its sequencer's
+ * tick), nor where the sample is (the banks share the sound RAM, loaded once). What tells them apart
+ * here is the length: the music is long samples that play on for seconds, the effects (steps,
+ * doors, animals, tools) short ones. A sample (its start) that once played longer than MUSIC_LONG
+ * is the music's (both machines learn it: the player's plays the music all along), and with
+ * g_spu_effects_only a voice playing one, or playing that long, is not heard (it runs as usual),
+ * nor the CD's audio. */
+int g_spu_effects_only;
+#define MUSIC_LONG (44100u * 3)
+#define MUSIC_SET 1024
+static uint16_t music_set[MUSIC_SET];   /* samples' starts (the voice's start register), 0 = free */
+static uint16_t v_start[NUM_VOICES];
+static uint32_t v_age[NUM_VOICES];
+
+static int music_has(uint16_t a)
+{
+    for (uint32_t k = (a * 2654435761u) >> 22, n = 0; n < MUSIC_SET; n++, k = (k + 1) & (MUSIC_SET - 1)) {
+        if (music_set[k] == a) return 1;
+        if (!music_set[k]) return 0;
+    }
+    return 0;
+}
+
+static void music_add(uint16_t a)
+{
+    if (!a || music_has(a)) return;
+    for (uint32_t k = (a * 2654435761u) >> 22, n = 0; n < MUSIC_SET; n++, k = (k + 1) & (MUSIC_SET - 1))
+        if (!music_set[k]) { music_set[k] = a; return; }
+}
+
+static int music_voice(int i)
+{
+    return v_age[i] >= MUSIC_LONG || music_has(v_start[i]);
+}
 
 static void key_on(int i)
 {
     Voice *vc = &S.voice[i];
     if (g_sfx_quiet) quiet_voices |= 1u << i;
     else quiet_voices &= ~(1u << i);
+    v_start[i] = VREG(i, 3);
+    v_age[i] = 0;
     vc->cur = (uint16_t)(VREG(i, 3) & 0xFFFEu);
     vc->counter = 0;
     vc->env = 0;
@@ -742,7 +781,7 @@ void spu_run(int samples, int16_t *out)
         int16_t cdl = 0, cdr = 0;
         int i;
 
-        if (!cdrom_audio_sample(&cdl, &cdr))
+        if (!cdrom_audio_sample(&cdl, &cdr) || g_spu_effects_only)
             cdl = cdr = 0;
 
         /* ---- voices ---- */
@@ -760,7 +799,9 @@ void spu_run(int samples, int16_t *out)
                 if (o > 0x7FFF) o = 0x7FFF;
             }
             vc->out = o;
-            if (o != 0 && !((quiet_voices >> i) & 1)) {
+            if (vc->env != 0 && v_age[i] < MUSIC_LONG && ++v_age[i] == MUSIC_LONG)
+                music_add(v_start[i]);
+            if (o != 0 && !((quiet_voices >> i) & 1) && !(g_spu_effects_only && music_voice(i))) {
                 int32_t l = (o * vc->vol[0]) >> 15;
                 int32_t r = (o * vc->vol[1]) >> 15;
                 suml += l;
@@ -866,4 +907,16 @@ void spu_save_state(void *dst)
 void spu_load_state(const void *src)
 {
     memcpy(&S, src, sizeof S);
+}
+
+#ifndef MACHINE_ADD
+#define MACHINE_ADD
+typedef void (*MachineAdd)(const char *name, void *p, size_t n);
+#endif
+void spu_machine(MachineAdd add) {
+    add("spu", &S, sizeof S);
+    add("quiet_voices", &quiet_voices, sizeof quiet_voices);
+    add("sfx_quiet", &g_sfx_quiet, sizeof g_sfx_quiet);
+    add("v_start", v_start, sizeof v_start);
+    add("v_age", v_age, sizeof v_age);
 }

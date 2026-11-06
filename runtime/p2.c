@@ -209,6 +209,18 @@ static void swap_at(uint32_t at, uint32_t n, uint8_t *out, const uint8_t *in) {
 }
 
 static int placed, inside, ticks;
+/* The farmers in different places (machine.c): when farmer 2 goes through a door, the second
+ * machine takes the game from there with farmer 2 as its player, and farmer 2 is away from this
+ * one (not placed, not drawn, no turn) */
+static int away;
+/* on the farm (its map, or a building entered from it): farmer 2 is on its own there only. The farm's
+ * map is the one with its ways out (0020, 0048); taking one of them leaves the farm */
+static int on_farm = 1;
+static uint32_t doors_before;   /* the frame's door state (800A0490) when the farm's tick began */
+#define FRAME_STATE 0x800A0490u
+#define DOORS 0x800CD9A0u       /* the player's state routine: doors and the ways to other areas (1: through) */
+#define TRIGGERS (0x8009F78Cu + 16)     /* 50 of 44 bytes: +0 kind, +2 (FFFF: none), box +14 / +18 (x / z from), +20 / +24 (to) */
+#define TRIGGERS_N 50
 static int owner, exchanged;    /* farmer 2 opened the menu that has the game / its turn is the tick's */
 static int thrown_by_p2, flying_before; /* places (bits) farmer 2 threw / flying when its tick began */
 static int landing;
@@ -688,8 +700,49 @@ static int flying(void) {
     return bits;
 }
 
+/* the player's place (farmer 2's struct in it) is in the box of a door (not an event's: kinds
+ * 0100 / 0080, as 800BDCE8 finds them; +8 the way the farmer must face, +10 where it goes) */
+/* the farm's ways out to the town (0020) and the mountain (0048), +10 99 like the buildings' doors
+ * out: farmer 2 is on its own on the farm only (the player takes it) */
+static int way_out(uint32_t e) {
+    return (int16_t)MEM_R16(e + 10) == 99 && (MEM_R16(e + 2) == 0x20 || MEM_R16(e + 2) == 0x48);
+}
+
+/* the loaded map has the farm's ways out: the farm */
+static int farm_map(void) {
+    for (uint32_t i = 0; i < TRIGGERS_N; i++) {
+        uint32_t e = TRIGGERS + i * 44;
+        if (MEM_R16(e + 2) != 0xFFFF && way_out(e)) return 1;
+    }
+    return 0;
+}
+
+/* the player (in its place) is in the box of one of the farm's ways out */
+static int player_on_way_out(void) {
+    int32_t x = (int32_t)MEM_R32(POS), z = (int32_t)MEM_R32(POS + 8);
+    for (uint32_t i = 0; i < TRIGGERS_N; i++) {
+        uint32_t e = TRIGGERS + i * 44;
+        if (MEM_R16(e + 2) == 0xFFFF || !way_out(e)) continue;
+        if ((int16_t)MEM_R16(e + 14) < x && x < (int16_t)MEM_R16(e + 20) &&
+            (int16_t)MEM_R16(e + 18) < z && z < (int16_t)MEM_R16(e + 24)) return 1;
+    }
+    return 0;
+}
+
+static int on_trigger(void) {
+    int32_t x = (int32_t)MEM_R32(POS), z = (int32_t)MEM_R32(POS + 8);
+    for (uint32_t i = 0; i < TRIGGERS_N; i++) {
+        uint32_t e = TRIGGERS + i * 44;
+        if (MEM_R16(e + 2) == 0xFFFF || (MEM_R16(e) & (0x6008 | 0x100 | 0x80))) continue;
+        if (way_out(e)) continue;
+        if ((int16_t)MEM_R16(e + 14) < x && x < (int16_t)MEM_R16(e + 20) &&
+            (int16_t)MEM_R16(e + 18) < z && z < (int16_t)MEM_R16(e + 24)) return 1;
+    }
+    return 0;
+}
+
 static void turn(CPU *c) {
-    if (!g_p2_enabled || inside || exchanged) return;
+    if (!g_p2_enabled || away || inside || exchanged) return;
     uint32_t regs[32], hi = c->hi, lo = c->lo, sp = c->r[29];
     memcpy(regs, c->r, sizeof regs);
     ticks++;
@@ -750,6 +803,17 @@ static void turn(CPU *c) {
         call_addr(c, WALK);
     }
     thrown_by_p2 |= flying() & ~was_flying;
+    /* farmer 2 at a door: would the player's state routine take it through? Asked with
+     * everything put back after (machine_hold); through: the machines part (machine.c) */
+    if (!took && g_split && on_farm && on_trigger()) {
+        machine_hold();
+        c->r[4] = PLAYER;
+        c->r[29] = sp;
+        call_addr(c, DOORS);
+        int through = c->r[2] == 1;
+        machine_unhold();
+        if (through) machine_split_request();
+    }
     inside = 0;
     if (took) {
         /* farmer 2 has just started a talk or a menu: the rest of this tick is farmer 2's already.
@@ -788,18 +852,19 @@ static void turn(CPU *c) {
 #define STAND_UP 0x800BD168u
 #define STATE_NOW 0x3C          /* halfword: 1 standing, 2 walking, more in an action */
 
+static uint16_t su_area;         /* stand_up: the area, where the player was, a stand-up due */
+static int32_t su_x, su_z;
+static int su_pending;
+
 static void stand_up(CPU *c) {
-    static uint16_t last_area;
-    static int32_t last_x, last_z;
-    static int pending;
     if (g_view2_run) return;
     int32_t x = (int32_t)MEM_R32(POS), z = (int32_t)MEM_R32(POS + 8);
-    if (MEM_R16(AREA) != last_area || abs(x - last_x) > 1024 || abs(z - last_z) > 1024) pending = 1;
-    last_area = (uint16_t)MEM_R16(AREA);
-    last_x = x;
-    last_z = z;
-    if (!pending || (MEM_R32(FLAGS) & LED)) return;
-    pending = 0;
+    if (MEM_R16(AREA) != su_area || abs(x - su_x) > 1024 || abs(z - su_z) > 1024) su_pending = 1;
+    su_area = (uint16_t)MEM_R16(AREA);
+    su_x = x;
+    su_z = z;
+    if (!su_pending || (MEM_R32(FLAGS) & LED)) return;
+    su_pending = 0;
     if (MEM_R32(ANIM_FILE) != EXTRA_FILE || MEM_R16(PLAYER + STATE_NOW) != 1) return;
     uint32_t regs[32], hi = c->hi, lo = c->lo;
     memcpy(regs, c->r, sizeof regs);
@@ -810,6 +875,18 @@ static void stand_up(CPU *c) {
 }
 
 void p2_tick(CPU *c) {
+    /* the player's turn took a door of the farm (the farm's ways out: farmer 2 goes along): farmer
+     * 2 stays where it is, in the second machine (machine.c) */
+    if (g_split && placed && !away && !exchanged && !owner && !doors_before && MEM_R32(FRAME_STATE))
+        machine_split_player();
+    /* ... a way out of the farm (the town, the mountain): off the farm; with farmer 2 in the second
+     * machine (inside a building of the farm) farmer 2 comes back to go along (machine.c) */
+    if (!g_view2_run && !doors_before && MEM_R32(FRAME_STATE) && player_on_way_out()) {
+        on_farm = 0;
+        if (g_split && away && !g_machine) machine_bring_back();
+    } else if (!MEM_R32(FRAME_STATE) && farm_map()) {
+        on_farm = 1;
+    }
     stand_up(c);
     turn(c);
     if (g_view2_run) p2_aim_view();
@@ -859,7 +936,8 @@ static void exchange(void) {
 /* the farm's tick begins (entry of 800C162C): farmer 2's buttons for this tick; while a menu
  * farmer 2 opened is up, the whole tick is farmer 2's, with all its buttons */
 void p2_tick_begin(void) {
-    if (!g_p2_enabled) return;
+    doors_before = MEM_R32(FRAME_STATE);
+    if (!g_p2_enabled || away) return;
     uint64_t now = frame_count();
     if (now - last_tick > 8) loaded = 1;
     last_tick = now;
@@ -932,6 +1010,7 @@ int p2_drawing(void) { return inside; }
 
 /* the cheats (cheats.c) for farmer 2: never tired, the biggest rucksack, the tools at their most */
 void p2_cheats(int rest, int bag, int tools) {
+    if (away) return;
     if (!placed) return;
     if (rest) {
         set_half(me, STAMINA, half(me, STAMINA_MAX));
@@ -947,7 +1026,9 @@ void p2_cheats(int rest, int bag, int tools) {
  * was left lying in it until placed again). Anything past 49 is no target */
 #define BED_KIND 2
 uint32_t p2_x_target(uint32_t kind) {
-    if ((inside || exchanged) && kind + 1 == BED_KIND) return 0xFFFFFFFFu;
+    /* farmer 2 does not use the bed (the diary): in its turn, and in the second machine, where it
+     * is the player (machine.c) */
+    if ((inside || exchanged || (g_machine && away)) && kind + 1 == BED_KIND) return 0xFFFFFFFFu;
     return kind;
 }
 
@@ -1130,3 +1211,88 @@ void p2_take_back(void) {
     lent_n = 0;
 }
 
+
+/* the second machine (machine.c): everything this file keeps is each machine's, but the buttons
+ * and the options */
+void p2_machine(MachineAdd add) {
+#define ADD(v) add("p2." #v, &v, sizeof v);
+    STATE(ADD)
+    ADD(saved) ADD(saved_globals) ADD(saved_pad) ADD(saved_log) ADD(saved_view) ADD(saved_anims)
+    ADD(p1_led) ADD(trade_vram) ADD(trade_vram_kept) ADD(trade_vram_frame)
+    ADD(su_area) ADD(su_x) ADD(su_z) ADD(su_pending) ADD(away) ADD(doors_before) ADD(on_farm)
+    /* not p2_scene's: the windows follow it each frame (p2view.c), it is the first's */
+#undef ADD
+}
+
+/* the machines part (machine.c), in the first: farmer 2 is away (its things are the second's) */
+void p2_away(void) {
+    away = 1;
+    placed = owner = asked = 0;
+}
+
+/* ... and in the second: farmer 2 becomes its player, with farmer 2's buttons (machine.c) */
+void p2_become_player(void) {
+    uint32_t pad = MEM_R32(PAD), log = MEM_R32(INPUT_LOG);
+    swap_at(pad, PAD_SIZE, saved_pad, my_pad);
+    swap_at(log, INPUT_LOG_SIZE, saved_log, my_log);
+    swap_globals(saved_globals, my_globals);
+    swap_in();
+    away = 1;
+    placed = owner = asked = 0;
+}
+
+/* the machines meet again (machine.c): farmer 2 comes back from the second machine (b: its RAM)
+ * where it is there, as it is there (its struct, its animations, the globals, pad and input log
+ * its turn keeps), in the player's area (the same map): it is not placed again beside the player */
+void p2_come_back(const uint8_t *b, int beside) {
+#define AT(a) (b + ((a) & 0x1FFFFF))
+    uint32_t at;
+    memcpy(me, AT(PLAYER), PLAYER_SIZE);
+    memcpy(my_anims, AT(ANIMS), ANIMS_SIZE);
+    uint32_t k = 0;
+    for (size_t g = 0; g < sizeof GLOBALS / sizeof *GLOBALS; g++) {
+        memcpy(my_globals + k, AT(GLOBALS[g].at), GLOBALS[g].size);
+        k += GLOBALS[g].size;
+    }
+    memcpy(&at, AT(PAD), 4);
+    memcpy(my_pad, AT(at), PAD_SIZE);
+    memcpy(&at, AT(INPUT_LOG), 4);
+    memcpy(my_log, AT(at), INPUT_LOG_SIZE);
+#undef AT
+    away = owner = exchanged = asked = loaded = 0;
+    placed = 1;
+    area = (uint16_t)MEM_R16(AREA);
+    if (beside) {               /* the player left the farm: placed beside the player where it arrives */
+        area = 0xFFFF;
+        loaded = 1;
+    }
+    seen_x = (int32_t)MEM_R32(POS);
+    seen_z = (int32_t)MEM_R32(POS + 8);
+    last_tick = frame_count();
+    tiredness();
+}
+
+/* entry of the doors routine (800CD9A0): in the second machine farmer 2 is the player, and does
+ * not take the farm's ways out alone either (it went to the town; the game froze there once).
+ * 1: answered "nothing here" (2, as the routine answers where there is no door: 0 is "busy", and
+ * farmer 2 stood still at the way out) */
+int p2_way_out(CPU *c) {
+    if (!g_machine || !away) return 0;
+    int32_t x = (int32_t)MEM_R32(POS), z = (int32_t)MEM_R32(POS + 8);
+    for (uint32_t i = 0; i < TRIGGERS_N; i++) {
+        uint32_t e = TRIGGERS + i * 44;
+        if (MEM_R16(e + 2) == 0xFFFF || !way_out(e)) continue;
+        if ((int16_t)MEM_R16(e + 14) < x && x < (int16_t)MEM_R16(e + 20) &&
+            (int16_t)MEM_R16(e + 18) < z && z < (int16_t)MEM_R16(e + 24)) {
+            c->r[2] = 2;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* the player (in its place) is at a door that farmer 2 may stay behind (machine.c keeps the farm's
+ * frame's start, in case the player goes through): farmer 2 here, free */
+int p2_player_at_door(void) {
+    return g_p2_enabled && placed && !away && !exchanged && !owner && !trade_who && on_farm && on_trigger();
+}

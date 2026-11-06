@@ -59,8 +59,9 @@ void log_msg(int level, const char *fmt, ...) {
     va_start(ap, fmt);
     vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    fprintf(stderr, "[%s] %s\n", tag[level], buf);
-    if (log_file) { fprintf(log_file, "[%s] f%llu %s\n", tag[level], (unsigned long long)frame_count(), buf); fflush(log_file); }
+    const char *who = g_machine ? "B " : "";     /* the second machine (machine.c) */
+    fprintf(stderr, "[%s] %s%s\n", tag[level], who, buf);
+    if (log_file) { fprintf(log_file, "[%s] f%llu %s%s\n", tag[level], (unsigned long long)frame_count(), who, buf); fflush(log_file); }
 }
 
 void fatal(const char *fmt, ...) {
@@ -210,6 +211,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "emptybag")) g_cfg.emptybag = atoi(val);
     else if (!strcmp(key, "earlycabinet")) g_cfg.earlycabinet = atoi(val);
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
+    else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
     else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);
     else if (!strcmp(key, "cheat_clock")) g_cfg.cheat_clock = atoi(val);
@@ -418,6 +420,10 @@ int main(int argc, char **argv) {
         const char *nx = i + 1 < argc ? argv[i + 1] : "";
         if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(); return 0; }
         else if (!strcmp(a, "--fullscreen")) g_cfg.fullscreen = 1;
+        else if (!strcmp(a, "--mirror")) g_mirror = 1;
+        else if (!strcmp(a, "--split")) g_split = 1;
+        else if (!strcmp(a, "--mirror-park") && nx[0]) { g_mirror = 1; g_mirror_park = atoi(nx); i++; }
+        else if (!strcmp(a, "--mirror-resume") && nx[0]) { g_mirror_resume = atoi(nx); i++; }
         else if (!strcmp(a, "--scale")) { g_cfg.scale = atoi(nx); i++; }
         else if (!strcmp(a, "--upscale")) { g_cfg.upscale = atoi(nx); i++; }
         else if (!strcmp(a, "--renderer")) { g_cfg.renderer_vk = !strcmp(nx, "vulkan"); i++; }
@@ -649,6 +655,7 @@ int main(int argc, char **argv) {
     g_cpu.sr = 0x40000401u;   /* COP2 enabled, IRQs enabled (I_MASK is still 0) */
     g_pad_connected[0] = true;
 
+    machine_init(load_exe);
     load_exe();
     netplay_quit();
     memcard_flush();

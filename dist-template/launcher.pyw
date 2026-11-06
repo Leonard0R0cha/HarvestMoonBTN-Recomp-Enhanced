@@ -82,7 +82,7 @@ OPTIONS = [
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
-     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4')] \
+     ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
   + [('cheats', 'cheats', 'cheat_money', 'edit:0|10000|100000|1000000|9999999'), ('cheats', 'cheats', 'cheat_stamina', 'bool'),
      ('cheats', 'cheats', 'cheat_clock', 'bool'), ('cheats', 'cheats', 'cheat_bag', 'bool'),
      ('cheats', 'cheats', 'cheat_items', 'bool'), ('cheats', 'cheats', 'cheat_tools', 'bool')]
@@ -190,6 +190,11 @@ TEXT = {
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
+        'split': ('Farmer 2 goes into buildings alone (experimental)', 'On the farm, farmer 2 can go through a '
+                  'door on its own (X at a door outside): it plays in its own window, in a second copy of the game, '
+                  'while farmer 1 stays where it is. Time, money and the farm are the same for both. They are '
+                  'together again when both are in the same place. Uses about twice the processor while apart. '
+                  'Online: the host\'s choice counts, and each one sees and hears their own farmer.'),
         'p2view_upscale': ('Farmer 2\'s window resolution', 'auto = the same as the game\'s window. 1 is the '
                            'lightest (original 320x240), for a slower PC, but at 30 pictures a second; above the '
                            'game\'s does nothing.'),
@@ -260,6 +265,12 @@ TEXT = {
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
+        'split': ('Fazendeiro 2 entra nas construções sozinho (experimental)', 'Na fazenda o fazendeiro 2 pode '
+                  'passar por uma porta sozinho (X na porta, do lado de fora): ele joga na janela dele, numa segunda '
+                  'cópia do jogo, e o fazendeiro 1 fica onde está. Hora, dinheiro e fazenda são os mesmos para os '
+                  'dois. Eles se juntam de novo quando os dois estão no mesmo lugar. Usa cerca do dobro do '
+                  'processador enquanto estão separados. No coop online vale a escolha do anfitrião, e cada um '
+                  'vê e ouve o seu fazendeiro.'),
         'p2view_upscale': ('Resolução da janela do fazendeiro 2', 'auto = a mesma da janela do jogo. 1 é a mais '
                            'leve (original 320x240), para PC mais fraco, mas a 30 imagens por segundo; acima da do '
                            'jogo não muda nada.'),
@@ -332,6 +343,12 @@ TEXT = {
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
+        'split': ('El granjero 2 entra solo en los edificios (experimental)', 'En la granja el granjero 2 puede '
+                  'pasar solo por una puerta (X en la puerta, desde fuera): juega en su ventana, en una segunda '
+                  'copia del juego, y el granjero 1 se queda donde está. La hora, el dinero y la granja son los '
+                  'mismos para los dos. Se juntan otra vez cuando los dos están en el mismo lugar. Usa cerca del '
+                  'doble de procesador mientras están separados. En el coop online vale lo que elija el anfitrión, '
+                  'y cada uno ve y oye a su granjero.'),
         'p2view_upscale': ('Resolución de la ventana del granjero 2', 'auto = la misma que la ventana del juego. 1 '
                            'es la más ligera (original 320x240), para un PC más lento, pero a 30 imágenes por segundo; '
                            'más que la del juego no cambia nada.'),
