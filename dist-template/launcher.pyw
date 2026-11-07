@@ -12,7 +12,7 @@ INI = os.path.join(HERE, 'hmbtn.ini')
 EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMoonBTN')
 # the launcher's release: .github/workflows/release.yml publishes it on GitHub as v<VERSION>, with Launcher.exe;
 # a Launcher.exe finds newer ones there, updates itself and rebuilds the game
-VERSION = '1.1.0'
+VERSION = '1.2.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
 GAME_FILES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')    # what build.py reads from the disc (extract/)
@@ -76,11 +76,12 @@ OPTIONS = [
     ('game', 'behaviour', 'fastforward', 'bool'),
     ('game', 'behaviour', 'overclock', 'edit:100|150|200|300'),
     ('game', 'behaviour', 'emptybag', 'bool'),
-    ('game', 'behaviour', 'earlycabinet', 'bool'),
-    ('game', 'behaviour', 'cropwalk', 'bool'),
-    ('game', 'behaviour', 'staminabar', 'bool'),
-    ('game', 'behaviour', 'bulkfood', 'bool'),
     ('game', 'behaviour', 'record', 'bool'),
+    # mods: changes to how the original game plays (off by default; online, the host's count)
+    ('mods', 'behaviour', 'earlycabinet', 'bool'),
+    ('mods', 'behaviour', 'cropwalk', 'bool'),
+    ('mods', 'behaviour', 'staminabar', 'bool'),
+    ('mods', 'behaviour', 'bulkfood', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
@@ -428,6 +429,8 @@ UI = {
         'applied': '%s chosen. Save to keep it.',
         'video_sub': 'The picture is drawn by the processor: resolution is what costs the most.',
         'game_sub': 'Game files, memory cards and shortcuts that save time.',
+        'mods': 'Mods', 'mods_sub': 'Changes to how the original game plays. All off unless you switch them '
+                                    "on; in online co-op the host's choice counts.",
         'keyboard_sub': 'Key names, comma-separated (e.g. X,Space,K). Empty: the default.',
         'controller_sub': 'Controller buttons: a b x y back start leftshoulder rightshoulder lefttrigger '
         'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Empty: the default.',
@@ -513,6 +516,8 @@ UI = {
         'applied': '%s escolhido. Salve para manter.',
         'video_sub': 'A imagem é desenhada pelo processador: a resolução é o que mais pesa.',
         'game_sub': 'Arquivos do jogo, memory cards e atalhos que poupam tempo.',
+        'mods': 'Mods', 'mods_sub': 'Mudanças em como o jogo original funciona. Todas desligadas até você '
+                                    'ligá-las; no coop online vale a escolha do anfitrião.',
         'keyboard_sub': 'Nomes das teclas separados por vírgula (ex.: X,Space,K). Vazio: o padrão.',
         'controller_sub': 'Botões do controle: a b x y back start leftshoulder rightshoulder lefttrigger '
         'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Vazio: o padrão.',
@@ -599,6 +604,8 @@ UI = {
         'applied': '%s elegido. Guarda para conservarlo.',
         'video_sub': 'La imagen la dibuja el procesador: la resolución es lo que más cuesta.',
         'game_sub': 'Archivos del juego, memory cards y atajos que ahorran tiempo.',
+        'mods': 'Mods', 'mods_sub': 'Cambios en cómo se juega el juego original. Todos apagados hasta que '
+                                    'los actives; en el coop en línea cuenta la elección del anfitrión.',
         'keyboard_sub': 'Nombres de teclas separados por comas (p. ej. X,Space,K). Vacío: el predeterminado.',
         'controller_sub': 'Botones del mando: a b x y back start leftshoulder rightshoulder lefttrigger '
         'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Vacío: el predeterminado.',
@@ -1688,7 +1695,7 @@ def main():
         holder.place(x=2 * m + sw, y=m + px(8), relwidth=1, width=-(3 * m + sw), relheight=1,
                      height=-(2 * m + px(8)))
         pages, navs = {}, {}
-        names = ('start', 'video', 'game', 'keyboard', 'controller', 'p2', 'coop', 'cheats')
+        names = ('start', 'video', 'game', 'mods', 'keyboard', 'controller', 'p2', 'coop', 'cheats')
         for name in names + (('build',) if SRC else ()):
             # a nav-link; the mouse pointer is already the game's glove
             n = tk.Label(side, text=T(name), font=F['nav'], bg=WOOD, fg=NAV_C, anchor='w', padx=px(10),
