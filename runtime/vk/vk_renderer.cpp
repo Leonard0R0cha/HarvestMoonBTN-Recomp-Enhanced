@@ -106,10 +106,14 @@ static inline int32_t sext11(uint32_t v)
 }
 
 /* coordinate p (renderer's: without the drawing offset) of a tagged primitive, moved by gpu.c's
- * sprite_coord: about c by s after the anchor's offset d, on the upscaled pixel grid */
+ * sprite_coord: about c by s after the anchor's offset d, on the upscaled pixel grid. Less 1/256
+ * of a pixel: scaled (the HUD squeezed in widescreen, at upscale 2, 3, 5, 6), a pixel's centre can
+ * fall on a texel's edge, where the GPU took one texel or the other depending on where on the
+ * screen it drew (the two display buffers: the menu's icons moved a pixel every other frame);
+ * this way it is the one gpu.c's draw_sprite_scaled takes (floor). The edges stay between pixels. */
 static float moved(float p, int off, float c, float d, float s)
 {
-	return rintf((c + d + (p + off - c) * s) * scale) / scale - off;
+	return (rintf((c + d + (p + off - c) * s) * scale) - 1.0f / 256.0f) / scale - off;
 }
 
 extern "C" int vkr_init(int s)
