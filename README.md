@@ -338,7 +338,7 @@ plays. All are off by default; in online co-op the host's choice counts.
 | Setting | |
 |---|---|
 | `earlycabinet` | Cabinet in the first house: the pile of boxes opens the cabinet before the house is extended |
-| `cropwalk` | Walk through crops: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach |
+| `cropwalk` | Walk through crops and weeds: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach |
 | `staminabar` | Stamina under the clock: a window under the clock shows your stamina (S) and tiredness (F), which the game never shows |
 | `bulkfood` | Buy food in bulk: at a shop shelf you choose how many: one stays in your hands, the rest go to the rucksack and then the fridge |
 
