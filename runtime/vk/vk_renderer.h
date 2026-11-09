@@ -29,6 +29,8 @@ int  vkr_init(int scale);                   /* 0: no Vulkan */
 void vkr_gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const VkRep *rep, const float *prec,
              const int32_t *under);
 void vkr_polyline(uint32_t w);              /* a word of a polyline after its first command */
+/* the depth test experiment: the next command is drawn just behind the one d commands before it */
+void vkr_behind(int d);
 void vkr_upload(int x, int y, int w, int h, const uint16_t *vram);    /* CPU -> VRAM done: that box of vram */
 void vkr_download(int x, int y, int w, int h, uint16_t *vram);        /* the game's VRAM -> CPU (GP0 C0h) */
 void vkr_sync(int x, int y, int w, int h, uint16_t *vram);            /* that box of vram from the GPU's */

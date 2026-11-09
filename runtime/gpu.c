@@ -161,7 +161,35 @@ typedef struct {
     uint8_t  dcol[4096];            /* dither column for x: (x / n) & 3 */
     uint16_t *tag;                  /* upscaled copy: per pixel, what drew it last (see under) */
     double *qpl;                    /* ... per tag, a 3D polygon's plane of 1/w over native pixels (seams) */
+    double dnear;                   /* experiment (HMBTN_DEPTHTEST): depth test, 0 = off (see plot_t) */
+    int observe;                    /* ... only counted, nothing skipped (the native VRAM, for Vulkan) */
+    uint32_t *ser, *qser;           /* ... per pixel and per tag, the command's serial number: a pixel's
+                                     * tag counts only while its plane is still that command's (the
+                                     * game doesn't clear everywhere; tags wrap after 16384 commands) */
 } Target;
+static uint32_t cmd_serial;
+/* Depth test with Vulkan (TN.observe): per command, the earlier 3D commands it overlaps on the
+ * console's pixels, and on how many of those the earlier one is clearly nearer (dt_note) */
+static uint16_t dt_tag[8];
+static int dt_lose[8], dt_all[8], dt_n;
+static uint32_t dt_ser[8];
+static uint32_t dt_front;               /* the newest serial among the pixels it covers and is not behind */
+static int dt_behind = -1;              /* the command's decision: drawn behind that tag (-1: no) */
+static void dt_note(uint32_t o, int behind, uint32_t so)
+{
+    int k;
+    for (k = 0; k < dt_n && dt_tag[k] != (uint16_t)o; k++) {}
+    if (k == dt_n) {
+        if (dt_n == 8)
+            return;
+        dt_tag[dt_n] = (uint16_t)o;
+        dt_ser[dt_n] = so;
+        dt_lose[dt_n] = dt_all[dt_n] = 0;
+        dt_n++;
+    }
+    dt_lose[k] += behind;
+    dt_all[k]++;
+}
 static Target TN = { S.vram, 10, 1023, 511, 1, { 0 } };
 static Target TH;                   /* upscaled copy; buf == NULL when off */
 /* Cracks: models that meet (a wall on the ground, ground tiles, a fence post on the ground) are
@@ -625,8 +653,30 @@ static inline __attribute__((always_inline)) void plot_t(const Target *t, uint32
     }
     if (bk & S.mask_check)
         return;
-    if (tg && blend < 0)
+    /* Experiment: depth test. A 3D polygon's pixel is not drawn where a 3D polygon drawn before it is
+     * more than dnear nearer (1/w larger) there: the game's order (by average depth) puts objects
+     * that cross each other, or sink into the ground, the wrong way round now and then. */
+    if (t->dnear > 0.0 && tg && TAG_KIND(tagv) == TAG_3D) {
+        const uint32_t o = tg[i], so = t->ser ? t->ser[i] : 0;
+        int behind = 0;
+        if (TAG_KIND(o) == TAG_3D && ((o ^ tagv) & 0x3FFFu) && (!t->ser || so == t->qser[o & 0x3FFFu])) {
+            const double *po = &t->qpl[3 * (o & 0x3FFFu)], *pn = &t->qpl[3 * (tagv & 0x3FFFu)];
+            const double fx = ((double)x + 0.5) / t->n, fy = ((double)y + 0.5) / t->n;
+            const double qn = pn[0] + pn[1] * fx + pn[2] * fy;
+            behind = qn > 0.0 && po[0] + po[1] * fx + po[2] * fy > qn * t->dnear;
+            if (t->observe)
+                dt_note(o, behind, so);
+            else if (behind)
+                return;
+        }
+        if (t->observe && !behind && so != cmd_serial && so > dt_front)
+            dt_front = so;
+    }
+    if (tg && blend < 0) {
         tg[i] = tagv;
+        if (t->ser)
+            t->ser[i] = cmd_serial;
+    }
     if (blend >= 0)
         rgb = blend_px(bk, rgb, blend);
     *p = (uint16_t)(rgb | bit15 | S.mask_set);
@@ -1100,7 +1150,7 @@ static inline __attribute__((always_inline)) void span(const Target *t, const Po
             ig.g += d->dx.g;
             ig.b += d->dx.b;
         }
-    } else if (c->blend < 0 && !S.mask_check && !und) {
+    } else if (c->blend < 0 && !S.mask_check && !und && !(t->dnear > 0.0 && TAG_KIND(tagv) == TAG_3D)) {
         uint16_t *p = &t->buf[(y & t->ym) << t->sh];
         uint16_t val = (uint16_t)(c->flat_rgb15 | S.mask_set);
         uint16_t *trow = tg ? &tg[(y & t->ym) << t->sh] : NULL;
@@ -1397,6 +1447,30 @@ static void seam_plane(double *pl, const TriVtx *v, int quad, int32_t n)
         pl[2] = (x1 * q2 - x2 * q1) / den;
         pl[0] = q0 - pl[1] * ax - pl[2] * ay;
         return;
+    }
+}
+
+/* Experiment (depth test): a 2D rectangle at a projected point (a field object: the bamboo shoot)
+ * stands at its anchor's depth z: tagged like a 3D polygon with a flat plane of 1/z, so 3D drawn
+ * after it and behind it leaves it showing, and it is hidden by 3D drawn before it and in front of
+ * it. Not the people and sprites built from polygons: their shadows lie on the floor, not at the
+ * feet's depth, and showed over a chair seat in front of them. */
+static void sprite_depth_tag(const PgxpWord *t)
+{
+    if (TN.observe && t && t->z > 0.0f && !IS_HUD(t->cx) && t->cx != MENU_CX) {
+        double *pl = &TN.qpl[3 * (cur_tag & 0x3FFFu)];
+        cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
+        TN.qser[cur_tag & 0x3FFFu] = cmd_serial;
+        pl[0] = 1.0 / t->z;
+        pl[1] = pl[2] = 0.0;
+        dt_n = 0;
+        dt_front = 0;
+    }
+    if (TH.dnear > 0.0 && TH.qpl && t && t->z > 0.0f && !IS_HUD(t->cx) && t->cx != MENU_CX) {
+        double *pl = &TH.qpl[3 * (cur_tag & 0x3FFFu)];
+        cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
+        pl[0] = 1.0 / t->z;
+        pl[1] = pl[2] = 0.0;
     }
 }
 
@@ -1983,6 +2057,31 @@ static void cmd_polygon(const uint32_t *p)
             band_native_draw(x0, y0, x1, y1);
         }
 #endif
+        dt_n = 0;
+        dt_front = 0;
+        if (TN.observe) {       /* Vulkan's depth test: the precise plane on the console's pixels */
+            float px[4], py[4], pw[4];
+            int all = g_pgxp;
+            for (i = 0; i < nv && all; i++)
+                all = pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &px[i], &py[i], &pw[i]) && pw[i] > 0.0f;
+            for (i = 0; all && i <= quad; i++) {
+                const double ax = px[i] + S.offs_x, ay = py[i] + S.offs_y;
+                const double x1 = px[i + 1] - px[i], y1 = py[i + 1] - py[i], x2 = px[i + 2] - px[i], y2 = py[i + 2] - py[i];
+                const double den = x1 * y2 - x2 * y1;
+                double *pl = &TN.qpl[3 * (cur_tag & 0x3FFFu)], q0, q1, q2;
+                if (den == 0.0)
+                    continue;
+                q0 = 1.0 / pw[i];
+                q1 = 1.0 / pw[i + 1] - q0;
+                q2 = 1.0 / pw[i + 2] - q0;
+                pl[1] = (q1 * y2 - q2 * y1) / den;
+                pl[2] = (x1 * q2 - x2 * q1) / den;
+                pl[0] = q0 - pl[1] * ax - pl[2] * ay;
+                cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
+                TN.qser[cur_tag & 0x3FFFu] = cmd_serial;
+                break;
+            }
+        }
         draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
         if (quad)
             draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
@@ -2095,7 +2194,7 @@ static void cmd_polygon(const uint32_t *p)
             if (TH.qpl)
                 seam_plane(&TH.qpl[3 * (cur_tag & 0x3FFFu)], v, quad, TH.n);
         }
-        precise = precise && moved && !st && c.blend < 0 && TH.tag;   /* see-through ones would blend twice */
+        precise = precise && moved && !st && c.blend < 0 && TH.tag && g_pgxp_cracks;   /* see-through ones would blend twice */
         if (edge)
             edge_wide(&c, v, u);
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND)
@@ -2530,6 +2629,7 @@ static void cmd_rect(const uint32_t *p)
         if (t) {
             sx = sprite_sx(t);
             sy = sprite_sy(t);
+            sprite_depth_tag(t);
         }
     }
     /* texture packs: any textured rectangle (field objects, HUD, text, menus), by its texels; not
@@ -2593,6 +2693,11 @@ static void cmd_fill(const uint32_t *p)
         row = &TN.buf[dy << 10];
         for (x = 0; x < w; x++)
             row[(x0 + x) & 1023] = val;
+        if (TN.tag)
+            for (x = 0; x < w; x++) {
+                TN.tag[(dy << 10) + ((x0 + x) & 1023)] = (uint16_t)(TAG_FILL | (cur_tag & 0x3FFFu));
+                TN.ser[(dy << 10) + ((x0 + x) & 1023)] = cmd_serial;
+            }
         if (TH.buf) {
             int32_t n = TH.n, i, j;
             for (j = 0; j < n; j++) {
@@ -2693,6 +2798,15 @@ static void vram_write_word(uint32_t w)
                 if (g_vk)
                     VK(vkr_upload(S.wr_x, S.wr_y, S.wr_w, S.wr_h, S.vram));
 #endif
+                if (TN.tag) {
+                    int32_t yy, xx;
+                    for (yy = 0; yy < S.wr_h; yy++)
+                        for (xx = 0; xx < S.wr_w; xx++)
+                        {
+                            TN.tag[(((S.wr_y + yy) & 511) << 10) + ((S.wr_x + xx) & 1023)] = 0;
+                            TN.ser[(((S.wr_y + yy) & 511) << 10) + ((S.wr_x + xx) & 1023)] = cmd_serial;
+                        }
+                }
                 break;
             }
         }
@@ -2780,6 +2894,7 @@ static void gp0_execute(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
     cur_tag = (uint16_t)(++tag_seq & 0x3FFFu);
+    cmd_serial++;
 
     if (op == 0x02 || ((op >> 5) >= 2 && (op >> 5) <= 5))   /* fill, line, rect, copy, transfer */
         BAND_SYNC();
@@ -2841,6 +2956,20 @@ static void gp0_execute(const uint32_t *p)
     }
 #if VK_MAIN
     if (g_vk) {     /* after it ran: the moves its tags gave it (vk_xf) */
+        if (TN.observe && TAG_KIND(cur_tag) == TAG_3D && op >= 0x20 && op < 0x80 && !(op & 2)) {
+            /* see-through ones are drawn in a later pass in order: behind X would be behind everything
+             * after X. Moved only when behind an earlier 3D command on every console pixel they share (at
+             * least 8: fewer is a guess at the upscale) and nothing it covers was drawn after that one. */
+            int k, best = -1;
+            for (k = 0; k < dt_n; k++)
+                if (dt_lose[k] == dt_all[k] && dt_lose[k] >= 8 && dt_ser[k] > dt_front &&
+                    (best < 0 || dt_lose[k] > dt_lose[best]))
+                    best = k;
+            if (best >= 0)
+                VK(vkr_behind((int)((cur_tag - dt_tag[best]) & 0x3FFFu)));
+            dt_behind = best >= 0 ? (int)(dt_tag[best] & 0x3FFFu) : -1;
+        }
+        dt_n = 0;
         VK(vkr_gp0(p, vk_xf, vk_nxf, vk_edge, vk_has_rep ? &vk_rep : NULL, vk_has_prec ? vk_prec[0] : NULL,
                    vk_under ? vk_nat[0] : NULL));
         vk_nxf = vk_edge = vk_has_rep = vk_has_prec = vk_under = 0;
@@ -2865,6 +2994,8 @@ typedef struct {
     uint8_t state[sizeof(GpuState) - STATE_OFS];
     uint32_t w[FR_WORDS], a[FR_WORDS];
     PgxpWord pw[FR_WORDS];
+    uint16_t bd[FR_WORDS];          /* at a command's first word: drawn behind the one bd commands back */
+    int ncmd;
 } FrameRec;
 
 /* A redraw for the worker thread, which has a GPU of its own (gpu_replay.c compiles this file a
@@ -2876,6 +3007,7 @@ typedef struct {
     int n;
     uint32_t w[FR_WORDS], a[FR_WORDS];
     PgxpWord pw[FR_WORDS];
+    uint16_t bd[FR_WORDS];
     uint8_t state[sizeof(GpuState) - STATE_OFS];
     uint16_t vram[VRAM_W * VRAM_H];
     float m[9], k[3], h, ofx, ofy, ws, pdx, pdy;
@@ -2963,6 +3095,10 @@ void GPU_REPLAY_RUN(const InterpJob *j, int32_t y0, int32_t y1)
             if (a != 0xFFFFFFFFu)
                 pgxp_mem[(a & 0x1FFFFCu) >> 2] = j->pw[k + i];
         }
+#if VK_MAIN
+        if (j->bd[k])
+            VK(vkr_behind(j->bd[k]));
+#endif
         gp0_execute(&j->w[k]);
     }
     replaying = 0;
@@ -2998,10 +3134,14 @@ static double *interp_qpl;          /* and its planes (Target.qpl) */
 static uint32_t job_gen;            /* the next frame the in-between picture is made for */
 static int since_flip, last_y = -1, disp_y[2] = { -1, -1 }, ilog;
 
+static int rec_ord[0x4000];
+static uint32_t rec_gen[0x4000];
 static void frame_record(const uint32_t *p, uint32_t op)
 {
     FrameRec *r;
     int len, k;
+    const int behind = dt_behind;
+    dt_behind = -1;
     if (!frec || !(op == 0x02 || (op >= 0x20 && op < 0x80) || (op >= 0xE1 && op <= 0xE6)))
         return;
     if ((op >> 5) == 2 && (op & 0x08))          /* polylines go on in polyline_word: not recorded */
@@ -3009,7 +3149,7 @@ static void frame_record(const uint32_t *p, uint32_t op)
     r = &frec[draw_buf()];
     if (anchor_gen - r->last > 1) {             /* a new frame in this buffer */
         r->gen = anchor_gen;
-        r->n = r->full = 0;
+        r->n = r->full = r->ncmd = 0;
         memcpy(r->state, (uint8_t *)&S + STATE_OFS, sizeof r->state);
         r->cam = cam_cur;
         if (anchor_gen - cam_cur.gen > 3)
@@ -3045,6 +3185,10 @@ static void frame_record(const uint32_t *p, uint32_t op)
         r->full = 1;
         return;
     }
+    r->bd[r->n] = behind >= 0 && rec_gen[behind] == r->gen && r->ncmd - rec_ord[behind] < 0x10000
+                  ? (uint16_t)(r->ncmd - rec_ord[behind]) : 0;
+    rec_ord[cur_tag & 0x3FFFu] = r->ncmd++;
+    rec_gen[cur_tag & 0x3FFFu] = r->gen;
     for (k = 0; k < len; k++) {
         uint32_t a = cmd_addr[k];
         r->w[r->n + k] = p[k];
@@ -3211,6 +3355,7 @@ int gpu_interp_prepare(void)
     memcpy(job->w, cur->w, (size_t)cur->n * sizeof *job->w);
     memcpy(job->a, cur->a, (size_t)cur->n * sizeof *job->a);
     memcpy(job->pw, cur->pw, (size_t)cur->n * sizeof *job->pw);
+    memcpy(job->bd, cur->bd, (size_t)cur->n * sizeof *job->bd);
     memcpy(job->state, cur->state, sizeof job->state);
     memcpy(job->vram, S.vram, sizeof job->vram);
     job->pgxp = g_pgxp;
@@ -3680,7 +3825,7 @@ void gpu_render_display(uint32_t *out, int *w, int *h)
         build_rgb_lut();
     if (n > 1) {
         int W = 1024 * n, x0 = d.vram_x * n, n1 = *w < W - x0 ? *w : W - x0;   /* n1: before the wrap */
-        if (g_pgxp && TH.tag && n1 == *w)
+        if (g_pgxp && TH.tag && g_pgxp_cracks && n1 == *w)
             seam_pass(x0, d.vram_y * n, *w, *h);
         for (y = 0; y < *h; y++) {
             const uint16_t *row = &TH.buf[(uint32_t)((d.vram_y * n + y) % (512 * n)) << TH.sh];
@@ -3764,6 +3909,25 @@ void gpu_set_upscale(int n)
     seam_snap = NULL;
 #if VK_MAIN
     TH.n = g_vk;        /* Vulkan's scale, for the sprites' moves (sprite_coord) */
+    free(TN.tag);
+    free(TN.qpl);
+    free(TN.ser);
+    free(TN.qser);
+    TN.tag = NULL;
+    TN.qpl = NULL;
+    TN.ser = TN.qser = NULL;
+    TN.dnear = 0.0;
+    TN.observe = 0;
+    if (g_vk && getenv("HMBTN_DEPTHTEST")) {    /* experiment: Vulkan's depth test, from the console's pixels */
+        TN.tag = (uint16_t *)calloc(1024 * 512, sizeof(uint16_t));
+        TN.qpl = (double *)calloc(0x4000 * 3, sizeof(double));
+        TN.ser = (uint32_t *)calloc(1024 * 512, sizeof(uint32_t));
+        TN.qser = (uint32_t *)calloc(0x4000, sizeof(uint32_t));
+        if (TN.tag && TN.qpl && TN.ser && TN.qser) {
+            TN.dnear = 1.0 + atof(getenv("HMBTN_DEPTHTEST"));
+            TN.observe = 1;
+        }
+    }
 #endif
     if (n < 2)
         return;
@@ -3771,9 +3935,13 @@ void gpu_set_upscale(int n)
         n = 4;
     sh = n == 2 ? 11u : 12u;   /* power-of-two row stride: 2048 or 4096 halfwords */
     TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
-    TH.tag = g_pgxp_cracks ? (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t)) : NULL;
-    TH.qpl = g_pgxp_cracks ? (double *)calloc(0x4000 * 3, sizeof(double)) : NULL;
-    if (!TH.buf || (g_pgxp_cracks && (!TH.tag || !TH.qpl))) {
+    {
+        const char *e = getenv("HMBTN_DEPTHTEST");    /* experiment: the margin, e.g. 0.002 */
+        TH.dnear = e ? 1.0 + atof(e) : 0.0;
+    }
+    TH.tag = g_pgxp_cracks || TH.dnear > 0.0 ? (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t)) : NULL;
+    TH.qpl = g_pgxp_cracks || TH.dnear > 0.0 ? (double *)calloc(0x4000 * 3, sizeof(double)) : NULL;
+    if (!TH.buf || ((g_pgxp_cracks || TH.dnear > 0.0) && (!TH.tag || !TH.qpl))) {
         free(TH.buf);
         free(TH.tag);
         free(TH.qpl);

@@ -4871,6 +4871,8 @@ public:
 	// HMBTN: textured primitives write their flat colour (a tag) where a texel shows (opaque ones only)
 	void use_tag_shaders();
 	bool tag_stp = false;   // HMBTN: and only where the texel's STP bit is clear (a see-through primitive's opaque texels)
+	float depth_override = 0.0f;   // HMBTN: the depth test experiment: this depth instead of the next one (0: none)
+	unsigned get_primitive_index() const { return primitive_index; }
 	enum { OVERRIDE_HASH = 0x484D5450 };
 	HdTexture override_next;
 	std::vector<HdTexture> override_tex;    // those in the queues
