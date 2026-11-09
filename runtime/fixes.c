@@ -54,6 +54,19 @@ uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32
     return solid;
 }
 
+/* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
+ * which 80110E34 copies each tick from a table of 7 (80127EE0, 16 bytes: x, y, z, facing) to the
+ * sprite (a0; its spot at +172, its x, y, z at +56). The yellow one's (spot 3, -240, 0, -146) puts
+ * its flat picture on the last chair behind the table, so the chair cuts in and out of its feet as
+ * the camera moves (on the console too). Its z (a2 after 80110E78) gets SPRITE_BACK: up the screen,
+ * away from the table; 90 is the least that clears the seat in the sessions tried. */
+#define SPRITE_YELLOW_SPOT 3
+#define SPRITE_BACK 100
+
+uint32_t sprite_spot_z(uint32_t z, uint32_t actor) {
+    return g_cfg.spritechair && MEM_R16(actor + 172) == SPRITE_YELLOW_SPOT ? z + SPRITE_BACK : z;
+}
+
 /* The stamina and tiredness under the clock (staminabar): the game never shows them. Every window
  * goes through 80014FAC (a0 the ordering table's entry, a1-a3 x / y / width, the height and the
  * colours on the stack from +16); the clock is the one at 230,18, 74x28, with two rows of text

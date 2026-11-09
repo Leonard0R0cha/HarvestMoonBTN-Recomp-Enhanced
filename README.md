@@ -276,6 +276,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `skipscenes` | `1` | hold START during a cutscene to run it at full speed; it pauses while a dialogue box is open, so choices are never made for you; `0` = off |
 |  | `overclock` | `200` | CPU speed in percent (`100` = the console, up to `400`): the game no longer drops frames when a lot is going on, e.g. running around the farm while switching tools; video, sound and timing stay the same |
 |  | `emptybag` | `1` | R1 / R2 do nothing when there is no tool / item to switch to, so they no longer stop the player for a moment while running; `0` = original |
+|  | `spritechair` | `1` | in the Harvest Sprites' house the yellow sprite stands a little farther back from the table, so the chair no longer cuts in and out of its feet as the camera moves; `0` = original spot |
 |  | `earlycabinet`, `cropwalk`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
 |  | `split` | `0` | `1` = farmer 2 can go into buildings alone (experimental), see [Co-op](#co-op) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
