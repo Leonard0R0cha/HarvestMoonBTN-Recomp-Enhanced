@@ -1429,6 +1429,8 @@ float Renderer::allocate_depth(Domain domain, const Rect &rect)
 {
 	atlas.write_fragment(domain, rect);
 	primitive_index++;
+	if (depth_override > 0.0f)     // HMBTN: drawn just behind an earlier primitive (gpu.c depth test)
+		return depth_override;
 	return 1.0f - primitive_index * (4.0f / 0xffffff); // Double the epsilon to be safe(r) when w is used.
 	//iCB: Doubled again for added safety, otherwise we get Z-fighting when drawing multi-pass blended primitives.
 }

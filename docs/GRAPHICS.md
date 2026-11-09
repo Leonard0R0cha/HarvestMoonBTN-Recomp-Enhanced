@@ -11,6 +11,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `upscale = 2..4` | draws everything a second time at 2–4× resolution, for display | |
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly and scaled with depth like the ground | upscale 2+ |
 | `crackfix = 1` | closes the cracks PGXP opens between models (off: precise culling leaves few; only in hmbtn.ini) | pgxp |
+| `depthtest = 1` | experiment: a depth test as DuckStation's PGXP depth buffer (only in hmbtn.ini) | pgxp |
 | `precisecull = 0` | turns off precise culling: thin faces (table legs, lamp bases) culled on whole pixels as on the console (on with pgxp) | pgxp |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
@@ -127,6 +128,19 @@ changes what the game draws, and so its timing: unlike the rest, the game sees i
 written into recordings (older recordings replay with it off) and a co-op guest uses the host's.
 The session still ran the same with it (the memory card identical at the end); frames late in
 it differ only where faces came back. `precisecull = 0` in hmbtn.ini turns it off.
+
+**Experiment: a depth test** (`depthtest = 1`), with DuckStation's PGXP depth buffer as the model.
+The game sorts by average depth, so now and then it draws the ground over the bamboo shoot by the
+waterfall, a shutter's edge in front of the clinic wall, the side of a step over the beach ladder.
+With the test, a solid 3D pixel is not drawn where a 3D polygon, or a 2D object at its anchor's
+depth, drawn before it is more than 0.2% nearer. As in DuckStation, 2D objects (the tree stumps:
+their roots reach below their anchor, in front of the ground; people and their shadows) and
+see-through pixels keep the game's order, and a solid polygon at least 4096 farther on average than
+the one before starts a new layer (the next frame) that earlier drawing doesn't hide. Depth comes
+from a plane per triangle: one plane for a bent quad put the river bank's quads in front of the
+water drawn over them. Vulkan keeps the drawing order in its depth buffer, so there gpu.c runs the
+comparison on the console's pixels and a command that is behind an earlier one on every pixel they
+share (at least 8) is drawn just behind it.
 
 ## 2D objects on a 3D field
 

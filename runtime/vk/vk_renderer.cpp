@@ -84,6 +84,15 @@ static void use(int k);
 /* per picture renderer and tag, a moved 3D polygon's plane of 1/w over native pixels (drawing offset
  * included): the seam pass fills a run only where both sides are in front of it (gpu.c seam_plane) */
 static float qpl[8][0x4000][4];
+/* The depth test experiment (gpu.c, HMBTN_DEPTHTEST): parallel-psx keeps the drawing order in its
+ * depth buffer (each primitive a little nearer than the one before). A command that gpu.c finds
+ * behind an earlier, clearly nearer one (on the console's pixels) is drawn just behind that one:
+ * between its depth and the one before it. Per renderer and tag: the depth its command was drawn
+ * at, and the render pass it was in (only within one pass: the depth buffer starts over). */
+static float zmap[8][0x4000];
+static uint32_t zpass[8][0x4000], pass_no[8];
+static unsigned last_pi[8];
+static int behind_d;        /* vkr_behind: commands back, 0: none */
 
 static inline bool seams()     /* on a picture renderer (0, 1, 4, 5): its tags are on k + 2 */
 {
@@ -689,11 +698,42 @@ static void gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const V
 	}
 }
 
+extern "C" void vkr_behind(int d)
+{
+	behind_d = d;
+}
+
 extern "C" void vkr_gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const VkRep *rep, const float *prec,
                         const int32_t *under)
 {
 	tag_now++;      /* the command's number (gpu.c cur_tag) */
-	gp0(p, xf, nxf, edge, rep, prec, under);
+	{
+		const int k = cur_inst;
+		const unsigned pi = renderer->get_primitive_index();
+		if (pi < last_pi[k])
+			pass_no[k]++;       /* the queue was flushed: a new depth buffer */
+		if (behind_d > 0)
+		{
+			const uint32_t t = (tag_now - (uint32_t)behind_d) & 0x3FFFu;
+			if (zpass[k][t] == pass_no[k] && zmap[k][t] > 0.0f)
+				renderer->depth_override = zmap[k][t] + 2.0f / 0xffffff;
+		}
+		behind_d = 0;
+		gp0(p, xf, nxf, edge, rep, prec, under);
+		const unsigned pi2 = renderer->get_primitive_index();
+		if (pi2 < pi)
+			pass_no[k]++;
+		if (pi2 != pi)          /* it drew: at this depth */
+		{
+			zmap[k][tag_now & 0x3FFFu] = renderer->depth_override > 0.0f ? renderer->depth_override
+			                                                             : 1.0f - pi2 * (4.0f / 0xffffff);
+			zpass[k][tag_now & 0x3FFFu] = pass_no[k];
+		}
+		else
+			zmap[k][tag_now & 0x3FFFu] = 0.0f;
+		renderer->depth_override = 0.0f;
+		last_pi[k] = pi2;
+	}
 	if (seams())
 	{
 		int k = cur_inst;
