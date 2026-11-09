@@ -302,6 +302,36 @@ static void test_nclip(void)
     check("NCLIP MAC0 overflow FLAG", FLAG(), 0x80010000);
 }
 
+/* Precise culling: a thin face whose whole-pixel corners are collinear (the game drops it) keeps
+ * the sign of its precise area; positions written by hand have none and keep the integer result. */
+static void nclip_thin(void)
+{
+    setup_rtps_identity();    /* H/Z = 1/2: (4,1) -> (162,120.5), (2,1) -> (161,120.5) */
+    WD(0, XY(0, 0)); WD(1, 400);
+    gte_command(OP_RTPS);
+    WD(0, XY(4, 1));
+    gte_command(OP_RTPS);
+    WD(0, XY(2, 1));
+    gte_command(OP_RTPS);
+    gte_command(OP_NCLIP);
+}
+
+static void test_precise_cull(void)
+{
+    nclip_thin();
+    check("precise cull off: integer area 0", D(24), 0);
+    gte_set_precise_cull(1);
+    nclip_thin();
+    check("precise cull: sign of precise area", D(24), 1);
+    WD(12, XY(0, 0)); WD(13, XY(5, 5)); WD(14, XY(10, 10));
+    gte_command(OP_NCLIP);
+    check("precise cull: hand-written SXY kept", D(24), 0);
+    WD(12, XY(0, 0)); WD(13, XY(10, 0)); WD(14, XY(0, 10));
+    gte_command(OP_NCLIP);
+    check("precise cull: hand-written SXY area", D(24), 100);
+    gte_set_precise_cull(0);
+}
+
 static void test_avsz(void)
 {
     gte_reset();
@@ -751,6 +781,7 @@ int main(void)
     test_rtps();
     test_rtpt();
     test_nclip();
+    test_precise_cull();
     test_avsz();
     test_mvmva();
     test_sqr_op();

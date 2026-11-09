@@ -220,6 +220,12 @@ static struct { float x, y, w; int ok; } pg[3];
  * wider view fits the picture (the frontend shows it stretched). Settings, not GTE state. */
 static int32_t ws_num = 1, ws_den = 1;
 static uint32_t rtp_count;          /* vertices projected so far */
+static int precise_cull;            /* NCLIP takes its sign from the PGXP positions (setting) */
+
+void gte_set_precise_cull(int on)
+{
+    precise_cull = on;
+}
 
 void gte_set_widescreen(int num, int den)
 {
@@ -462,6 +468,15 @@ static void cmd_nclip(void)
     const int64_t sx2 = g.sxy[2][0], sy2 = g.sxy[2][1];
     const int64_t v = sx0 * sy1 + sx1 * sy2 + sx2 * sy0 - sx0 * sy2 - sx1 * sy0 - sx2 * sy1;
     g.mac[0] = (int32_t)mac0_check(v);
+    /* Precise culling: the game drops faces whose whole-pixel area is 0 or reversed. Thin faces
+     * seen nearly edge-on (table legs, lamp bases) lose a side and leave a hole once the corners
+     * are precise; take the sign from the precise corners when it differs (MAC0 = -1, 0 or 1). */
+    if (precise_cull && pg[0].ok && pg[1].ok && pg[2].ok) {
+        const double a = (double)pg[0].x * pg[1].y + (double)pg[1].x * pg[2].y + (double)pg[2].x * pg[0].y
+                       - (double)pg[0].x * pg[2].y - (double)pg[1].x * pg[0].y - (double)pg[2].x * pg[1].y;
+        if ((a > 0.0) != (v > 0) || (a < 0.0) != (v < 0))
+            g.mac[0] = a > 0.0 ? 1 : a < 0.0 ? -1 : 0;
+    }
 }
 
 static void avsz(int16_t zsf, int64_t sum)

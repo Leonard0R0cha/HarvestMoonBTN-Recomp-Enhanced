@@ -19,6 +19,9 @@ float    gte_ground_scale(float sx, float sy);
 /* Widescreen: screen X of RTPS/RTPT is scaled by num/den about OFX (1/1 = off), so a wider view
  * fits the picture. The game sees the squeezed coordinates. Not part of the state. */
 void     gte_set_widescreen(int num, int den);
+/* Precise culling: NCLIP's sign from the PGXP positions when it differs from the whole-pixel one.
+ * Changes what the game draws (and so its timing): recordings and co-op carry it. */
+void     gte_set_precise_cull(int on);
 /* Vertices projected by RTPS/RTPT so far (the frontend's "is the game drawing 3D" test). */
 uint32_t gte_projections(void);
 /* Widescreen: distance v of the 4:3 view widened like the view (v unchanged when off). */

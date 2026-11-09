@@ -194,6 +194,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) {}   /* older ini files: always on now, with pgxp (--no-sprite-depth to compare) */
     else if (!strcmp(key, "crackfix")) g_cfg.crackfix = atoi(val);
+    else if (!strcmp(key, "precisecull")) g_cfg.precisecull = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
     else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
@@ -407,6 +408,7 @@ int main(int argc, char **argv) {
     g_cfg.fastcard = 1;
     g_cfg.draw_threads = -1;
     g_cfg.crackfix = 1;
+    g_cfg.precisecull = -1;
     g_cfg.sprite_depth = 1;
     g_cfg.quickui = 1;
     g_cfg.fastload = 1;
@@ -517,6 +519,7 @@ int main(int argc, char **argv) {
     }
 
     if (g_view2 < 0 && netplay_role() != 2) g_view2 = g_p2_enabled && !netplay_role();   /* a window for farmer 2 */
+    if (g_cfg.precisecull < 0) g_cfg.precisecull = g_cfg.pgxp && g_cfg.upscale > 1;   /* a replay / the host may change it */
     if (platform_init() != 0) return 1;
 
     if (!locate_disc())
@@ -599,6 +602,7 @@ int main(int argc, char **argv) {
 
     mem_reset();
     gte_reset();
+    gte_set_precise_cull(g_cfg.precisecull);
     gpu_init();
     int vk = 0;
 #ifdef HMBTN_VULKAN
