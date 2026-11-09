@@ -15,7 +15,7 @@ gameplay mods and a launcher that builds the game from your disc and keeps it up
 
 - Plays like the original: same game logic, same graphics, music and timing (NTSC, 59.29 fps)
 - **Graphics:** internal resolution 2–4× (up to 8× with the Vulkan renderer), precise 3D
-  vertices (PGXP) without the cracks they open, perspective-correct textures, 2D objects that
+  vertices (PGXP) without the holes they open, perspective-correct textures, 2D objects that
   scale with depth, widescreen (16:9, 16:10, 21:9) including the title screen and menus, a
   camera that moves at 60 fps, texture packs and redrawn portraits
   ([docs/GRAPHICS.md](docs/GRAPHICS.md))
@@ -257,7 +257,8 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `upscale` | `2` | internal resolution 1–4, 1–8 with `renderer = vulkan` (2+ = smoother 3D edges; 4 = 1280×960, 8 = 2560×1920) |
 |  | `drawthreads` | `auto` | threads that draw the upscaled 3D with the CPU renderer, `0`–`4`; `auto` = by processor |
 |  | `pgxp` | `1` | `1` = precise 3D vertex positions, no wobble; 2D objects get smaller further away, like the 3D ground (needs `upscale` 2+) |
-|  | `crackfix` | `1` | `1` = close the thin cracks between models that `pgxp` opens; `0` is about 1 ms a frame faster at upscale 4 (needs `pgxp`) |
+|  | `crackfix` | `0` | `1` = close the thin cracks between models that `pgxp` opens, about 1 ms a frame at upscale 4; precise culling leaves few (needs `pgxp`) |
+|  | `precisecull` | with `pgxp` | `0` = cull thin faces on whole pixels as the console does (table legs and lamp bases lose a side); the game sees it, so recordings and co-op carry it |
 |  | `perspective` | `1` | `1` = perspective-correct textures (needs `pgxp`) |
 |  | `widescreen` | `16:9` | `off`, `16:9`, `16:10` or `21:9`: wider 3D view; with `upscale` 2+ the HUD and 2D objects keep their shape and the title screen and menus fill the screen |
 |  | `interp` | `1` | `1` = 60 fps camera: the camera and the 3D scenery move every VBlank while the game runs at 30 (needs `pgxp`; 3 extra CPU threads, shows 30 pictures a second where the PC can't keep up) |
@@ -286,7 +287,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 | `[launcher]` | `language` |  | the launcher's language, `en`, `pt` or `es` (its flags set it); not set: the system's |
 
 Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--renderer cpu|vulkan`, `--upscale N`,
-`--drawthreads N`, `--pgxp`, `--no-crackfix`, `--perspective`, `--no-sprite-depth`, `--widescreen W:H`,
+`--drawthreads N`, `--pgxp`, `--crackfix`, `--perspective`, `--no-sprite-depth`, `--widescreen W:H`,
 `--interp` / `--no-interp`, `--texturepack` / `--no-texturepack`, `--portraits` / `--no-portraits`,
 `--dumptextures`, `--fastcd`, `--no-autoslot`, `--card N`, `--overclock N`, `--savedir DIR`,
 `--p2`, `--split`, `--p2view-upscale N`, `--host [PORT]`, `--join ADDRESS[:PORT]`, `--netdelay N`,

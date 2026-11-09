@@ -10,7 +10,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 |---|---|---|
 | `upscale = 2..4` | draws everything a second time at 2–4× resolution, for display | |
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly and scaled with depth like the ground | upscale 2+ |
-| `crackfix = 1` | closes the cracks PGXP opens between models (on unless set to 0) | pgxp |
+| `crackfix = 1` | closes the cracks PGXP opens between models (off: precise culling leaves few; only in hmbtn.ini) | pgxp |
 | `precisecull = 0` | turns off precise culling: thin faces (table legs, lamp bases) culled on whole pixels as on the console (on with pgxp) | pgxp |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |

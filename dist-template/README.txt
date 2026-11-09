@@ -29,8 +29,8 @@ The launcher's pages: Start (quick setup by your PC's cores), Video, Game (time 
 Keyboard, Controller, Local co-op, Online co-op and Cheats. They are saved in hmbtn.ini next to
 the game, a commented file you can also edit by hand.
 
-* Graphics: internal resolution 2-4 (up to 8 with the Vulkan renderer), precise 3D (PGXP) with
-  the cracks between models closed, perspective-correct textures, widescreen (16:9, 16:10, 21:9,
+* Graphics: internal resolution 2-4 (up to 8 with the Vulkan renderer), precise 3D (PGXP) without
+  wobbling polygons, perspective-correct textures, widescreen (16:9, 16:10, 21:9,
   title screen and menus included) and a camera that moves at 60 fps (F9 compares).
 * The CPU renderer draws the picture with the processor, so no graphics card is needed; the
   resolution is what costs. On a slower PC pick the quick setup for its number of cores (2 cores:
