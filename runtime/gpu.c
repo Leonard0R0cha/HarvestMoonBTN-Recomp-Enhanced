@@ -168,6 +168,42 @@ typedef struct {
                                      * game doesn't clear everywhere; tags wrap after 16384 commands) */
 } Target;
 static uint32_t cmd_serial;
+/* Depth test layers (as DuckStation's PGXP depth buffer): the game draws back to front, so a solid 3D
+ * polygon at least DT_LAYER farther on average than the one before starts a new layer (the next frame,
+ * or water drawn over a river bank on purpose): what was drawn before it no longer hides anything.
+ * dt_clear: that polygon's tag | 0x10000 (0: none yet); dt_clear_ser: its serial (the Vulkan path). */
+#define DT_LAYER 4096.0f
+static uint32_t dt_clear, dt_clear_ser;
+static float dt_last_w = 1e30f;
+/* The depth test's planes are per triangle: a quad's second triangle (v1 v2 v3) has its own plane at
+ * QPL2 + 3 * tag (quads are often bent: one plane for both put the river bank's quads in front of the
+ * water drawn over them). dt_tri: the triangle being drawn. */
+#define QPL2 (0x4000 * 3)
+static int dt_tri;
+/* the plane of 1/w over native pixels through (x, y, w) three times; 0: degenerate */
+static int plane3(double *pl, double ax, double ay, double aw, double bx, double by, double bw,
+                  double cx, double cy, double cw)
+{
+    const double x1 = bx - ax, y1 = by - ay, x2 = cx - ax, y2 = cy - ay, den = x1 * y2 - x2 * y1;
+    double q0, q1, q2;
+    if (aw <= 0.0 || bw <= 0.0 || cw <= 0.0 || den == 0.0)
+        return 0;
+    q0 = 1.0 / aw;
+    q1 = 1.0 / bw - q0;
+    q2 = 1.0 / cw - q0;
+    pl[1] = (q1 * y2 - q2 * y1) / den;
+    pl[2] = (x1 * q2 - x2 * q1) / den;
+    pl[0] = q0 - pl[1] * ax - pl[2] * ay;
+    return 1;
+}
+static void dt_layer(float avg_w, uint32_t tag)
+{
+    if (avg_w - dt_last_w >= DT_LAYER) {
+        dt_clear = 0x10000u | (tag & 0x3FFFu);
+        dt_clear_ser = cmd_serial;
+    }
+    dt_last_w = avg_w;
+}
 /* Depth test with Vulkan (TN.observe): per command, the earlier 3D commands it overlaps on the
  * console's pixels, and on how many of those the earlier one is clearly nearer (dt_note) */
 static uint16_t dt_tag[8];
@@ -656,21 +692,24 @@ static inline __attribute__((always_inline)) void plot_t(const Target *t, uint32
     }
     if (bk & S.mask_check)
         return;
-    /* Experiment: depth test, a 3D polygon after a 2D object at a projected point (a flat plane of
-     * 1/w: its anchor's depth): its pixel is not drawn where the object is more than dnear nearer
-     * (1/w larger): the game's order (by average depth) draws the ground over the bamboo shoot now and
-     * then. Not the other way (a tree stump's roots reach below its anchor, in front of the ground: the
-     * game draws them over it) and not between 3D polygons: models sink into the ground and walls on
-     * purpose (the river bank under the water) and the game's order shows them. */
+    /* Experiment: depth test, as DuckStation's PGXP depth buffer. A solid 3D polygon's pixel is not
+     * drawn where a 3D polygon, or a 2D object at a projected point (a flat plane of 1/w: its anchor's
+     * depth), drawn before it in this layer (dt_layer) is more than dnear nearer (1/w larger): the
+     * game's order (by average depth) puts the ground over the bamboo shoot, a shutter's edge in front
+     * of the clinic wall, now and then. 2D objects and see-through pixels are always drawn (a tree
+     * stump is 2D: its roots reach below its anchor, in front of the ground). Planes per triangle. */
     if (t->dnear > 0.0 && tg && TAG_KIND(tagv) == TAG_3D) {
         const uint32_t o = tg[i], so = t->ser ? t->ser[i] : 0;
         int behind = 0;
-        if (TAG_KIND(o) == TAG_3D && ((o ^ tagv) & 0x3FFFu) && (!t->ser || so == t->qser[o & 0x3FFFu])) {
-            const double *po = &t->qpl[3 * (o & 0x3FFFu)], *pn = &t->qpl[3 * (tagv & 0x3FFFu)];
+        if (TAG_KIND(o) == TAG_3D && ((o ^ tagv) & 0x3FFFu) && (!t->ser || so == t->qser[o & 0x3FFFu]) &&
+            (t->ser ? so >= dt_clear_ser
+                    : !dt_clear || ((tagv - o) & 0x3FFFu) < ((tagv - dt_clear) & 0x3FFFu))) {
+            const double *po = &t->qpl[3 * (o & 0x3FFFu)], *pn = &t->qpl[(dt_tri ? QPL2 : 0) + 3 * (tagv & 0x3FFFu)];
             const double fx = ((double)x + 0.5) / t->n, fy = ((double)y + 0.5) / t->n;
             const double qn = pn[0] + pn[1] * fx + pn[2] * fy;
-            const int flat = po[1] == 0.0 && po[2] == 0.0 && (pn[1] != 0.0 || pn[2] != 0.0);
-            behind = flat && qn > 0.0 && po[0] + po[1] * fx + po[2] * fy > qn * t->dnear;
+            const double qo1 = po[0] + po[1] * fx + po[2] * fy, qo2 = po[QPL2] + po[QPL2 + 1] * fx + po[QPL2 + 2] * fy;
+            const int solid3d = (pn[1] != 0.0 || pn[2] != 0.0) && blend < 0;   /* not a 2D object, not see-through */
+            behind = solid3d && qn > 0.0 && (qo1 < qo2 ? qo1 : qo2) > qn * t->dnear;
             if (t->observe)
                 dt_note(o, behind, so);
             else if (behind)
@@ -1404,8 +1443,11 @@ static void draw_triangle(const Target *t, const PolyCtx *c, const TriVtx *a, co
 static void draw_up(const PolyCtx *c, const TriVtx *v, const TriVtx *u, int quad)
 {
     draw_triangle(&TH, c, &v[0], &v[1], &v[2]);
-    if (quad)
+    if (quad) {
+        dt_tri = 1;
         draw_triangle(&TH, c, &v[1], &v[2], &v[3]);
+        dt_tri = 0;
+    }
     if (u) {
         under = 1;
         draw_triangle(&TN, c, &u[0], &u[1], &u[2]);
@@ -1468,16 +1510,16 @@ static void sprite_depth_tag(const PgxpWord *t)
         double *pl = &TN.qpl[3 * (cur_tag & 0x3FFFu)];
         cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
         TN.qser[cur_tag & 0x3FFFu] = cmd_serial;
-        pl[0] = 1.0 / t->z;
-        pl[1] = pl[2] = 0.0;
+        pl[0] = pl[QPL2] = 1.0 / t->z;
+        pl[1] = pl[2] = pl[QPL2 + 1] = pl[QPL2 + 2] = 0.0;
         dt_n = 0;
         dt_front = 0;
     }
     if (TH.dnear > 0.0 && TH.qpl && t && t->z > 0.0f && !IS_HUD(t->cx) && t->cx != MENU_CX) {
         double *pl = &TH.qpl[3 * (cur_tag & 0x3FFFu)];
         cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
-        pl[0] = 1.0 / t->z;
-        pl[1] = pl[2] = 0.0;
+        pl[0] = pl[QPL2] = 1.0 / t->z;
+        pl[1] = pl[2] = pl[QPL2 + 1] = pl[QPL2 + 2] = 0.0;
     }
 }
 
@@ -1602,6 +1644,7 @@ typedef struct {
     TriVtx v[4], u[4];              /* u: the console's corners, native (under) */
     int quad, under, persp;
     uint16_t tag;
+    uint32_t dclear;                /* dt_clear when it was queued */
     int seam;                       /* 1, 2: not a polygon but seam_across, seam_down of the picture: */
     uint16_t *sbuf, *stag, *ssnap;  /* ... buf, tag, snap, columns sx0 .. + sw, rows sy0 .. + sh, */
     const double *sqpl;             /* ... and the planes */
@@ -1656,6 +1699,7 @@ void GPU_BAND_RUN(const BandItem *ring, uint64_t from, uint64_t to, const Target
         tex_clut = it->clut;
         g_pgxp_persp = it->persp;
         cur_tag = it->tag;
+        dt_clear = it->dclear;
         draw_up(&it->c, it->v, it->under ? it->u : NULL, it->quad);
     }
 }
@@ -1808,6 +1852,7 @@ static void band_push(const PolyCtx *c, const TriVtx *v, const TriVtx *u, int qu
     it->quad = quad;
     it->under = u != NULL;
     it->tag = cur_tag;
+    it->dclear = dt_clear;
     it->seam = 0;
     it->persp = g_pgxp_persp;
     it->tp_x = S.tp_x;
@@ -2071,27 +2116,30 @@ static void cmd_polygon(const uint32_t *p)
             int all = g_pgxp;
             for (i = 0; i < nv && all; i++)
                 all = pgxp_lookup(cmd_addr[xyi[i]], p[xyi[i]], &px[i], &py[i], &pw[i]) && pw[i] > 0.0f;
-            for (i = 0; all && i <= quad; i++) {
-                const double ax = px[i] + S.offs_x, ay = py[i] + S.offs_y;
-                const double x1 = px[i + 1] - px[i], y1 = py[i + 1] - py[i], x2 = px[i + 2] - px[i], y2 = py[i + 2] - py[i];
-                const double den = x1 * y2 - x2 * y1;
-                double *pl = &TN.qpl[3 * (cur_tag & 0x3FFFu)], q0, q1, q2;
-                if (den == 0.0)
-                    continue;
-                q0 = 1.0 / pw[i];
-                q1 = 1.0 / pw[i + 1] - q0;
-                q2 = 1.0 / pw[i + 2] - q0;
-                pl[1] = (q1 * y2 - q2 * y1) / den;
-                pl[2] = (x1 * q2 - x2 * q1) / den;
-                pl[0] = q0 - pl[1] * ax - pl[2] * ay;
-                cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
-                TN.qser[cur_tag & 0x3FFFu] = cmd_serial;
-                break;
+            if (all) {      /* per triangle (QPL2: a quad's second) */
+                double *pl = &TN.qpl[3 * (cur_tag & 0x3FFFu)];
+                double xs[4], ys[4];
+                for (i = 0; i < nv; i++) {
+                    xs[i] = px[i] + S.offs_x;
+                    ys[i] = py[i] + S.offs_y;
+                }
+                if (plane3(pl, xs[0], ys[0], pw[0], xs[1], ys[1], pw[1], xs[2], ys[2], pw[2]) ||
+                    (quad && plane3(pl, xs[1], ys[1], pw[1], xs[2], ys[2], pw[2], xs[3], ys[3], pw[3]))) {
+                    if (!quad || !plane3(pl + QPL2, xs[1], ys[1], pw[1], xs[2], ys[2], pw[2], xs[3], ys[3], pw[3]))
+                        memcpy(pl + QPL2, pl, 3 * sizeof *pl);
+                    cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
+                    TN.qser[cur_tag & 0x3FFFu] = cmd_serial;
+                    if (c.blend < 0)
+                        dt_layer((pw[0] + pw[1] + pw[2] + (quad ? pw[3] : 0.0f)) / (float)nv, cur_tag);
+                }
             }
         }
         draw_triangle(&TN, &c, &v[0], &v[1], &v[2]);
-        if (quad)
+        if (quad) {
+            dt_tri = 1;
             draw_triangle(&TN, &c, &v[1], &v[2], &v[3]);
+            dt_tri = 0;
+        }
     }
     if (TH.buf || VK_TAGS) {
         const PgxpWord *st = NULL;
@@ -2198,8 +2246,23 @@ static void cmd_polygon(const uint32_t *p)
         }
         if (precise && !st) {
             cur_tag = (uint16_t)(TAG_3D | (cur_tag & 0x3FFFu));
-            if (TH.qpl)
-                seam_plane(&TH.qpl[3 * (cur_tag & 0x3FFFu)], v, quad, TH.n);
+            if (TH.qpl) {
+                double *p1 = &TH.qpl[3 * (cur_tag & 0x3FFFu)], *p2 = p1 + QPL2;
+                const double n = TH.n;
+                seam_plane(p1, v, quad, TH.n);
+                if (TH.dnear > 0.0) {
+                    plane3(p1, v[0].x / n, v[0].y / n, v[0].w, v[1].x / n, v[1].y / n, v[1].w, v[2].x / n, v[2].y / n, v[2].w);
+                    if (!quad || !plane3(p2, v[1].x / n, v[1].y / n, v[1].w, v[2].x / n, v[2].y / n, v[2].w,
+                                         v[3].x / n, v[3].y / n, v[3].w))
+                        memcpy(p2, p1, 3 * sizeof *p1);
+                }
+            }
+            if (TH.dnear > 0.0 && c.blend < 0) {
+                float a = 0.0f;
+                for (i = 0; i < nv; i++)
+                    a += v[i].w;
+                dt_layer(a / (float)nv, cur_tag);
+            }
         }
         precise = precise && moved && !st && c.blend < 0 && TH.tag && g_pgxp_cracks;   /* see-through ones would blend twice */
         if (edge)
@@ -3231,7 +3294,7 @@ void gpu_interp_enable(void)
     interp_tags = TH.tag ? malloc(((size_t)1 << (2 * TH.sh - 1)) * sizeof *interp_tags) : NULL;
     g_interp = frec && job && (interp_buf || VK_ON) && (interp_tags || !TH.tag);
     ilog = getenv("HMBTN_INTERP_LOG") != NULL;
-    interp_qpl = TH.qpl ? calloc(0x4000 * 3, sizeof *interp_qpl) : NULL;
+    interp_qpl = TH.qpl ? calloc(0x4000 * 6, sizeof *interp_qpl) : NULL;
     g_interp = g_interp && (interp_qpl || !TH.tag);
 }
 
@@ -3927,7 +3990,7 @@ void gpu_set_upscale(int n)
     TN.observe = 0;
     if (g_vk && g_depth_margin > 0.0) {     /* Vulkan's depth test, from the console's pixels */
         TN.tag = (uint16_t *)calloc(1024 * 512, sizeof(uint16_t));
-        TN.qpl = (double *)calloc(0x4000 * 3, sizeof(double));
+        TN.qpl = (double *)calloc(0x4000 * 6, sizeof(double));
         TN.ser = (uint32_t *)calloc(1024 * 512, sizeof(uint32_t));
         TN.qser = (uint32_t *)calloc(0x4000, sizeof(uint32_t));
         if (TN.tag && TN.qpl && TN.ser && TN.qser) {
@@ -3944,7 +4007,7 @@ void gpu_set_upscale(int n)
     TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
     TH.dnear = g_depth_margin > 0.0 ? 1.0 + g_depth_margin : 0.0;
     TH.tag = g_pgxp_cracks || TH.dnear > 0.0 ? (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t)) : NULL;
-    TH.qpl = g_pgxp_cracks || TH.dnear > 0.0 ? (double *)calloc(0x4000 * 3, sizeof(double)) : NULL;
+    TH.qpl = g_pgxp_cracks || TH.dnear > 0.0 ? (double *)calloc(0x4000 * 6, sizeof(double)) : NULL;
     if (!TH.buf || ((g_pgxp_cracks || TH.dnear > 0.0) && (!TH.tag || !TH.qpl))) {
         free(TH.buf);
         free(TH.tag);
