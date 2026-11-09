@@ -24,6 +24,11 @@ SHADERS = {
     'ppsx/glsl/prebuilt/feedback.unscaled.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'UNSCALED']),
     'ppsx/glsl/prebuilt/feedback.msaa.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'MSAA']),
     'ppsx/glsl/prebuilt/feedback.msaa.unscaled.frag.inc': ('ppsx/glsl/primitive_feedback.frag', ['TEXTURED', 'MSAA', 'UNSCALED']),
+    # the depth test (in order, Renderer::set_ordered)
+    'ppsx/glsl/prebuilt/flat.inv.vert.inc': ('ppsx/glsl/primitive.vert', ['INVARIANT']),
+    'ppsx/glsl/prebuilt/textured.inv.vert.inc': ('ppsx/glsl/primitive.vert', ['TEXTURED', 'INVARIANT']),
+    'ppsx/glsl/prebuilt/depth2.vert.inc': ('ppsx/glsl/depth2.vert', []),
+    'ppsx/glsl/prebuilt/depth2.frag.inc': ('ppsx/glsl/depth2.frag', []),
 }
 
 

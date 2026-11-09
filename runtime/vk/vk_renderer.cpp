@@ -14,6 +14,7 @@
 
 extern "C" void log_msg(int level, const char *fmt, ...);
 extern "C" int g_pgxp_persp, g_pgxp_cracks;
+extern "C" double g_depth_margin;
 
 using namespace Vulkan;
 using namespace PSX;
@@ -84,15 +85,19 @@ static void use(int k);
 /* per picture renderer and tag, a moved 3D polygon's plane of 1/w over native pixels (drawing offset
  * included): the seam pass fills a run only where both sides are in front of it (gpu.c seam_plane) */
 static float qpl[8][0x4000][4];
-/* The depth test experiment (gpu.c, HMBTN_DEPTHTEST): parallel-psx keeps the drawing order in its
- * depth buffer (each primitive a little nearer than the one before). A command that gpu.c finds
- * behind an earlier, clearly nearer one (on the console's pixels) is drawn just behind that one:
- * between its depth and the one before it. Per renderer and tag: the depth its command was drawn
- * at, and the render pass it was in (only within one pass: the depth buffer starts over). */
-static float zmap[8][0x4000];
-static uint32_t zpass[8][0x4000], pass_no[8];
-static unsigned last_pi[8];
-static int behind_d;        /* vkr_behind: commands back, 0: none */
+/* The depth test (depthtest = 1, gpu.c plot_t), per pixel: the renderers draw in the game's order
+ * with a depth buffer of 1/w (Renderer::set_ordered). A solid precise 3D triangle is drawn where
+ * nothing drawn before it in this layer is more than the margin nearer and leaves its depth (the
+ * farther of a quad's two planes there, as gpu.c); a 2D rectangle at a projected point leaves its
+ * anchor's; other solid pixels leave none (0). Depth stored as DT_K / w (in 0..1 for w >= DT_K). */
+static const float DT_K = 1.0f / 128.0f;
+static float dt_last_w[8] = { 1e30f, 1e30f, 1e30f, 1e30f, 1e30f, 1e30f, 1e30f, 1e30f };
+static bool dt_failed[8];   /* set_ordered failed (no depth/stencil format): the depth test off there */
+struct DtPoly
+{
+	int kind[2];            /* per triangle: 0 none, 1 written only (a flat plane: as a 2D object), 2 tested */
+	float z[4], zw[4], zo[4];   /* per corner: tested at, written if flat, the other triangle's plane */
+};
 
 static inline bool seams()     /* on a picture renderer (0, 1, 4, 5): its tags are on k + 2 */
 {
@@ -317,6 +322,87 @@ static void edge_wide(const Vertex *v, const int32_t *nx, const int32_t *ny, uin
 	}
 }
 
+/* gpu.c dt_layer: a solid polygon at least 4096 farther on average than the one before starts a new
+ * layer: what was drawn before hides nothing */
+static void dt_layer(float avg_w)
+{
+	if (avg_w - dt_last_w[cur_inst] >= 4096.0f)
+		renderer->depth_clear();
+	dt_last_w[cur_inst] = avg_w;
+}
+
+/* A precise 3D polygon's depth (prec: x, y, w per corner; triangles 0 1 2 and 1 2 3) */
+static void dt_polygon(DtPoly &d, const float *prec, int nv, int abe)
+{
+	const float inv = float(1.0 / (1.0 + g_depth_margin));
+	if (!abe)
+	{
+		float a = 0.0f;
+		for (int i = 0; i < nv; i++)
+			a += prec[i * 3 + 2];
+		dt_layer(a / (float)nv);
+	}
+	for (int i = 0; i < nv; i++)
+	{
+		d.z[i] = d.zo[i] = DT_K / prec[i * 3 + 2];
+		d.zw[i] = d.z[i] * inv;
+	}
+	for (int t = 0; t < nv - 2; t++)    /* flat (gpu.c: pn[1], pn[2] both 0): not tested */
+	{
+		const float *c = &prec[t * 3];
+		d.kind[t] = c[2] == c[5] && c[2] == c[8] ? 1 : 2;
+	}
+	d.kind[1] = nv == 4 ? d.kind[1] : d.kind[0];
+	static const int other[2][4] = { { 1, 2, 3, 0 }, { 0, 1, 2, 3 } };   /* a plane's corners, and the corner off it */
+	for (int t = 0; t < 2 && nv == 4; t++)  /* the other triangle's plane at corners 0 and 3 */
+	{
+		const int *k = other[t];
+		const float *a = &prec[k[0] * 3], *b = &prec[k[1] * 3], *c = &prec[k[2] * 3], *o = &prec[k[3] * 3];
+		const double x1 = b[0] - a[0], y1 = b[1] - a[1], x2 = c[0] - a[0], y2 = c[1] - a[1], den = x1 * y2 - x2 * y1;
+		if (den == 0.0)
+			continue;
+		const double q0 = 1.0 / a[2], q1 = 1.0 / b[2] - q0, q2 = 1.0 / c[2] - q0;
+		const double q = q0 + (q1 * y2 - q2 * y1) / den * (o[0] - a[0]) + (x1 * q2 - x2 * q1) / den * (o[1] - a[1]);
+		if (q > 0.0)
+			d.zo[k[3]] = std::min(d.z[k[3]], float(DT_K * q));
+	}
+}
+
+/* the depth for the next draw: triangle t (0, 1; -1: the quad) of polygon d (nullptr: none) */
+static void dt_set(const DtPoly *d, int t)
+{
+	renderer->dt_kind = d ? d->kind[t < 0 ? 0 : t] : 0;
+	for (int i = 0, o = t == 1 ? 1 : 0; d && i + o < 4; i++)
+	{
+		renderer->dt_z[i] = renderer->dt_kind == 2 ? d->z[i + o] : d->zw[i + o];
+		renderer->dt_zo[i] = d->zo[i + o];
+	}
+}
+
+/* a polygon's triangles a (0 1 2) and b (1 2 3), drawn alike when they are */
+static void dt_draw(const DtPoly *d, const Vertex *v, bool a, bool b)
+{
+	if (a && b && (!d || d->kind[0] == d->kind[1]))
+	{
+		dt_set(d, -1);
+		renderer->draw_quad(v);
+	}
+	else
+	{
+		if (a)
+		{
+			dt_set(d, 0);
+			renderer->draw_triangle(v);
+		}
+		if (b)
+		{
+			dt_set(d, 1);
+			renderer->draw_triangle(v + 1);
+		}
+	}
+	dt_set(nullptr, 0);
+}
+
 static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep *rep, const float *prec,
                     const int32_t *under)
 {
@@ -364,6 +450,15 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		persp = persp && v[i].w > 0.0f;
 	for (int i = 0; i < nv && !persp; i++)
 		v[i].w = 1.0f;
+	DtPoly dtp = {}, *dt = nullptr;
+	if (renderer->ordered && !xf && prec)
+	{
+		bool d3 = true;
+		for (int i = 0; i < nv; i++)
+			d3 = d3 && prec[i * 3 + 2] > 0.0f;
+		if (d3)
+			dt_polygon(*(dt = &dtp), prec, nv, abe);
+	}
 	if (tagging)    /* its tag where its texels show (the tag renderer's shaders), as the picture maps them */
 	{
 		if (abe && !tex)
@@ -392,13 +487,7 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		if (tex)
 			uv_limits(v, nv);
 		renderer->tag_stp = abe;    /* see-through: its opaque texels (STP clear) only, as gpu.c */
-		bool a = !culled(v[0], v[1], v[2]), b = quad && !culled(v[1], v[2], v[3]);
-		if (a && b)
-			renderer->draw_quad(v);
-		else if (a)
-			renderer->draw_triangle(v);
-		else if (b)
-			renderer->draw_triangle(v + 1);
+		dt_draw(dt, v, !culled(v[0], v[1], v[2]), quad && !culled(v[1], v[2], v[3]));
 		renderer->tag_stp = false;
 		return;
 	}
@@ -419,16 +508,21 @@ static void polygon(const uint32_t *p, const VkXform *xf, int edge, const VkRep 
 		u1 = std::max<unsigned>(u1, v[i].u);
 		v1 = std::max<unsigned>(v1, v[i].v);
 	}
-	if (rep && tex && a)
-		rep_override(rep, u0, v0, u1, v1);
-	if (a && b)
-		renderer->draw_quad(v);
-	else if (a)
-		renderer->draw_triangle(v);
-	if (rep && tex && b && !a)
-		rep_override(rep, u0, v0, u1, v1);
-	if (b && !a)
-		renderer->draw_triangle(v + 1);
+	if (dt)     /* a 3D polygon: no texture pack image */
+		dt_draw(dt, v, a, b);
+	else
+	{
+		if (rep && tex && a)
+			rep_override(rep, u0, v0, u1, v1);
+		if (a && b)
+			renderer->draw_quad(v);
+		else if (a)
+			renderer->draw_triangle(v);
+		if (rep && tex && b && !a)
+			rep_override(rep, u0, v0, u1, v1);
+		if (b && !a)
+			renderer->draw_triangle(v + 1);
+	}
 	if (under)
 	{
 		/* the crack fix (gpu.c under): once more at the console's corners, affine, only where the
@@ -524,7 +618,14 @@ static void rect(const uint32_t *p, const VkXform *xf, int nxf, const VkRep *rep
 		};
 		if (rep && tex)
 			rep_override(rep, u, vv, u + w - 1, vv + h - 1);
+		if (renderer->ordered && nxf && xf[k].z > 0.0f)     /* at its anchor's depth (gpu.c sprite_depth_tag) */
+		{
+			renderer->dt_kind = 1;
+			for (float &z : renderer->dt_z)
+				z = float(DT_K / xf[k].z / (1.0 + g_depth_margin));
+		}
 		renderer->draw_quad(v);
+		renderer->dt_kind = 0;
 		if (nxf && xf[k].clip1 > xf[k].clip0)
 			renderer->set_draw_rect(draw_rect);
 	}
@@ -698,46 +799,27 @@ static void gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const V
 	}
 }
 
-extern "C" void vkr_behind(int d)
+/* the depth test: on for the renderer in use (its first command) */
+static void dt_on()
 {
-	behind_d = d;
+	if (g_depth_margin <= 0.0 || renderer->ordered || dt_failed[cur_inst])
+		return;
+	dt_failed[cur_inst] = !renderer->set_ordered(float(g_depth_margin));
+	if (dt_failed[cur_inst])
+		log_msg(1, "vk: no depth test on renderer %d (no D32S8 depth buffer at x%d)", cur_inst, scale);
 }
 
 extern "C" void vkr_gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const VkRep *rep, const float *prec,
                         const int32_t *under)
 {
 	tag_now++;      /* the command's number (gpu.c cur_tag) */
-	{
-		const int k = cur_inst;
-		const unsigned pi = renderer->get_primitive_index();
-		if (pi < last_pi[k])
-			pass_no[k]++;       /* the queue was flushed: a new depth buffer */
-		if (behind_d > 0)
-		{
-			const uint32_t t = (tag_now - (uint32_t)behind_d) & 0x3FFFu;
-			if (zpass[k][t] == pass_no[k] && zmap[k][t] > 0.0f)
-				renderer->depth_override = zmap[k][t] + 2.0f / 0xffffff;
-		}
-		behind_d = 0;
-		gp0(p, xf, nxf, edge, rep, prec, under);
-		const unsigned pi2 = renderer->get_primitive_index();
-		if (pi2 < pi)
-			pass_no[k]++;
-		if (pi2 != pi)          /* it drew: at this depth */
-		{
-			zmap[k][tag_now & 0x3FFFu] = renderer->depth_override > 0.0f ? renderer->depth_override
-			                                                             : 1.0f - pi2 * (4.0f / 0xffffff);
-			zpass[k][tag_now & 0x3FFFu] = pass_no[k];
-		}
-		else
-			zmap[k][tag_now & 0x3FFFu] = 0.0f;
-		renderer->depth_override = 0.0f;
-		last_pi[k] = pi2;
-	}
+	dt_on();
+	gp0(p, xf, nxf, edge, rep, prec, under);
 	if (seams())
 	{
 		int k = cur_inst;
 		use(k + 2);
+		dt_on();
 		tagging = true;
 		gp0(p, xf, nxf, edge, nullptr, prec, nullptr);
 		tagging = false;

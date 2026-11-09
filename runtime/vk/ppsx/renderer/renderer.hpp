@@ -3241,6 +3241,7 @@ union PipelineState {
 		unsigned topology : 4;
 
 		unsigned spec_constant_mask : 8;
+		unsigned stencil_mode : 2;   // HMBTN: the depth test's two passes (build_graphics_pipeline)
 	} state;
 	uint32_t words[4];
 };
@@ -3440,6 +3441,12 @@ public:
 	inline void set_depth_compare(VkCompareOp depth_compare)
 	{
 		SET_STATIC_STATE(depth_compare);
+	}
+
+	// HMBTN: 0 none, 1 stencil 1 where the depth test passes, 2 only where the stencil is 1, clearing it
+	inline void set_stencil_mode(unsigned stencil_mode)
+	{
+		SET_STATIC_STATE(stencil_mode);
 	}
 
 	inline void set_blend_enable(bool blend_enable)
@@ -4871,8 +4878,18 @@ public:
 	// HMBTN: textured primitives write their flat colour (a tag) where a texel shows (opaque ones only)
 	void use_tag_shaders();
 	bool tag_stp = false;   // HMBTN: and only where the texel's STP bit is clear (a see-through primitive's opaque texels)
-	float depth_override = 0.0f;   // HMBTN: the depth test experiment: this depth instead of the next one (0: none)
-	unsigned get_primitive_index() const { return primitive_index; }
+	// HMBTN: the depth test (gpu.c plot_t), as DuckStation's PGXP depth buffer. set_ordered(margin):
+	// every primitive is drawn in the order it came (render_ordered), not sorted, and its solid pixels
+	// leave a depth (1/w, larger: nearer) in a depth buffer kept across render passes. dt_kind for the
+	// next draw_*: 0: depth 0 (a 2D object, a fill: nothing there hides later 3D), 1: dt_z per vertex
+	// (a 2D object at its anchor's depth), 2: drawn only where nothing there is more than the margin
+	// nearer, then dt_z, but where the quad's other triangle's plane there (dt_zo) is farther, that.
+	// See-through pixels neither test nor leave a depth. false: no depth/stencil format for it.
+	bool set_ordered(float margin);
+	void depth_clear();     // a new layer (gpu.c dt_layer): nothing drawn before hides anything
+	bool ordered = false;
+	int dt_kind = 0;
+	float dt_z[4] = {}, dt_zo[4] = {};
 	enum { OVERRIDE_HASH = 0x484D5450 };
 	HdTexture override_next;
 	std::vector<HdTexture> override_tex;    // those in the queues
@@ -5318,6 +5335,30 @@ private:
 	unsigned primitive_index = 0;
 	bool render_pass_is_feedback = false;
 	float last_uv_scale_x, last_uv_scale_y;
+
+	// HMBTN: the depth test (set_ordered): the primitives in order, per triangle its state; pass 0: solid,
+	// 1: a see-through textured one's solid texels, 2: blended (and masked); depth 0: none, 1: written,
+	// 2: tested and written (two passes); prim: which primitive (a quad's triangles alike), x0 .. y1 its box
+	struct OrderedState
+	{
+		SemiTransparentState st;
+		uint8_t pass, depth;
+		uint32_t prim;
+		float x0, y0, x1, y1;
+	};
+	std::vector<BufferVertex> ordered_verts;
+	std::vector<float> ordered_other;
+	std::vector<OrderedState> ordered_state;
+	uint32_t ordered_prims = 0;
+	Vulkan::ImageHandle depth_image;
+	float inv_margin = 1.0f;
+	bool tag_shaders = false;
+	Vulkan::Program *depth2 = nullptr;
+	void push_ordered(const BufferVertex *vert, unsigned count, HdTextureHandle hd, bool filtering, bool scaled_read,
+	                  unsigned shift, bool offset_uv, int scissor);
+	void ordered_set_state(const OrderedState &s);
+	void render_ordered();
+	void depth_clear_image();
 
 	void dispatch(const std::vector<BufferVertex> &vertices, std::vector<PrimitiveInfo> &scissors, bool textured = false);
 	static bool primitive_info_sort_gt(const PrimitiveInfo &a, const PrimitiveInfo &b);

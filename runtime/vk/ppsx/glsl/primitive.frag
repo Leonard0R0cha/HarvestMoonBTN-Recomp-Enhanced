@@ -21,6 +21,7 @@ layout(push_constant, std430) uniform Push
 const int OPAQUE = 0;
 const int SEMI_TRANS = 1;
 const int SEMI_TRANS_OPAQUE = 2;
+const int SEMI_TRANS_ONLY = 3;  // HMBTN: the depth test (in order): only the see-through texels, blended
 layout(constant_id = 0) const int TRANSPARENCY_MODE = OPAQUE;
 
 const int FILTER_NEAREST = 0;
@@ -77,6 +78,9 @@ void main()
 
 	if (TRANSPARENCY_MODE == OPAQUE || TRANSPARENCY_MODE == SEMI_TRANS)
 		if (color.a == 0.0 && all(equal(vec4(NNColor), vec4(0.0))))
+			discard;
+	if (TRANSPARENCY_MODE == SEMI_TRANS_ONLY)
+		if (NNColor.a < 0.5)
 			discard;
 
 	// hd texture filtering

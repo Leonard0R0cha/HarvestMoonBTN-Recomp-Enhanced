@@ -138,9 +138,15 @@ their roots reach below their anchor, in front of the ground; people and their s
 see-through pixels keep the game's order, and a solid polygon at least 4096 farther on average than
 the one before starts a new layer (the next frame) that earlier drawing doesn't hide. Depth comes
 from a plane per triangle: one plane for a bent quad put the river bank's quads in front of the
-water drawn over them. Vulkan keeps the drawing order in its depth buffer, so there gpu.c runs the
-comparison on the console's pixels and a command that is behind an earlier one on every pixel they
-share (at least 8) is drawn just behind it.
+water drawn over them. With Vulkan the same test runs per pixel on the GPU: parallel-psx then draws
+everything in the game's order (not sorted by state) with a depth buffer of 1/w kept across render
+passes. A solid 3D triangle is drawn where the depth there is at most 0.2% above its own and leaves
+its depth: as the test value differs from the one left by the margin, that takes two passes (where
+it passes, marked in the stencil, then there the depth: the farther of a quad's two planes, divided
+by 1.002). 2D objects at a projected point leave their anchor's depth, other solid pixels 0; a new
+layer clears the buffer. At 8x it costs about 0.23 ms per VBlank (2.36 to 2.59 ms, a whole recorded
+session replayed unthrottled; the per-command moves it replaces cost about as much); with the test
+off, parallel-psx runs as before.
 
 ## 2D objects on a 3D field
 
