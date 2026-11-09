@@ -17,6 +17,10 @@ layout(location = 4) flat out mediump ivec4 vWindow;
 layout(location = 5) flat out mediump ivec4 vTexLimits;
 #endif
 layout(location = 0) out mediump vec4 vColor;
+#ifdef INVARIANT
+// HMBTN: the depth test's second pass (depth2.vert) must cover exactly the same pixels
+invariant gl_Position;
+#endif
 
 const vec2 FB_SIZE = vec2(1024.0, 512.0);
 //const vec4 texture_limits = vec4(0.0, 0.0, 1024.0, 1024.0);

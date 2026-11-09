@@ -12,8 +12,9 @@ extern int g_vk_cpu_off;    /* gpu.c doesn't draw (polygons, rectangles, lines) 
 
 /* How a tagged primitive moves (widescreen, sprite anchors and depth, gpu.c's sprite_coord): a
  * point p (drawing offset included) goes to c + d + (p - c) * s; x, y: a rectangle's corner;
- * clip0 .. clip1: the upscaled columns a menu tile's copy may draw to (clip1 <= clip0: any) */
-typedef struct { float cx, cy, dx, dy, sx, sy; int32_t x, y, clip0, clip1; } VkXform;
+ * clip0 .. clip1: the upscaled columns a menu tile's copy may draw to (clip1 <= clip0: any);
+ * z: the anchor's depth for the depth test (0: none; gpu.c sprite_depth_tag) */
+typedef struct { float cx, cy, dx, dy, sx, sy; int32_t x, y, clip0, clip1; float z; } VkXform;
 
 /* A texture pack image drawn instead of the texels (gpu.c texpack_box / texpack_quad): its pixel
  * for texel (u, v) is ((u - u0) * su, (v - v0) * sv); key: the image's key in the pack */
@@ -29,8 +30,6 @@ int  vkr_init(int scale);                   /* 0: no Vulkan */
 void vkr_gp0(const uint32_t *p, const VkXform *xf, int nxf, int edge, const VkRep *rep, const float *prec,
              const int32_t *under);
 void vkr_polyline(uint32_t w);              /* a word of a polyline after its first command */
-/* the depth test experiment: the next command is drawn just behind the one d commands before it */
-void vkr_behind(int d);
 void vkr_upload(int x, int y, int w, int h, const uint16_t *vram);    /* CPU -> VRAM done: that box of vram */
 void vkr_download(int x, int y, int w, int h, uint16_t *vram);        /* the game's VRAM -> CPU (GP0 C0h) */
 void vkr_sync(int x, int y, int w, int h, uint16_t *vram);            /* that box of vram from the GPU's */

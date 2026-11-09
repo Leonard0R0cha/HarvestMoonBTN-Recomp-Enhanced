@@ -73,6 +73,19 @@ static const uint32_t textured_tag_frag[] =
 static const uint32_t textured_tag_unscaled_frag[] =
 #include "textured.tag.unscaled.frag.inc"
     ;
+// HMBTN: the depth test (Renderer::set_ordered): positions invariant, and its second pass
+static const uint32_t flat_inv_vert[] =
+#include "flat.inv.vert.inc"
+    ;
+static const uint32_t textured_inv_vert[] =
+#include "textured.inv.vert.inc"
+    ;
+static const uint32_t depth2_vert[] =
+#include "depth2.vert.inc"
+    ;
+static const uint32_t depth2_frag[] =
+#include "depth2.frag.inc"
+    ;
 static const uint32_t textured_msaa_frag[] =
 #include "textured.msaa.frag.inc"
     ;
@@ -413,6 +426,13 @@ void Renderer::set_filter_mode(FilterMode mode)
 
 void Renderer::init_primitive_pipelines()
 {
+	if (ordered)    // HMBTN: the depth test (scaling > 1): the second pass covers exactly the same pixels
+	{
+		pipelines.flat = device.request_program(flat_inv_vert, sizeof(flat_inv_vert), flat_frag, sizeof(flat_frag));
+		pipelines.textured_scaled = device.request_program(textured_inv_vert, sizeof(textured_inv_vert), textured_frag, sizeof(textured_frag));
+		pipelines.textured_unscaled = device.request_program(textured_inv_vert, sizeof(textured_inv_vert), textured_unscaled_frag, sizeof(textured_unscaled_frag));
+		return;
+	}
 	if (msaa > 1 || scaling > 1)
 		pipelines.flat = device.request_program(flat_vert, sizeof(flat_vert), flat_frag, sizeof(flat_frag));
 	else
@@ -440,8 +460,9 @@ void Renderer::init_primitive_pipelines()
 
 void Renderer::use_tag_shaders()
 {
-	const uint32_t *vert = scaling > 1 ? textured_vert : textured_unscaled_vert;
-	size_t vert_size = scaling > 1 ? sizeof(textured_vert) : sizeof(textured_unscaled_vert);
+	const uint32_t *vert = ordered ? textured_inv_vert : scaling > 1 ? textured_vert : textured_unscaled_vert;
+	size_t vert_size = ordered ? sizeof(textured_inv_vert) : scaling > 1 ? sizeof(textured_vert) : sizeof(textured_unscaled_vert);
+	tag_shaders = true;
 	pipelines.textured_scaled = device.request_program(vert, vert_size, textured_tag_frag, sizeof(textured_tag_frag));
 	pipelines.textured_unscaled =
 	    device.request_program(vert, vert_size, textured_tag_unscaled_frag, sizeof(textured_tag_unscaled_frag));
@@ -1429,8 +1450,6 @@ float Renderer::allocate_depth(Domain domain, const Rect &rect)
 {
 	atlas.write_fragment(domain, rect);
 	primitive_index++;
-	if (depth_override > 0.0f)     // HMBTN: drawn just behind an earlier primitive (gpu.c depth test)
-		return depth_override;
 	return 1.0f - primitive_index * (4.0f / 0xffffff); // Double the epsilon to be safe(r) when w is used.
 	//iCB: Doubled again for added safety, otherwise we get Z-fighting when drawing multi-pass blended primitives.
 }
@@ -1653,6 +1672,8 @@ void Renderer::build_attribs(BufferVertex *output, const Vertex *vertices, unsig
 			output[i].color = 0x808080;
 
 		output[i].color |= render_state.force_mask_bit ? 0xff000000u : 0u;
+		if (ordered)    // HMBTN: the depth test: its depth, not the order (set_ordered)
+			output[i].z = dt_kind ? dt_z[i] : 0.0f;
 	}
 }
 
@@ -1828,6 +1849,11 @@ void Renderer::draw_triangle(const Vertex *vertices)
 	bool offset_uv = false;
 	build_attribs(vert, vertices, 3, hd_texture_index, filtering, scaled_read, shift, offset_uv);
 	const int scissor_index = queue.scissor_invariant && !columns_on ? -1 : int(queue.scissors.size() - 1);
+	if (ordered)
+	{
+		push_ordered(vert, 3, hd_texture_index, filtering, scaled_read, shift, offset_uv, scissor_index);
+		return;
+	}
 	std::vector<BufferVertex> *out = select_pipeline(1, scissor_index, hd_texture_index, filtering, scaled_read, shift, offset_uv);
 	if (out)
 	{
@@ -1876,6 +1902,11 @@ void Renderer::draw_quad(const Vertex *vertices)
 	bool offset_uv = false;
 	build_attribs(vert, vertices, 4, hd_texture_index, filtering, scaled_read, shift, offset_uv);
 	const int scissor_index = queue.scissor_invariant && !columns_on ? -1 : int(queue.scissors.size() - 1);
+	if (ordered)
+	{
+		push_ordered(vert, 4, hd_texture_index, filtering, scaled_read, shift, offset_uv, scissor_index);
+		return;
+	}
 	std::vector<BufferVertex> *out = select_pipeline(2, scissor_index, hd_texture_index, filtering, scaled_read, shift, offset_uv);
 
 	if (out)
@@ -1927,6 +1958,26 @@ void Renderer::clear_quad(const Rect &rect, uint32_t fb_color, bool candidate)
 	BufferVertex pos2 = { float(rect.x), float(rect.y) + float(rect.height), z, 1.0f, fbcolor_to_rgba8(fb_color) };
 	BufferVertex pos3 = { float(rect.x) + float(rect.width), float(rect.y) + float(rect.height), z, 1.0f,
 		                  fbcolor_to_rgba8(fb_color) };
+	if (ordered)    // HMBTN: the depth test: in order, depth 0 (nothing there hides later 3D)
+	{
+		BufferVertex v[4] = { pos0, pos1, pos2, pos3 };
+		for (BufferVertex &b : v)
+			b.z = 0.0f;
+		const int kind = dt_kind;
+		const SemiTransparentMode semi = render_state.semi_transparent;
+		const bool mask = render_state.mask_test;
+		const TextureMode tm = render_state.texture_mode;
+		dt_kind = 0;
+		render_state.semi_transparent = SemiTransparentMode::None;
+		render_state.mask_test = false;
+		render_state.texture_mode = TextureMode::None;
+		push_ordered(v, 4, HdTextureHandle::make_none(), false, false, 0, false, -1);
+		dt_kind = kind;
+		render_state.semi_transparent = semi;
+		render_state.mask_test = mask;
+		render_state.texture_mode = tm;
+		return;
+	}
 	queue.opaque.push_back(pos0);
 	queue.opaque.push_back(pos1);
 	queue.opaque.push_back(pos2);
@@ -1969,13 +2020,22 @@ void Renderer::flush_render_pass(const Rect &rect)
 	info.num_color_attachments = 1;
 	info.store_attachments = 1 << 0;
 	info.op_flags = RENDER_PASS_OP_CLEAR_DEPTH_STENCIL_BIT;
+	if (ordered)    // HMBTN: the depth test: one depth buffer kept across render passes
+	{
+		info.depth_stencil = &depth_image->get_view();
+		info.op_flags = RENDER_PASS_OP_LOAD_DEPTH_STENCIL_BIT | RENDER_PASS_OP_STORE_DEPTH_STENCIL_BIT;
+		cmd->barrier(VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+		             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+		             VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+		             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+	}
 
 	RenderPassInfo::Subpass subpass;
 	info.num_subpasses = 1;
 	info.subpasses = &subpass;
 	subpass.num_color_attachments = 1;
 
-	const ClearCandidate *clear_candidate = find_clear_candidate(rect);
+	const ClearCandidate *clear_candidate = ordered ? nullptr : find_clear_candidate(rect);
 
 	subpass.color_attachments[0] = 0;
 	if (render_pass_is_feedback)
@@ -2004,10 +2064,15 @@ void Renderer::flush_render_pass(const Rect &rect)
 	queue.default_scissor = info.render_area;
 	cmd->set_texture(0, 2, dither_lut->get_view(), StockSampler::NearestWrap);
 
-	render_opaque_primitives();
-	render_opaque_texture_primitives();
-	render_semi_transparent_opaque_texture_primitives();
-	render_semi_transparent_primitives();
+	if (ordered)
+		render_ordered();
+	else
+	{
+		render_opaque_primitives();
+		render_opaque_texture_primitives();
+		render_semi_transparent_opaque_texture_primitives();
+		render_semi_transparent_primitives();
+	}
 
 	cmd->end_render_pass();
 
@@ -2286,6 +2351,224 @@ void Renderer::render_opaque_texture_primitives()
 	cmd->set_vertex_attrib(5, 0, VK_FORMAT_R16G16B16A16_UINT, offsetof(BufferVertex, min_u));
 
 	dispatch(vertices, scissors, true);
+}
+
+/* HMBTN: the depth test (set_ordered) */
+bool Renderer::set_ordered(float margin)
+{
+	const VkFormat fmt = VK_FORMAT_D32_SFLOAT_S8_UINT;
+	const VkImageUsageFlags usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	VkImageFormatProperties props;
+	if (scaling < 2 || msaa > 1 ||
+	    !device.get_image_format_properties(fmt, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, usage, 0, &props))
+		return false;
+	ImageCreateInfo info = ImageCreateInfo::render_target(FB_WIDTH * scaling, FB_HEIGHT * scaling, fmt);
+	info.usage = usage;
+	info.initial_layout = VK_IMAGE_LAYOUT_GENERAL;
+	depth_image = device.create_image(info);
+	if (!depth_image)
+		return false;
+	depth_image->set_layout(Layout::General);
+	atlas.flush_render_pass();
+	ordered = true;
+	inv_margin = 1.0f / (1.0f + margin);
+	init_primitive_pipelines();
+	if (tag_shaders)
+		use_tag_shaders();
+	depth2 = device.request_program(depth2_vert, sizeof(depth2_vert), depth2_frag, sizeof(depth2_frag));
+	depth_clear_image();
+	return true;
+}
+
+void Renderer::depth_clear_image()
+{
+	ensure_command_buffer();
+	cmd->barrier(VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+	             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+	const VkClearDepthStencilValue v = { 0.0f, 0 };
+	const VkImageSubresourceRange r = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 };
+	vkCmdClearDepthStencilImage(cmd->get_command_buffer(), depth_image->get_image(), VK_IMAGE_LAYOUT_GENERAL, &v, 1, &r);
+}
+
+void Renderer::depth_clear()
+{
+	if (!ordered)
+		return;
+	atlas.flush_render_pass();
+	depth_clear_image();
+}
+
+void Renderer::push_ordered(const BufferVertex *vert, unsigned count, HdTextureHandle hd, bool filtering,
+                            bool scaled_read, unsigned shift, bool offset_uv, int scissor)
+{
+	static const unsigned quad[6] = { 0, 1, 2, 3, 2, 1 };
+	const bool textured = render_state.texture_mode != TextureMode::None;
+	const bool semi = render_state.semi_transparent != SemiTransparentMode::None;
+	const bool masked = render_state.mask_test;
+	float x0 = vert[0].x, x1 = vert[0].x, y0 = vert[0].y, y1 = vert[0].y;
+	for (unsigned i = 1; i < count; i++)
+	{
+		x0 = std::min(x0, vert[i].x);
+		x1 = std::max(x1, vert[i].x);
+		y0 = std::min(y0, vert[i].y);
+		y1 = std::max(y1, vert[i].y);
+	}
+	const OrderedState s = { { scissor, hd, render_state.semi_transparent, textured, masked, filtering, scaled_read, shift,
+	                           offset_uv },
+	                         0, 0, ordered_prims++, x0, y0, x1, y1 };
+	auto push = [&](uint8_t pass, uint8_t depth) {
+		OrderedState o = s;
+		o.pass = pass;
+		o.depth = depth;
+		for (unsigned t = 0; t + 2 < count; t++)
+		{
+			for (unsigned c = 0; c < 3; c++)
+			{
+				const unsigned v = count == 4 ? quad[3 * t + c] : c;
+				ordered_verts.push_back(vert[v]);
+				ordered_other.push_back(dt_kind == 2 ? dt_zo[v] : vert[v].z);
+			}
+			ordered_state.push_back(o);
+		}
+	};
+	if (masked || (semi && !textured))
+		push(2, 0);             // blended (or masked): no depth
+	else
+	{
+		push(semi ? 1 : 0, dt_kind == 2 ? 2 : 1);  // solid (texels)
+		if (semi)
+			push(2, 0);         // and the see-through texels, blended
+	}
+	if (masked || semi)
+		render_pass_is_feedback = true;
+}
+
+void Renderer::ordered_set_state(const OrderedState &s)
+{
+	cmd->set_opaque_state();
+	cmd->set_cull_mode(VK_CULL_MODE_NONE);
+	cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0);
+	cmd->set_vertex_attrib(1, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(BufferVertex, color));
+	cmd->set_vertex_attrib(2, 0, VK_FORMAT_R8G8B8A8_UINT, offsetof(BufferVertex, window));
+	cmd->set_vertex_attrib(3, 0, VK_FORMAT_R16G16B16A16_SINT, offsetof(BufferVertex, pal_x));
+	cmd->set_vertex_attrib(4, 0, VK_FORMAT_R16G16B16A16_SINT, offsetof(BufferVertex, u));
+	cmd->set_vertex_attrib(5, 0, VK_FORMAT_R16G16B16A16_UINT, offsetof(BufferVertex, min_u));
+	if (s.pass == 2)
+	{
+		semi_transparent_set_state(s.st);
+		if (s.st.textured && !s.st.masked && s.st.semi_transparent != SemiTransparentMode::None)
+			cmd->set_specialization_constant(SpecConstIndex_TransMode, 3u);   // only the see-through texels
+	}
+	else
+	{
+		dispatch_set_scaled_read_texture(s.st.scaled_read, s.st.textured);
+		hd_texture_uniforms(s.st.hd_texture_index);
+		cmd->set_specialization_constant(SpecConstIndex_FilterMode,
+		                                 s.st.filtering ? primitive_filter_mode : FilterMode::NearestNeighbor);
+		cmd->set_specialization_constant(SpecConstIndex_Scaling, scaling);
+		cmd->set_specialization_constant(SpecConstIndex_Shift, s.st.shift);
+		cmd->set_specialization_constant(SpecConstIndex_OffsetUV, (int)s.st.offset_uv);
+		cmd->set_specialization_constant(SpecConstIndex_TransMode, s.pass ? TransMode::SemiTransOpaque : TransMode::Opaque);
+		cmd->set_scissor(s.st.scissor_index < 0 ? queue.default_scissor : queue.scissors[s.st.scissor_index]);
+	}
+	if (s.depth == 0)
+		cmd->set_depth_test(false, false);
+	else if (s.depth == 1)
+	{
+		cmd->set_depth_test(true, true);
+		cmd->set_depth_compare(VK_COMPARE_OP_ALWAYS);
+	}
+	else
+	{
+		cmd->set_depth_test(true, false);
+		cmd->set_depth_compare(VK_COMPARE_OP_GREATER_OR_EQUAL);
+		cmd->set_stencil_mode(1);
+	}
+	cmd->set_specialization_constant_mask(-1);
+}
+
+/* Drawn in order. A tested primitive in two passes: where it is not behind what is there (stencil 1),
+ * then there its depth (depth2.frag). Primitives whose boxes don't overlap share both passes. */
+void Renderer::render_ordered()
+{
+	const unsigned n = ordered_state.size();
+	if (!n)
+		return;
+	struct D2
+	{
+		float x, y, z, w, other;
+	};
+	const size_t nv = ordered_verts.size();
+	memcpy(cmd->allocate_vertex_data(0, nv * sizeof(BufferVertex), sizeof(BufferVertex)), ordered_verts.data(),
+	       nv * sizeof(BufferVertex));
+	D2 *d2 = static_cast<D2 *>(cmd->allocate_vertex_data(1, nv * sizeof(D2), sizeof(D2)));
+	for (size_t i = 0; i < nv; i++)
+	{
+		const BufferVertex &v = ordered_verts[i];
+		d2[i] = { v.x, v.y, v.z, v.w, ordered_other[i] };
+	}
+	std::vector<unsigned> group;
+	for (unsigned i = 0; i < n;)
+	{
+		const OrderedState &s = ordered_state[i];
+		// masked and blended: programmable blending, one at a time (as render_semi_transparent_primitives)
+		const bool serial = s.st.masked && s.st.semi_transparent != SemiTransparentMode::None;
+		unsigned j = i + 1;
+		while (j < n && !serial && ordered_state[j].st == s.st && ordered_state[j].pass == s.pass &&
+		       ordered_state[j].depth == s.depth)
+			j++;
+		ordered_set_state(s);
+		if (s.depth != 2)
+		{
+			if (serial)
+			{
+				VkMemoryBarrier barrier = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+				barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+				barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+				vkCmdPipelineBarrier(cmd->get_command_buffer(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+				                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_BY_REGION_BIT, 1, &barrier, 0,
+				                     nullptr, 0, nullptr);
+			}
+			cmd->draw(3 * (j - i), 1, 3 * i, 0);
+		}
+		else
+			for (unsigned k = i; k < j;)
+			{
+				unsigned m = k;     // whole primitives, none overlapping another's box
+				group.clear();
+				while (m < j)
+				{
+					const OrderedState &p = ordered_state[m];
+					bool hit = false;
+					for (unsigned g : group)
+					{
+						const OrderedState &q = ordered_state[g];
+						hit = hit || (p.x0 <= q.x1 + 1.0f && q.x0 <= p.x1 + 1.0f && p.y0 <= q.y1 + 1.0f && q.y0 <= p.y1 + 1.0f);
+					}
+					if (hit)
+						break;
+					group.push_back(m);
+					for (m++; m < j && ordered_state[m].prim == p.prim; m++)
+						;
+				}
+				cmd->draw(3 * (m - k), 1, 3 * k, 0);
+				cmd->set_program(*depth2);
+				cmd->set_vertex_attrib(0, 1, VK_FORMAT_R32G32B32A32_SFLOAT, 0);
+				cmd->set_vertex_attrib(1, 1, VK_FORMAT_R32_SFLOAT, offsetof(D2, other));
+				cmd->set_blend_enable(false);
+				cmd->set_depth_test(true, true);
+				cmd->set_depth_compare(VK_COMPARE_OP_ALWAYS);
+				cmd->set_stencil_mode(2);
+				cmd->set_specialization_constant(6, inv_margin);
+				cmd->set_specialization_constant_mask(-1);
+				cmd->draw(3 * (m - k), 1, 3 * k, 0);
+				k = m;
+				if (k < j)
+					ordered_set_state(s);
+			}
+		i = j;
+	}
 }
 
 void Renderer::flush_blits()
@@ -2598,6 +2881,9 @@ void Renderer::reset_queue()
 	queue.semi_transparent_opaque.clear();
 	queue.semi_transparent_opaque_scissor.clear();
 	queue.clear_candidates.clear();
+	ordered_verts.clear();
+	ordered_other.clear();
+	ordered_state.clear();
 	primitive_index = 0;
 	render_pass_is_feedback = false;
 
@@ -6127,6 +6413,16 @@ VkPipeline CommandBuffer::build_graphics_pipeline(Hash hash)
 
 	if (ds.depthTestEnable)
 		ds.depthCompareOp = static_cast<VkCompareOp>(static_state.state.depth_compare);
+	if (static_state.state.stencil_mode && compatible_render_pass->has_depth(current_subpass))
+	{
+		VkStencilOpState &so = ds.front;
+		so.compareMask = so.writeMask = so.reference = 1;
+		so.failOp = so.depthFailOp = VK_STENCIL_OP_KEEP;
+		so.compareOp = static_state.state.stencil_mode == 1 ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_EQUAL;
+		so.passOp = static_state.state.stencil_mode == 1 ? VK_STENCIL_OP_REPLACE : VK_STENCIL_OP_ZERO;
+		ds.back = so;
+		ds.stencilTestEnable = VK_TRUE;
+	}
 
 	// Vertex input
 	VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
