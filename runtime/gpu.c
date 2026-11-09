@@ -653,9 +653,12 @@ static inline __attribute__((always_inline)) void plot_t(const Target *t, uint32
     }
     if (bk & S.mask_check)
         return;
-    /* Experiment: depth test. A 3D polygon's pixel is not drawn where a 3D polygon drawn before it is
-     * more than dnear nearer (1/w larger) there: the game's order (by average depth) puts objects
-     * that cross each other, or sink into the ground, the wrong way round now and then. */
+    /* Experiment: depth test, a 3D polygon after a 2D object at a projected point (a flat plane of
+     * 1/w: its anchor's depth): its pixel is not drawn where the object is more than dnear nearer
+     * (1/w larger): the game's order (by average depth) draws the ground over the bamboo shoot now and
+     * then. Not the other way (a tree stump's roots reach below its anchor, in front of the ground: the
+     * game draws them over it) and not between 3D polygons: models sink into the ground and walls on
+     * purpose (the river bank under the water) and the game's order shows them. */
     if (t->dnear > 0.0 && tg && TAG_KIND(tagv) == TAG_3D) {
         const uint32_t o = tg[i], so = t->ser ? t->ser[i] : 0;
         int behind = 0;
@@ -663,7 +666,8 @@ static inline __attribute__((always_inline)) void plot_t(const Target *t, uint32
             const double *po = &t->qpl[3 * (o & 0x3FFFu)], *pn = &t->qpl[3 * (tagv & 0x3FFFu)];
             const double fx = ((double)x + 0.5) / t->n, fy = ((double)y + 0.5) / t->n;
             const double qn = pn[0] + pn[1] * fx + pn[2] * fy;
-            behind = qn > 0.0 && po[0] + po[1] * fx + po[2] * fy > qn * t->dnear;
+            const int flat = po[1] == 0.0 && po[2] == 0.0 && (pn[1] != 0.0 || pn[2] != 0.0);
+            behind = flat && qn > 0.0 && po[0] + po[1] * fx + po[2] * fy > qn * t->dnear;
             if (t->observe)
                 dt_note(o, behind, so);
             else if (behind)
