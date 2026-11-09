@@ -505,6 +505,9 @@ MODULE_SITE_HOOKS = {
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
                 0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
                 0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
+                # the Harvest Sprites' spots at home (80110E34 copies one to the sprite in a0): the
+                # spot's z, loaded at 80110E78, for the yellow one moves it off the chair (runtime/fixes.c)
+                0x80110E78: 'R[6] = sprite_spot_z(R[6], R[4]);',
                 # bulk food: the shelf's buy question (8011C298): its yes / no (s0 after the jal at
                 # 8011C468) and the payment (a0 = minus the price, 8011C514) (runtime/fixes.c)
                 0x8011C470: 'R[16] = bulk_food_yes(c, R[16]);',

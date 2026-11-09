@@ -268,6 +268,7 @@ uint32_t bulk_food_pay(CPU *c, uint32_t minus_price);
 int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
 uint32_t crop_walk_mask(uint32_t mask, uint32_t why);   /* ... walking through crops */
 uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
+uint32_t sprite_spot_z(uint32_t z, uint32_t actor);    /* ... the yellow sprite off the chair */
 void p2_tick_end(void);
 int p2_faint_skipped(void);
 int p2_sfx_quiet(void);

@@ -213,6 +213,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "emptybag")) g_cfg.emptybag = atoi(val);
     else if (!strcmp(key, "earlycabinet")) g_cfg.earlycabinet = atoi(val);
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
+    else if (!strcmp(key, "spritechair")) g_cfg.spritechair = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
     else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
@@ -415,6 +416,7 @@ int main(int argc, char **argv) {
     g_cfg.textspeed = 3;
     g_cfg.overclock = 200;
     g_cfg.emptybag = 1;
+    g_cfg.spritechair = 1;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);

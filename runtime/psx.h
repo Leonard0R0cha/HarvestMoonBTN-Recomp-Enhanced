@@ -277,6 +277,7 @@ typedef struct {
     int  emptybag;              /* R1 / R2 do nothing with no tool / item to switch to */
     int  earlycabinet;          /* the first house's pile of boxes opens the cabinet (fixes.c) */
     int  cropwalk;              /* the player walks through planted crops (fixes.c) */
+    int  spritechair;           /* the yellow Harvest Sprite stands off the chair at home (fixes.c) */
     int  staminabar;            /* the stamina and tiredness in a window under the clock (fixes.c) */
     int  bulkfood;              /* how many of a food on a shop's shelf, the rest to the rucksack / fridge */
     int  cheat_money;           /* cheats (cheats.c): the money on the farm the first time (0 = off) */

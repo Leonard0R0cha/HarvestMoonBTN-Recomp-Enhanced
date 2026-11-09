@@ -167,6 +167,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "fastcd=", 7)) {      /* from --record (first line) */
             g_cfg.fast_cd = atoi(tok + 7);
             g_cfg.precisecull = 0;              /* recordings made before it have no precisecull= */
+            g_cfg.spritechair = 0;              /* nor spritechair= */
             continue;
         }
         if (!strncmp(tok, "precisecull=", 12)) { g_cfg.precisecull = atoi(tok + 12); continue; }
@@ -181,6 +182,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "emptybag=", 9)) { g_cfg.emptybag = atoi(tok + 9); continue; }
         if (!strncmp(tok, "earlycabinet=", 13)) { g_cfg.earlycabinet = atoi(tok + 13); continue; }
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "spritechair=", 12)) { g_cfg.spritechair = atoi(tok + 12); continue; }
         if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bulkfood=", 9)) { g_cfg.bulkfood = atoi(tok + 9); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
@@ -458,6 +460,7 @@ int platform_init(void) {
             fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
+            fprintf(rec_file, "spritechair=%d\n", g_cfg.spritechair);
             fprintf(rec_file, "precisecull=%d\n", g_cfg.precisecull);   /* changes what the game draws */
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
             if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
