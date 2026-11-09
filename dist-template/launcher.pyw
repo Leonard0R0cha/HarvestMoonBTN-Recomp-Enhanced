@@ -53,7 +53,6 @@ OPTIONS = [
     ('video', 'video', 'upscale', 'choice:1|2|3|4|5|6|8'),
     ('video', 'video', 'widescreen', 'choice:off|16:9|16:10|21:9'),
     ('video', 'video', 'pgxp', 'bool'),
-    ('video', 'video', 'crackfix', 'bool:1'),
     ('video', 'video', 'perspective', 'bool'),
     ('video', 'video', 'interp', 'bool'),
     ('video', 'video', 'texturepack', 'bool'),
@@ -99,7 +98,7 @@ PRESETS = [
     ('preset4', {'upscale': '3'}),
     ('preset6', {'upscale': '4'}),
 ]
-PRESET_ALL = {'pgxp': '1', 'crackfix': '1', 'perspective': '1', 'interp': '1'}
+PRESET_ALL = {'pgxp': '1', 'perspective': '1', 'interp': '1'}
 
 # Internal resolutions are shown with their size in pixels (as the picture is shown: widened for
 # widescreen), e.g. "4x  ·  1280x960"; the ini keeps the number. Above 4 only with Vulkan.
@@ -128,7 +127,6 @@ def _up2(v):
     return v('upscale') not in ('', '1')
 REQUIRES = {
     'pgxp': (_up2, 'need_up2'),
-    'crackfix': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'perspective': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'interp': (lambda v: _up2(v) and v('pgxp') == '1', 'need_pgxp'),
     'drawthreads': (_up2, 'need_up2'),
@@ -151,9 +149,6 @@ TEXT = {
                        'resolution 2 or more, people and the HUD keep their shape, and the title '
                        'screen and menus fill the screen too.'),
         'pgxp': ('Precise 3D (PGXP)', 'No more wobbling polygons, the PlayStation\'s trademark shimmer.'),
-        'crackfix': ('Close cracks between models', 'Fills the thin gaps precise 3D opens where models meet '
-                     '(ground tiles, door frames, fences on the ground), as the PlayStation shows them. Costs '
-                     'about 1 ms a frame at resolution 4.'),
         'perspective': ('Perspective-correct textures', 'No warping on large floors and walls. Costs some '
                         'speed.'),
         'interp': ('60 fps camera', 'The camera and scenery move 60 times a second (the game itself still runs '
@@ -233,9 +228,6 @@ TEXT = {
         'widescreen': ('Tela larga', 'Mostra mais da fazenda e da cidade nas laterais. Título, menus e vídeos '
                        'continuam 4:3. Com resolução 2 ou mais, pessoas e o HUD mantêm a forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Acaba com os polígonos tremendo, o tremido típico do PlayStation.'),
-        'crackfix': ('Fechar frestas entre modelos', 'Preenche as frestas finas que o 3D preciso abre onde os '
-                     'modelos se encontram (pisos, batentes de portas, cercas no chão), como o PlayStation mostra. '
-                     'Custa cerca de 1 ms por quadro na resolução 4.'),
         'perspective': ('Texturas com perspectiva correta', 'Sem distorção em chãos e paredes grandes. Pesa um '
                         'pouco.'),
         'interp': ('Câmera a 60 fps', 'A câmera e o cenário se movem 60 vezes por segundo (o jogo continua a '
@@ -315,9 +307,6 @@ TEXT = {
         'widescreen': ('Pantalla panorámica', 'Muestra más de la granja y del pueblo a los lados. Título, menús y '
                        'vídeos siguen en 4:3. Con resolución 2 o más, las personas y el HUD mantienen su forma.'),
         'pgxp': ('3D preciso (PGXP)', 'Se acabaron los polígonos temblorosos, el temblor típico de PlayStation.'),
-        'crackfix': ('Cerrar grietas entre modelos', 'Rellena las grietas finas que el 3D preciso abre donde los '
-                     'modelos se juntan (suelo, marcos de puertas, cercas en el suelo), como las muestra '
-                     'PlayStation. Cuesta cerca de 1 ms por cuadro en resolución 4.'),
         'perspective': ('Texturas con perspectiva correcta', 'Sin deformación en suelos y paredes grandes. Cuesta '
                         'algo de velocidad.'),
         'interp': ('Cámara a 60 fps', 'La cámara y el escenario se mueven 60 veces por segundo (el juego sigue a '

@@ -320,7 +320,7 @@ static void usage(void) {
            "  --pgxp                precise 3D vertex positions, less wobble (needs --upscale 2+)\n"
            "  --perspective         perspective-correct textures (needs --pgxp)\n"
            "  --no-sprite-depth     2D objects keep one size (they scale with depth by default, with --pgxp)\n"
-           "  --no-crackfix         leave the cracks between models open (faster)\n"
+           "  --crackfix            close the cracks between models (about 1 ms a frame slower)\n"
            "  --widescreen W:H      wider 3D view, e.g. 16:9 (2D objects keep their shape with --upscale 2+)\n"
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
            "  --texturepack         draw 2D sprites with the images in textures/ (needs --upscale 2+)\n"
@@ -407,7 +407,6 @@ int main(int argc, char **argv) {
     g_cfg.autoslot = 1;
     g_cfg.fastcard = 1;
     g_cfg.draw_threads = -1;
-    g_cfg.crackfix = 1;
     g_cfg.precisecull = -1;
     g_cfg.sprite_depth = 1;
     g_cfg.quickui = 1;
@@ -438,6 +437,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--perspective")) g_cfg.perspective = 1;
         else if (!strcmp(a, "--sprite-depth")) g_cfg.sprite_depth = 1;
         else if (!strcmp(a, "--no-sprite-depth")) g_cfg.sprite_depth = 0;
+        else if (!strcmp(a, "--crackfix")) g_cfg.crackfix = 1;
         else if (!strcmp(a, "--no-crackfix")) g_cfg.crackfix = 0;
         else if (!strcmp(a, "--interp")) g_cfg.interp = 1;
         else if (!strcmp(a, "--no-interp")) g_cfg.interp = 0;
