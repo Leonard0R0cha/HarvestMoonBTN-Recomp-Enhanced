@@ -2,8 +2,8 @@
 
 What was added on top of the original-accurate renderer, how it works, and what was learned
 about the game along the way. All of it is optional (see the `[video]` settings in the
-[README](../README.md#configuration) or the launcher), and apart from widescreen none of it
-changes what the game itself sees: with every other option on, RAM and VRAM stay
+[README](../README.md#configuration) or the launcher), and apart from widescreen and precise
+culling none of it changes what the game itself sees: with every other option on, RAM and VRAM stay
 bit-identical to a plain run (checked at several frames of a recorded play session).
 
 | Setting | What it does | Needs |
@@ -11,6 +11,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `upscale = 2..4` | draws everything a second time at 2–4× resolution, for display | |
 | `pgxp = 1` | 3D vertices at their exact sub-pixel position (no wobble), 2D objects placed exactly and scaled with depth like the ground | upscale 2+ |
 | `crackfix = 1` | closes the cracks PGXP opens between models (on unless set to 0) | pgxp |
+| `precisecull = 0` | turns off precise culling: thin faces (table legs, lamp bases) culled on whole pixels as on the console (on with pgxp) | pgxp |
 | `perspective = 1` | perspective-correct textures (no warping on large polygons) | pgxp |
 | `widescreen = 16:9` | wider 3D view (also `16:10`, `21:9`) | upscale 2+ for 2D objects |
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
@@ -111,6 +112,21 @@ strip. So each 3D polygon's plane of 1/w (over native pixels) is kept per drawin
 run is filled only where both sides are at least 1% nearer than what shows in it. At the mailbox
 the filled pixels went from 1,692 to 123 a frame, the shed's door frame from 1,340 to 22, while the
 doghouse nameplate's seams are still filled.
+
+**Finding: faces that vanish.** Table legs, the inn's lamp bases, flower-box rims and door steps
+lost a side face now and then, and the lamp base showed a black wedge. The console drops them
+too: the game culls back faces with the GTE's NCLIP, the area of the triangle at its whole-pixel
+corners, and a thin face seen nearly edge-on rounds to zero or reversed area. On the console the
+face is a pixel or two wide and nobody misses it; with precise corners the hole is visible. Over
+a 13,600-frame session, 99,453 of 10 million NCLIPs were 0 or negative on whole pixels but
+positive on the precise corners (13,971 the other way).
+
+**Fix: precise culling** (`precisecull`, on with pgxp). When all three corners have a precise
+position and its area has a different sign, NCLIP returns that sign (1, 0 or -1) instead. This
+changes what the game draws, and so its timing: unlike the rest, the game sees it. The setting is
+written into recordings (older recordings replay with it off) and a co-op guest uses the host's.
+The session still ran the same with it (the memory card identical at the end); frames late in
+it differ only where faces came back. `precisecull = 0` in hmbtn.ini turns it off.
 
 ## 2D objects on a 3D field
 

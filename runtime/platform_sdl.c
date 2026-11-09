@@ -164,7 +164,12 @@ static void parse_script(const char *s) {
     for (char *tok = strtok_r(buf, ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
         ScriptEv e = { 0, 6, 0, 0, 0, 0 };
         if (!strncmp(tok, "p2 ", 3)) { e.p2 = 1; tok += 3; }
-        if (!strncmp(tok, "fastcd=", 7)) { g_cfg.fast_cd = atoi(tok + 7); continue; }   /* from --record */
+        if (!strncmp(tok, "fastcd=", 7)) {      /* from --record (first line) */
+            g_cfg.fast_cd = atoi(tok + 7);
+            g_cfg.precisecull = 0;              /* recordings made before it have no precisecull= */
+            continue;
+        }
+        if (!strncmp(tok, "precisecull=", 12)) { g_cfg.precisecull = atoi(tok + 12); continue; }
         if (!strncmp(tok, "widescreen=", 11)) {     /* from --record: widescreen changes what the game does */
             if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
             continue;
@@ -453,6 +458,7 @@ int platform_init(void) {
             fprintf(rec_file, "emptybag=%d\n", g_cfg.emptybag);
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
+            fprintf(rec_file, "precisecull=%d\n", g_cfg.precisecull);   /* changes what the game draws */
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
             if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
