@@ -194,6 +194,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "perspective")) g_cfg.perspective = atoi(val);
     else if (!strcmp(key, "sprite_depth")) {}   /* older ini files: always on now, with pgxp (--no-sprite-depth to compare) */
     else if (!strcmp(key, "crackfix")) g_cfg.crackfix = atoi(val);
+    else if (!strcmp(key, "depthtest")) g_cfg.depthtest = atoi(val);
     else if (!strcmp(key, "precisecull")) g_cfg.precisecull = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
@@ -616,6 +617,10 @@ int main(int argc, char **argv) {
         platform_vulkan();          /* the windows show its pictures from the GPU */
 #endif
     g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
+    {   /* the depth test: 0.2% (HMBTN_DEPTHTEST: another margin, for testing) */
+        const char *e = getenv("HMBTN_DEPTHTEST");
+        g_depth_margin = !g_cfg.pgxp ? 0.0 : e ? atof(e) : g_cfg.depthtest ? 0.002 : 0.0;
+    }
     gpu_set_upscale(vk ? 1 : g_cfg.upscale);
     if (gpu_upscale() != g_cfg.upscale && !vk) LOGW("upscale %d: not enough memory, using 1", g_cfg.upscale);
     if (gpu_upscale() > 1) {

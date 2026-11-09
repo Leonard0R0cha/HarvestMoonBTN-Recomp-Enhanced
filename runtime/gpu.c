@@ -227,6 +227,9 @@ static inline int band_row(int32_t y)
  * in S.cmd. */
 int g_pgxp, g_pgxp_persp;
 int g_pgxp_cracks;                  /* close the cracks between models (under, seams); before gpu_set_upscale */
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND) && !defined(GPU_VIEW2)
+double g_depth_margin;              /* the depth test's margin (0: off), one for every copy of the GPU */
+#endif
 uint32_t g_gp0_addr = 0xFFFFFFFFu;
 #if !defined(GPU_REPLAY) && !defined(GPU_BAND) && !defined(GPU_VIEW2)
 /* The second view (p2view.c): what the GPU is sent goes to its copy (gpu_view2.c) too
@@ -3922,13 +3925,13 @@ void gpu_set_upscale(int n)
     TN.ser = TN.qser = NULL;
     TN.dnear = 0.0;
     TN.observe = 0;
-    if (g_vk && getenv("HMBTN_DEPTHTEST")) {    /* experiment: Vulkan's depth test, from the console's pixels */
+    if (g_vk && g_depth_margin > 0.0) {     /* Vulkan's depth test, from the console's pixels */
         TN.tag = (uint16_t *)calloc(1024 * 512, sizeof(uint16_t));
         TN.qpl = (double *)calloc(0x4000 * 3, sizeof(double));
         TN.ser = (uint32_t *)calloc(1024 * 512, sizeof(uint32_t));
         TN.qser = (uint32_t *)calloc(0x4000, sizeof(uint32_t));
         if (TN.tag && TN.qpl && TN.ser && TN.qser) {
-            TN.dnear = 1.0 + atof(getenv("HMBTN_DEPTHTEST"));
+            TN.dnear = 1.0 + g_depth_margin;
             TN.observe = 1;
         }
     }
@@ -3939,10 +3942,7 @@ void gpu_set_upscale(int n)
         n = 4;
     sh = n == 2 ? 11u : 12u;   /* power-of-two row stride: 2048 or 4096 halfwords */
     TH.buf = (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t));
-    {
-        const char *e = getenv("HMBTN_DEPTHTEST");    /* experiment: the margin, e.g. 0.002 */
-        TH.dnear = e ? 1.0 + atof(e) : 0.0;
-    }
+    TH.dnear = g_depth_margin > 0.0 ? 1.0 + g_depth_margin : 0.0;
     TH.tag = g_pgxp_cracks || TH.dnear > 0.0 ? (uint16_t *)calloc((size_t)1 << (2 * sh - 1), sizeof(uint16_t)) : NULL;
     TH.qpl = g_pgxp_cracks || TH.dnear > 0.0 ? (double *)calloc(0x4000 * 3, sizeof(double)) : NULL;
     if (!TH.buf || ((g_pgxp_cracks || TH.dnear > 0.0) && (!TH.tag || !TH.qpl))) {

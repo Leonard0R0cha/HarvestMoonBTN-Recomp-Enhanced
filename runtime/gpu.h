@@ -64,6 +64,7 @@ void     gpu_interp_late(void);
 extern int      g_pgxp;           /* precise vertices (needs upscaling) */
 extern int      g_pgxp_persp;     /* perspective-correct textures (needs g_pgxp) */
 extern int      g_pgxp_cracks;    /* close the cracks between models (needs g_pgxp; set before gpu_set_upscale) */
+extern double   g_depth_margin;   /* depth test (3D after a 2D object): its margin, 0 = off; before gpu_set_upscale */
 extern uint32_t g_gp0_addr;       /* RAM address of the GP0 word being written, ~0 = none */
 void     gpu_pgxp_store(uint32_t addr, uint32_t value, int ok, float x, float y, float w);
 

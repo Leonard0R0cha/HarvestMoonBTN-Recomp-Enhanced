@@ -258,6 +258,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `drawthreads` | `auto` | threads that draw the upscaled 3D with the CPU renderer, `0`–`4`; `auto` = by processor |
 |  | `pgxp` | `1` | `1` = precise 3D vertex positions, no wobble; 2D objects get smaller further away, like the 3D ground (needs `upscale` 2+) |
 |  | `crackfix` | `0` | `1` = close the thin cracks between models that `pgxp` opens, about 1 ms a frame at upscale 4; precise culling leaves few (needs `pgxp`) |
+|  | `depthtest` | `0` | experiment: `1` = 3D drawn after a 2D object (the ground over the bamboo shoot) doesn't cover it where it is behind it (needs `pgxp`) |
 |  | `precisecull` | with `pgxp` | `0` = cull thin faces on whole pixels as the console does (table legs and lamp bases lose a side); the game sees it, so recordings and co-op carry it |
 |  | `perspective` | `1` | `1` = perspective-correct textures (needs `pgxp`) |
 |  | `widescreen` | `16:9` | `off`, `16:9`, `16:10` or `21:9`: wider 3D view; with `upscale` 2+ the HUD and 2D objects keep their shape and the title screen and menus fill the screen |
