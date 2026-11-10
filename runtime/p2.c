@@ -91,6 +91,9 @@ uint16_t g_p2_buttons;          /* farmer 2's pad, set by the frontend each fram
  * swap */
 #define MONEY 0x5C
 #define FAINTED_TIRED 99
+#define AREA_KIND 0x800A0466u    /* halfword: the kind of area (each place its own: 1 the farm, 2 the house,
+                                  * 5 the barn and the coop, 6 the greenhouse, 40 the sprites' house; the town's
+                                  * and the mountain's others, as 8, 12, 48, 52) */
 #define AREA 0x800A036Au         /* the area (halfword: 2 the farm, 1 the house by day; not always another number for another place) */
 #define DAY 0x80070CF4u          /* the date: the day (from 0), then the weekday at +2, the hour at +4 */
 #define HOUR 0x80070CF8u
@@ -709,15 +712,6 @@ static int way_out(uint32_t e) {
     return (int16_t)MEM_R16(e + 10) == 99 && (MEM_R16(e + 2) == 0x20 || MEM_R16(e + 2) == 0x48);
 }
 
-/* the loaded map has the farm's ways out: the farm */
-static int farm_map(void) {
-    for (uint32_t i = 0; i < TRIGGERS_N; i++) {
-        uint32_t e = TRIGGERS + i * 44;
-        if (MEM_R16(e + 2) != 0xFFFF && way_out(e)) return 1;
-    }
-    return 0;
-}
-
 /* the player (in its place) is in the box of one of the farm's ways out */
 static int player_on_way_out(void) {
     int32_t x = (int32_t)MEM_R32(POS), z = (int32_t)MEM_R32(POS + 8);
@@ -880,13 +874,16 @@ void p2_tick(CPU *c) {
      * 2 stays where it is, in the second machine (machine.c) */
     if (g_split && placed && !away && !exchanged && !owner && !doors_before && MEM_R32(FRAME_STATE))
         machine_split_player();
-    /* ... a way out of the farm (the town, the mountain): off the farm; with farmer 2 in the second
-     * machine (inside a building of the farm) farmer 2 comes back to go along (machine.c) */
-    if (!g_view2_run && !doors_before && MEM_R32(FRAME_STATE) && player_on_way_out()) {
-        on_farm = 0;
-        if (g_split && away && !g_machine) machine_bring_back();
-    } else if (!MEM_R32(FRAME_STATE) && farm_map()) {
-        on_farm = 1;
+    /* ... a way out of the farm (the town, the mountain): with farmer 2 in the second machine
+     * (inside a building of the farm) farmer 2 comes back to go along (machine.c) */
+    if (!g_view2_run && !doors_before && MEM_R32(FRAME_STATE) && player_on_way_out() && g_split && away && !g_machine)
+        machine_bring_back();
+    /* on the farm or in one of its buildings: only there do the farmers part, so farmer 2 is on its
+     * own there only; it never takes a way out alone (p2_way_out). (The ways out were the farm's mark
+     * once, but the map past one has them too: the farmers parted in the town) */
+    if (!g_view2_run) {
+        uint16_t k = MEM_R16(AREA_KIND);
+        on_farm = !MEM_R32(FRAME_STATE) && (k == 1 || k == 2 || k == 5 || k == 6 || k == 40);
     }
     stand_up(c);
     turn(c);

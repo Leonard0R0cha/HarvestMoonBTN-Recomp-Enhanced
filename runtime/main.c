@@ -487,7 +487,7 @@ int main(int argc, char **argv) {
             i++;
         }
         else if (!strcmp(a, "--poke")) {
-            for (int k = 0; k < 4; k++) if (!g_cfg.poke_frame[k]) {
+            for (int k = 0; k < 8; k++) if (!g_cfg.poke_frame[k]) {
                 sscanf(nx, "%d:%x:%x", &g_cfg.poke_frame[k], &g_cfg.poke_addr[k], &g_cfg.poke_val[k]);
                 break;
             }

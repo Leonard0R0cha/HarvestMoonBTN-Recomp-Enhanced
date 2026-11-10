@@ -15,6 +15,7 @@ void log_msg(int level, const char *fmt, ...) { (void)level; (void)fmt; }
 void fatal(const char *fmt, ...) { (void)fmt; printf("FATAL\n"); exit(1); }
 void platform_frame(void) {}
 int netplay_role(void) { return 0; }
+int netplay_active(void) { return 0; }
 void platform_audio_push(const int16_t *s, int n) { (void)s; (void)n; }
 
 static int fails;

@@ -449,6 +449,10 @@ static void exec_command(void) {
         }
         break;
     case 0x07: /* MotorOn */
+        /* with the motor already on the drive only answers with an error, no second response.
+         * The game sends one before a Pause; a late "complete" from it was taken by libcd as the
+         * Pause's, and the Pause's own then went unseen: a 2 s wait (talking to a cow or sheep). */
+        if (cd.stat & 2) { resp_error(0x20); break; }
         resp_stat(3, now);
         cd.stat |= 2;
         resp_stat(2, now + 0x10000);

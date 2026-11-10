@@ -504,7 +504,7 @@ MODULE_SITE_HOOKS = {
                 # walking through crops: the player's walk's collision mask (800CB114, after the
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
                 0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
-                0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
+                0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
                 # the Harvest Sprites' spots at home (80110E34 copies one to the sprite in a0): the
                 # spot's z, loaded at 80110E78, for the yellow one moves it off the chair (runtime/fixes.c)
                 0x80110E78: 'R[6] = sprite_spot_z(R[6], R[4]);',

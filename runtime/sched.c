@@ -315,7 +315,7 @@ static void on_vblank(void) {
     g_frame++;
     for (int k = 0; k < 4; k++)
         if (g_cfg.call_frame[k] && g_frame == (uint64_t)g_cfg.call_frame[k]) call_pending = k + 1;
-    for (int k = 0; k < 4; k++)
+    for (int k = 0; k < 8; k++)
         if (g_cfg.poke_frame[k] && g_frame == (uint64_t)g_cfg.poke_frame[k]) {
             if ((g_cfg.poke_addr[k] & 0x1F800000u) == 0) ram_w32(g_cfg.poke_addr[k], g_cfg.poke_val[k]);   /* RAM: 32-bit */
             else mem_write16_slow(g_cfg.poke_addr[k], g_cfg.poke_val[k]);                                 /* I/O: 16-bit */

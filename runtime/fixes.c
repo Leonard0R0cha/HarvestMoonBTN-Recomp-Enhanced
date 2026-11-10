@@ -38,20 +38,58 @@ void first_house_cabinet(void) {
 }
 
 /* Walking through crops: the player's walk asks for collisions at 800CB114 (a2 in s2: 56 when it
- * looks ahead, 0 for the step itself; the mask in t2) and the farm's field answers at 800BE6E4
- * (the query in s1, its mask at +20): a field thing is solid when its picture says so (v0 after
- * 800BE818, with the item's record in v1 and its class byte, +3, in t1). Here the
- * walk's mask gets 0x100000 and a planted crop (record flags 4040h, a class) is not solid then. */
+ * looks ahead, 0 for the step itself, 24 for what X faces; the mask in t2) and the farm's field
+ * answers at 800BE6E4 (the query in s1, its mask at +20; the point tested made a field, x / y at
+ * sp+32 / sp+34, by 8011E090 in the greenhouse (s0 = 1) or 800D7EF8): a field thing is solid
+ * when its picture says so (v0 after 800BE818, with the item's record in v1 and its class byte,
+ * +3, in t1). Here the walk's mask gets 0x100000 and a planted crop (record flags 4040h, a class)
+ * is not solid then, nor a weed (field 64: record flags 8000h, +14 the item it gives, 91h; the
+ * records are 40 bytes from 8004B1A4, stones 58 and branches 62 give 92h / 93h and stay solid).
+ * What X faces is tested close to the player: standing on a crop, the crop under the player was
+ * what X faced, and a Harvest Sprite or the shipping basket beside could not be reached. That
+ * test gets 0x200000: a crop or weed in the player's own field is not solid for it (the one in
+ * front still is, to pick it). */
 #define CROP_WALK 0x100000u
+#define CROP_FACE 0x200000u
 #define CROP_FLAGS 0x4040u
+#define WEED_FLAGS 0x8000u
+#define WEED_ITEM 0x91u
+#define PLAYER_POS 0x80071B00u     /* the player's x, y, z (words) */
 
 uint32_t crop_walk_mask(uint32_t mask, uint32_t why) {
-    return g_cfg.cropwalk && (why == 56 || why == 0) ? mask | CROP_WALK : mask;
+    if (!g_cfg.cropwalk) return mask;
+    if (why == 56 || why == 0) return mask | CROP_WALK;
+    if (why == 24) return mask | CROP_FACE;
+    return mask;
 }
 
-uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls) {
-    if (solid && (MEM_R32(query + 20) & CROP_WALK) && (int8_t)cls != -1 && MEM_R16(record) == CROP_FLAGS) return 0;
-    return solid;
+/* the player's own field, made as the point tested was (0 out of the grid) */
+static int own_field(CPU *c) {
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    uint32_t p = regs[29] - 0x40u;             /* below the field's frame, above the callee's */
+    for (int k = 0; k < 3; k++) MEM_W32(p + 4u * k, MEM_R32(PLAYER_POS + 4u * k));
+    c->r[29] = regs[29] - 0x80u;
+    c->r[4] = p;
+    c->r[5] = p + 16u;
+    c->r[6] = p + 18u;
+    call_addr(c, regs[16] ? 0x8011E090u : 0x800D7EF8u);
+    int out = c->r[2] != 0;
+    int same = !out && MEM_R16(p + 16u) == MEM_R16(regs[29] + 32u) && MEM_R16(p + 18u) == MEM_R16(regs[29] + 34u);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    return same;
+}
+
+uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls) {
+    uint32_t mask = MEM_R32(query + 20);
+    if (!solid || !(mask & (CROP_WALK | CROP_FACE))) return solid;
+    int crop = ((int8_t)cls != -1 && MEM_R16(record) == CROP_FLAGS) ||
+               (MEM_R16(record) == WEED_FLAGS && MEM_R16(record + 14) == WEED_ITEM);
+    if (!crop) return solid;
+    if (mask & CROP_WALK) return 0;
+    return own_field(c) ? 0 : solid;
 }
 
 /* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
@@ -487,3 +525,4 @@ uint32_t bulk_food_pay(CPU *c, uint32_t minus_price) {
     BULK_BACK;
     return minus_price;
 }
+

@@ -293,7 +293,7 @@ typedef struct {
     int  dump_frame[8];          /* testing: dump RAM at these frames */
     char wav_path[1024];         /* testing: write audio output to a WAV file */
     int  fuzz_seed;              /* testing: random input (0 = off) */
-    int  poke_frame[4]; uint32_t poke_addr[4], poke_val[4];   /* testing: 16-bit I/O writes */
+    int  poke_frame[8]; uint32_t poke_addr[8], poke_val[8];   /* testing: 16-bit I/O writes */
     int  call_frame[4]; uint32_t call_addr[4], call_a0[4];   /* testing: call guest functions at frames */
     int  fuzz_start;             /* testing: frame at which random input starts */
 } Config;

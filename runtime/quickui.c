@@ -34,9 +34,12 @@ uint32_t quick_fade(uint32_t ticks) {
 /* "Now Loading" (the dog in the middle of a black screen while an area is read from the disc):
  * the game sets gp+88 (8005E2CC) while it is up, and its draw callback (8001B118) only draws
  * it then. The wait is the disc and the data setup, so fastload runs those frames at full
- * speed, like holding Tab; so are the black pauses between places. */
+ * speed, like holding Tab; so are the black pauses between places.
+ * Not with two players (farmer 2 or online): farmer 2 goes on during farmer 1's pauses (in his
+ * own building with `split`, or in his window) and would rush for a moment; the online partner
+ * would see the same. Both co-op PCs have the same farmer 2 and online state, so they agree. */
 bool quick_loading(bool black) {
-    if (!g_cfg.fastload) return false;
+    if (!g_cfg.fastload || g_p2_enabled || netplay_active()) return false;
     if (ram_r32(0x8005E2CCu) != 0) return true;
     /* After a fade to black (doors, going to bed, between the intro screens) the fade kind at
      * gp+32 (8005E294) is 0 until the next fade from black starts, while the game loads the

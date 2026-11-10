@@ -186,7 +186,7 @@ TEXT = {
         'earlycabinet': ('Cabinet in the first house', 'The pile of boxes opens the cabinet, before the house '
                          'is extended.'),
         'cropwalk': ('Walk through crops', 'You can walk through your planted crops, so the one in the '
-                     'middle is always in reach.'),
+                     'middle is always in reach. Weeds too.'),
         'staminabar': ('Stamina under the clock', 'A window under the clock shows your stamina (S) and '
                        'tiredness (F) with bars and numbers.'),
         'bulkfood': ('Buy food in bulk', 'At a shop shelf you choose how many to buy: one stays in your '
@@ -264,7 +264,7 @@ TEXT = {
         'earlycabinet': ('Armário na primeira casa', 'A pilha de caixas abre o armário antes de a casa ser '
                          'ampliada.'),
         'cropwalk': ('Andar sobre as plantações', 'Dá para passar por cima das plantações, então a do meio '
-                     'sempre fica ao alcance.'),
+                     'sempre fica ao alcance. O mato também.'),
         'staminabar': ('Stamina embaixo do relógio', 'Uma janela embaixo do relógio mostra a stamina (S) e o '
                        'cansaço (F) com barras e números.'),
         'bulkfood': ('Comprar comida em lote', 'Na prateleira da loja você escolhe quantas comprar: uma '
@@ -344,7 +344,7 @@ TEXT = {
         'earlycabinet': ('Armario en la primera casa', 'La pila de cajas abre el armario antes de ampliar la '
                          'casa.'),
         'cropwalk': ('Caminar sobre los cultivos', 'Puedes pasar por encima de tus cultivos, así el del medio '
-                     'siempre queda al alcance.'),
+                     'siempre queda al alcance. La maleza también.'),
         'staminabar': ('Energía bajo el reloj', 'Una ventana bajo el reloj muestra tu energía (S) y tu '
                        'cansancio (F) con barras y números.'),
         'bulkfood': ('Comprar comida por lotes', 'En el estante de la tienda eliges cuántas comprar: una '
