@@ -59,6 +59,10 @@ static void *gs_armed;
 #define WORLD_N 0x10000u
 enum { W_MERGE, W_SKIP, W_FIRST };
 static uint8_t *world_kind, *world_seen;
+#define GH_ROWS_AT 0x9B9E0u              /* the building picked at the carpenter's (buildorder.c, 16 bytes) and the
+                                          * bigger greenhouse's rows 7-18 (greenhouse.c), out of the block */
+#define GH_ROWS_N (16 + 672)
+static uint8_t gh_seen[GH_ROWS_N];
 static int32_t money_seen;
 /* The clock: the minute goes on when a counter (a word at 8006C90C) reaches the hour's pace; in the
  * houses neither moves. Each machine has its own, so the clock is the one of a machine whose clock
@@ -166,6 +170,12 @@ void machine_init(void (*boot)(void)) {
      * host shows the first, the guest the second (its window shows the second GPU, g_view2 2) */
     if (g_split && (!g_p2_enabled || (!netplay_role() && g_view2 != 1))) {
         LOGW("--split: only with farmer 2 (and its window, on one PC)");
+        g_split = 0;
+    }
+    /* on one PC the second machine costs too much: farmer 2 follows farmer 1 there; the split is
+     * for the online co-op only (a replay of an online session still gets it) */
+    if (g_split && !netplay_role() && !g_cfg.input_script[0]) {
+        LOGW("split: online co-op only");
         g_split = 0;
     }
     if (g_mirror && g_split) g_mirror = 0;
@@ -432,6 +442,7 @@ static void world_sync(uint8_t *b, int first_time) {
     memcpy(&sb, b - WORLD_LO + SUBMINUTE, 4);
     if (first_time) {               /* b: the RAM the two start from */
         memcpy(s, b, WORLD_N);
+        memcpy(gh_seen, b - WORLD_LO + GH_ROWS_AT, GH_ROWS_N);
         money_seen = mb;
         memcpy(clock_seen, cb, CLOCK_N);
         sub_seen = sb;
@@ -458,6 +469,13 @@ static void world_sync(uint8_t *b, int first_time) {
             else if (a[k] != s[k]) v = a[k];
             else v = b[k];
             a[k] = b[k] = s[k] = v;
+        }
+    }
+    {
+        uint8_t *ga = g_ram + GH_ROWS_AT, *gb = b - WORLD_LO + GH_ROWS_AT;
+        for (uint32_t k = 0; k < GH_ROWS_N; k++) {
+            uint8_t v = ga[k] != gh_seen[k] ? ga[k] : gb[k];
+            ga[k] = gb[k] = gh_seen[k] = v;
         }
     }
     int32_t m = money_seen + (ma - money_seen) + (mb - money_seen);

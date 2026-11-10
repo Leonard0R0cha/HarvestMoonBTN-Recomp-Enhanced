@@ -38,20 +38,79 @@ void first_house_cabinet(void) {
 }
 
 /* Walking through crops: the player's walk asks for collisions at 800CB114 (a2 in s2: 56 when it
- * looks ahead, 0 for the step itself; the mask in t2) and the farm's field answers at 800BE6E4
- * (the query in s1, its mask at +20): a field thing is solid when its picture says so (v0 after
- * 800BE818, with the item's record in v1 and its class byte, +3, in t1). Here the
- * walk's mask gets 0x100000 and a planted crop (record flags 4040h, a class) is not solid then. */
+ * looks ahead, 0 for the step itself, 24 for what X faces; the mask in t2) and the farm's field
+ * answers at 800BE6E4 (the query in s1, its mask at +20; the point tested made a field, x / y at
+ * sp+32 / sp+34, by 8011E090 in the greenhouse (s0 = 1) or 800D7EF8): a field thing is solid
+ * when its picture says so (v0 after 800BE818, with the item's record in v1 and its class byte,
+ * +3, in t1). Here the walk's mask gets 0x100000 and a planted crop (record flags 4040h, a class)
+ * is not solid then, nor a weed (field 64: record flags 8000h, +14 the item it gives, 91h; the
+ * records are 40 bytes from 8004B1A4, stones 58 and branches 62 give 92h / 93h and stay solid).
+ * What X faces is tested close to the player: standing on a crop, the crop under the player was
+ * what X faced, and a Harvest Sprite or the shipping basket beside could not be reached. That
+ * test gets 0x200000: a crop or weed in the player's own field is not solid for it (the one in
+ * front still is, to pick it). */
 #define CROP_WALK 0x100000u
+#define CROP_FACE 0x200000u
 #define CROP_FLAGS 0x4040u
+#define WEED_FLAGS 0x8000u
+#define WEED_ITEM 0x91u
+#define PLAYER_POS 0x80071B00u     /* the player's x, y, z (words) */
 
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why) {
-    return g_cfg.cropwalk && (why == 56 || why == 0) ? mask | CROP_WALK : mask;
+/* Running through the big animals: the walk's mask (above) has 0x2 / 0x4 for the cows and the sheep
+ * (the 20 records of 184 bytes from 800749F4: 352-355 and 356-358; a hit gives 0x10000 and the
+ * player pushes them), 0x100 for the horse on the farm (800759E4, on its area only) and 0x200 for
+ * the horse in its stable (80075AD4, record 350). While the player runs they are left out: the
+ * player runs through them, and walking still pushes. Running = the run button held (bit 0x20 of
+ * the buttons the walk reads, 801231F4: the second farmer's own in its turn) or the run state (+3C
+ * = 4; walking is 2): pushing an animal puts the player back in the walking state with the button
+ * still held. Asked for every farmer's walk (the second farmer's struct is the player's in its turn). */
+#define ANIMAL_BITS 0x306u
+#define PLAYER_STATE 0x3Cu
+#define STATE_RUN 4
+#define WALK_BUTTONS 0x801231F4u
+#define RUN_BUTTON 0x20u
+
+static uint32_t run_through_mask(uint32_t mask, uint32_t player) {
+    if (!g_cfg.runthrough) return mask;
+    if ((int16_t)MEM_R16(player + PLAYER_STATE) != STATE_RUN && !(MEM_R32(WALK_BUTTONS) & RUN_BUTTON)) return mask;
+    return mask & ~ANIMAL_BITS;
 }
 
-uint32_t crop_walk_solid(uint32_t solid, uint32_t query, uint32_t record, uint32_t cls) {
-    if (solid && (MEM_R32(query + 20) & CROP_WALK) && (int8_t)cls != -1 && MEM_R16(record) == CROP_FLAGS) return 0;
-    return solid;
+uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player) {
+    if (why == 56 || why == 0) mask = run_through_mask(mask, player);
+    if (!g_cfg.cropwalk) return mask;
+    if (why == 56 || why == 0) return mask | CROP_WALK;
+    if (why == 24) return mask | CROP_FACE;
+    return mask;
+}
+
+/* the player's own field, made as the point tested was (0 out of the grid) */
+static int own_field(CPU *c) {
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    uint32_t p = regs[29] - 0x40u;             /* below the field's frame, above the callee's */
+    for (int k = 0; k < 3; k++) MEM_W32(p + 4u * k, MEM_R32(PLAYER_POS + 4u * k));
+    c->r[29] = regs[29] - 0x80u;
+    c->r[4] = p;
+    c->r[5] = p + 16u;
+    c->r[6] = p + 18u;
+    call_addr(c, regs[16] ? 0x8011E090u : 0x800D7EF8u);
+    int out = c->r[2] != 0;
+    int same = !out && MEM_R16(p + 16u) == MEM_R16(regs[29] + 32u) && MEM_R16(p + 18u) == MEM_R16(regs[29] + 34u);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    return same;
+}
+
+uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls) {
+    uint32_t mask = MEM_R32(query + 20);
+    if (!solid || !(mask & (CROP_WALK | CROP_FACE))) return solid;
+    int crop = ((int8_t)cls != -1 && MEM_R16(record) == CROP_FLAGS) ||
+               (MEM_R16(record) == WEED_FLAGS && MEM_R16(record + 14) == WEED_ITEM);
+    if (!crop) return solid;
+    if (mask & CROP_WALK) return 0;
+    return own_field(c) ? 0 : solid;
 }
 
 /* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
@@ -486,4 +545,25 @@ uint32_t bulk_food_pay(CPU *c, uint32_t minus_price) {
     minus_price = food_pay(c, minus_price);
     BULK_BACK;
     return minus_price;
+}
+
+/* Storm-proof greenhouse (sturdygreenhouse): on a typhoon / blizzard night (800DE254, weather
+ * 8007AD00 = 3 or 4) 800C05F8 breaks a built greenhouse (80070D0C) when a roll of 100 is under 31:
+ * the roll still happens (the same random numbers after it), but it never breaks */
+uint32_t greenhouse_storm(uint32_t breaks) {
+    return g_cfg.sturdygreenhouse && build_has(1) ? 0 : breaks;
+}
+
+/* Bulk feed (bulkfood): the ranch's fodder and the poultry farm's chicken feed are bought through
+ * 8011BAFC's "how many?" (the number window, a0 = 99 at 8011BC54); its caller (ra at sp+116) tells
+ * which: 80114B2C the fodder (80070D3A), 801157E4 the chicken feed (80070D40). They are kept up to 999
+ * (800F397C / 800F3AF0 throw the rest away), so as many as still fit, at least 1 */
+uint32_t bulk_feed_most(CPU *c, uint32_t most) {
+    if (!g_cfg.bulkfood) return most;
+    uint32_t from = MEM_R32(c->r[29] + 116), kept;
+    if (from == 0x80114B2Cu) kept = 0x80070D3Au;
+    else if (from == 0x801157E4u) kept = 0x80070D40u;
+    else return most;
+    int room = 999 - (int)MEM_R16(kept);
+    return (uint32_t)(room > 1 ? room : 1);
 }

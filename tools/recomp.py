@@ -503,8 +503,8 @@ MODULE_SITE_HOOKS = {
                 0x800BD0B8: 'first_house_cabinet();',
                 # walking through crops: the player's walk's collision mask (800CB114, after the
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
-                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18]);',
-                0x800BE818: 'R[2] = crop_walk_solid(R[2], R[17], R[3], R[9]);',
+                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18], R[16]);',
+                0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
                 # the Harvest Sprites' spots at home (80110E34 copies one to the sprite in a0): the
                 # spot's z, loaded at 80110E78, for the yellow one moves it off the chair (runtime/fixes.c)
                 0x80110E78: 'R[6] = sprite_spot_z(R[6], R[4]);',
@@ -512,6 +512,29 @@ MODULE_SITE_HOOKS = {
                 # 8011C468) and the payment (a0 = minus the price, 8011C514) (runtime/fixes.c)
                 0x8011C470: 'R[16] = bulk_food_yes(c, R[16]);',
                 0x8011C514: 'R[4] = bulk_food_pay(c, R[4]);',
+                0x8011BC54: 'R[4] = bulk_feed_most(c, R[4]);',   # fodder / chicken feed: how many (a0 = 99)
+                # a storm night (800DE254 for weather 3 / 4) breaks the greenhouse (800C05F8) when
+                # a roll of 100 is under 31 (v0 at 800C0624) (runtime/fixes.c)
+                0x800C0624: 'R[2] = greenhouse_storm(R[2]);',
+                # the bigger greenhouse (runtime/greenhouse.c): a field's address past the greenhouse's
+                # 7 rows is one of the new rows (where each is worked out), its rows test in 8011E090,
+                # the night's rows (800D7B8C, the height at sp+24), the floor paint once loaded
+                # (8011E45C's end) and the model (the area loader, back from 8001BFA8)
+                0x800BF684: 'R[4] = gh_addr(R[4]);', 0x800BF7E8: 'R[2] = gh_addr(R[2]);',
+                0x800C5688: 'R[16] = gh_addr(R[16]);', 0x800CB804: 'R[3] = gh_addr(R[3]);',
+                0x800CC794: 'R[5] = gh_addr(R[5]);', 0x800E8050: 'R[4] = gh_addr(R[4]);',
+                0x800E81A0: 'R[16] = gh_addr(R[16]);',
+                0x800BE7CC: 'R[8] = gh_addr(R[8]);',   # (800BE6E4: the greenhouse's as the farm's + 9000)
+                0x8011E178: 'R[3] = gh_row_ok(R[6], R[3]);', 0x800D7BE8: 'gh_night_rows(c);',
+                0x8011E558: 'gh_floor_paint(c);', 0x800DC070: 'gh_model(c);',
+                # ... the greenhouse's things drawn (800D9F1C: rows to 800DA358, the field's base for the
+                # loads at +30956), a field drawn by lot (800DAE1C, 49 of them) and the sprites' (80110658,
+                # 801106BC; their field at 8010D440)
+                0x800D9FB4: 'R[3] = gh_addr(R[3] + 30956u) - 30956u; R[2] = gh_addr(R[2] + 30956u) - 30956u;',
+                0x800DA358: 'R[2] = gh_row_ok(R[17], R[2]);',
+                0x800DAE1C: 'R[20] = gh_fields(R[20]);', 0x800DAE4C: 'R[4] = gh_addr(R[4]);',
+                0x801106BC: 'R[20] = gh_fields(R[20]);', 0x80110738: 'R[4] = gh_addr(R[4]);',
+                0x8010D440: 'R[4] = gh_addr(R[4]);',
                 0x800FB664: 'g_clock_draw = 0;',     # back from the clock routine (jal at 800FB65C)
                 0x800C7B70: 'R[3] = p2_x_target(R[3]);',
                 # the map screen (SELECT) draws the map picture (320x240 in quads: the map and a
@@ -543,7 +566,11 @@ MODULE_SITE_HOOKS = {
     'GF_TITLE': {0x800B9988: 'g_menu_tile = 0;', 0x800B9364: 'g_menu_tile = 0;'},
 }
 # ... and at their entry (per overlay too): with autoslot the slot menu is not drawn at all
-MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] = 2; return; }'},
+MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] = 2; return; }',
+                                   # the bigger greenhouse's rows in the card's file (runtime/greenhouse.c)
+                                   # ... and the building picked at the carpenter's (runtime/buildorder.c)
+                                   0x80134C48: 'gh_card_save(); build_card_save();',
+                                   0x80135380: 'gh_card_load(); build_card_load();'},
                       'GF_TITLE': {0x800B944C: 'g_menu_tile = 320;', 0x800B9324: 'g_menu_tile = -1;'},
                       # the player's drawing routine (a0 = its position): a second farmer is drawn
                       # by it first (runtime/p2.c)
@@ -569,7 +596,39 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   # turns see-through over the farmer (runtime/fixes.c)
                                   0x800FB674: 'clock_begin(c);',
                                   # bulk food: the shelf's buy question's new states (runtime/fixes.c)
-                                  0x8011C298: 'if (bulk_food_state(c)) { R[2] = 0; return; }'}}
+                                  0x8011C298: 'if (bulk_food_state(c)) { R[2] = 0; return; }',
+                                  # the bigger greenhouse: a field (grid, x, y), the fields emptied and
+                                  # where people may walk in it (the rectangles of 800BE5A0)
+                                  0x800DAF60: 'if (gh_field_at(c)) return;', 0x800D7B24: 'gh_clear();',
+                                  0x800BE5A0: 'gh_walk_area();'}}
+# The Harvest Sprites hired through the Chef (spritehire, runtime/sprites.c; a site hook runs after
+# its instruction): the talk's checks (8010DA04: +184 talked to once at 8010DB00, friendship >= 50
+# at 8010DB14, spring's sixth talk at 8010DC38), the hire menu (8010E6E8; the days question's answer after its jal at 8010E928, the
+# days stored at 8010E988) and the texts: written over once loaded (80022A94, after 80022FE0) and
+# the window drawn each tick (80022B98)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x8010DB00: 'R[2] = sprite_talked(c, R[2]);',
+    0x8010DB14: 'R[2] = sprite_friendship(c, R[2]);',
+    0x8010DC38: 'R[2] = sprite_spring(R[2]);',
+    0x8010E930: 'R[3] = R[2] = sprite_days_answer(c, R[3]);',
+    0x8010E98C: 'sprite_hired(c);',
+    # a sprite under contract asks about another job: the talk's text (a1 loaded at 8010DC98)
+    0x8010DC98: 'sprite_talk_text(c);'})
+MODULE_ENTRY_HOOKS['GF_FARM'][0x8010E6E8] = 'sprite_menu(c);'
+MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CB6C] = 'sprite_night(c);'   # each sprite's night
+MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CD80] = 'sprite_update(c);'  # each sprite's frame
+SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded();'
+ENTRY_HOOKS[0x80022B98] = 'sprite_text_tick(c);'
+SITE_HOOKS[0x80022CDC] = 'sprite_menu_answered(c, R[4]); build_menu_answered(R[4]);'   # a menu's answer, just stored at gp+836
+# The carpenter's building order (buildorder, runtime/buildorder.c; site hooks run after their
+# instruction): the offer's next state stored (801182EC), the building paid for (801185E4) and the
+# night it is done (8011205C: v1 = s0 - 58); its menu's text and answer with the sprites' above
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x801182EC: 'build_offer(c);',
+    0x801185E4: 'build_started(c);',
+    0x80117F90: 'R[3] = R[2] = build_next(R[2]);',   # the shop opens: the first not built
+    0x80118040: 'R[3] = build_label(R[20]) << 2;',   # ... and the extension's name
+    0x8011205C: 'R[3] = build_night(c, R[3]);'})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 

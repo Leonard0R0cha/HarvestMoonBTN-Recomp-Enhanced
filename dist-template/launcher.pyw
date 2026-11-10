@@ -81,6 +81,11 @@ OPTIONS = [
     ('mods', 'behaviour', 'cropwalk', 'bool'),
     ('mods', 'behaviour', 'staminabar', 'bool'),
     ('mods', 'behaviour', 'bulkfood', 'bool'),
+    ('mods', 'behaviour', 'spritehire', 'bool'),
+    ('mods', 'behaviour', 'sturdygreenhouse', 'bool'),
+    ('mods', 'behaviour', 'biggreenhouse', 'bool'),
+    ('mods', 'behaviour', 'buildorder', 'bool'),
+    ('mods', 'behaviour', 'runthrough', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
@@ -186,17 +191,24 @@ TEXT = {
         'earlycabinet': ('Cabinet in the first house', 'The pile of boxes opens the cabinet, before the house '
                          'is extended.'),
         'cropwalk': ('Walk through crops', 'You can walk through your planted crops, so the one in the '
-                     'middle is always in reach.'),
+                     'middle is always in reach. Weeds too.'),
         'staminabar': ('Stamina under the clock', 'A window under the clock shows your stamina (S) and '
                        'tiredness (F) with bars and numbers.'),
         'bulkfood': ('Buy food in bulk', 'At a shop shelf you choose how many to buy: one stays in your '
                      'hands, the rest go to the rucksack and then to the fridge.'),
+        'spritehire': ('Hire the sprites through the Chef', 'The Chef asks how many of the free sprites go '
+                       'and for how long: 1 week (50G each) or 30 days (200G each). Talk to a hired sprite to change its '
+                       'job. Sprites also work in spring, 3 times as fast, with their skills at the highest.'),
+        'sturdygreenhouse': ('Storm-proof greenhouse', 'Typhoons and blizzards no longer break the greenhouse. With the building order on, Gotz builds it: 10000G and 700 lumber.'),
+        'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
+        'buildorder': ('Pick the building order', 'Gotz asks which extension to build next (hen house, kitchen, barn, bigger house, greenhouse) instead of the fixed order; each keeps its own price and lumber.'),
+        'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
-        'split': ('Farmer 2 goes into buildings alone (experimental)', 'On the farm, farmer 2 can go through a '
+        'split': ('Farmer 2 goes into buildings alone (online co-op only, experimental)', 'On the farm, farmer 2 can go through a '
                   'door on its own (X at a door outside): it plays in its own window, in a second copy of the game, '
                   'while farmer 1 stays where it is. Time, money and the farm are the same for both. They are '
                   'together again when both are in the same place. Uses about twice the processor while apart. '
@@ -264,17 +276,24 @@ TEXT = {
         'earlycabinet': ('Armário na primeira casa', 'A pilha de caixas abre o armário antes de a casa ser '
                          'ampliada.'),
         'cropwalk': ('Andar sobre as plantações', 'Dá para passar por cima das plantações, então a do meio '
-                     'sempre fica ao alcance.'),
+                     'sempre fica ao alcance. O mato também.'),
         'staminabar': ('Stamina embaixo do relógio', 'Uma janela embaixo do relógio mostra a stamina (S) e o '
                        'cansaço (F) com barras e números.'),
         'bulkfood': ('Comprar comida em lote', 'Na prateleira da loja você escolhe quantas comprar: uma '
                      'fica na mão, o resto vai para a mochila e depois para a geladeira.'),
+        'spritehire': ('Contratar os duendes pelo Chef', 'O Chef pergunta quantos dos duendes livres vão e por '
+                       'quanto tempo: 1 semana (50G cada) ou 30 dias (200G cada). Fale com um duende contratado para '
+                       'trocar o trabalho dele. Eles também trabalham na primavera, 3 vezes mais rápido e com as habilidades no máximo.'),
+        'sturdygreenhouse': ('Estufa resistente', 'Tufões e nevascas não quebram mais a estufa. Com a ordem das ampliações ligada, o Gotz constrói: 10000G e 700 de madeira.'),
+        'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
+        'buildorder': ('Escolher a ordem das ampliações', 'O Gotz pergunta qual ampliação construir (galinheiro, cozinha, estábulo, casa maior, estufa) em vez da ordem fixa; cada uma com seu preço e sua madeira.'),
+        'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
-        'split': ('Fazendeiro 2 entra nas construções sozinho (experimental)', 'Na fazenda o fazendeiro 2 pode '
+        'split': ('Fazendeiro 2 entra nas construções sozinho (só coop online, experimental)', 'Na fazenda o fazendeiro 2 pode '
                   'passar por uma porta sozinho (X na porta, do lado de fora): ele joga na janela dele, numa segunda '
                   'cópia do jogo, e o fazendeiro 1 fica onde está. Hora, dinheiro e fazenda são os mesmos para os '
                   'dois. Eles se juntam de novo quando os dois estão no mesmo lugar. Usa cerca do dobro do '
@@ -344,18 +363,25 @@ TEXT = {
         'earlycabinet': ('Armario en la primera casa', 'La pila de cajas abre el armario antes de ampliar la '
                          'casa.'),
         'cropwalk': ('Caminar sobre los cultivos', 'Puedes pasar por encima de tus cultivos, así el del medio '
-                     'siempre queda al alcance.'),
+                     'siempre queda al alcance. La maleza también.'),
         'staminabar': ('Energía bajo el reloj', 'Una ventana bajo el reloj muestra tu energía (S) y tu '
                        'cansancio (F) con barras y números.'),
         'bulkfood': ('Comprar comida por lotes', 'En el estante de la tienda eliges cuántas comprar: una '
                      'queda en tus manos, el resto va a la mochila y luego a la nevera.'),
+        'spritehire': ('Contratar a los duendes con el Chef', 'El Chef pregunta cuántos de los duendes libres van y '
+                       'por cuánto tiempo: 1 semana (50G cada uno) o 30 días (200G cada uno). Habla con un duende contratado '
+                       'para cambiar su trabajo. También trabajan en primavera, 3 veces más rápido y con las habilidades al máximo.'),
+        'sturdygreenhouse': ('Invernadero resistente', 'Los tifones y las ventiscas ya no rompen el invernadero. Con el orden de ampliaciones activo, Gotz lo construye: 10000G y 700 de madera.'),
+        'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),
+        'buildorder': ('Elegir el orden de las ampliaciones', 'Gotz pregunta qué ampliación construir (gallinero, cocina, establo, casa más grande, invernadero) en vez del orden fijo; cada una con su precio y su madera.'),
+        'runthrough': ('Correr atraviesa los animales', 'Corriendo pasas a través de las vacas, las ovejas y el caballo; caminando sigues empujándolos.'),
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
         'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
-        'split': ('El granjero 2 entra solo en los edificios (experimental)', 'En la granja el granjero 2 puede '
+        'split': ('El granjero 2 entra solo en los edificios (solo coop online, experimental)', 'En la granja el granjero 2 puede '
                   'pasar solo por una puerta (X en la puerta, desde fuera): juega en su ventana, en una segunda '
                   'copia del juego, y el granjero 1 se queda donde está. La hora, el dinero y la granja son los '
                   'mismos para los dos. Se juntan otra vez cuando los dos están en el mismo lugar. Usa cerca del '
