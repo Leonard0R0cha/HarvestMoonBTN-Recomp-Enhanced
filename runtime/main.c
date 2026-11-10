@@ -418,6 +418,7 @@ int main(int argc, char **argv) {
     g_cfg.overclock = 200;
     g_cfg.emptybag = 1;
     g_cfg.spritechair = 1;
+    g_cfg.depthtest = 1;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);
