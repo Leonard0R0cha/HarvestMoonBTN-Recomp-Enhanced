@@ -217,6 +217,11 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "spritechair")) g_cfg.spritechair = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
+    else if (!strcmp(key, "spritehire")) g_cfg.spritehire = atoi(val);
+    else if (!strcmp(key, "sturdygreenhouse")) g_cfg.sturdygreenhouse = atoi(val);
+    else if (!strcmp(key, "biggreenhouse")) g_cfg.biggreenhouse = atoi(val);
+    else if (!strcmp(key, "buildorder")) g_cfg.buildorder = atoi(val);
+    else if (!strcmp(key, "runthrough")) g_cfg.runthrough = atoi(val);
     else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
     else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);

@@ -56,7 +56,28 @@ void first_house_cabinet(void) {
 #define WEED_ITEM 0x91u
 #define PLAYER_POS 0x80071B00u     /* the player's x, y, z (words) */
 
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why) {
+/* Running through the big animals: the walk's mask (above) has 0x2 / 0x4 for the cows and the sheep
+ * (the 20 records of 184 bytes from 800749F4: 352-355 and 356-358; a hit gives 0x10000 and the
+ * player pushes them), 0x100 for the horse on the farm (800759E4, on its area only) and 0x200 for
+ * the horse in its stable (80075AD4, record 350). While the player runs they are left out: the
+ * player runs through them, and walking still pushes. Running = the run button held (bit 0x20 of
+ * the buttons the walk reads, 801231F4: the second farmer's own in its turn) or the run state (+3C
+ * = 4; walking is 2): pushing an animal puts the player back in the walking state with the button
+ * still held. Asked for every farmer's walk (the second farmer's struct is the player's in its turn). */
+#define ANIMAL_BITS 0x306u
+#define PLAYER_STATE 0x3Cu
+#define STATE_RUN 4
+#define WALK_BUTTONS 0x801231F4u
+#define RUN_BUTTON 0x20u
+
+static uint32_t run_through_mask(uint32_t mask, uint32_t player) {
+    if (!g_cfg.runthrough) return mask;
+    if ((int16_t)MEM_R16(player + PLAYER_STATE) != STATE_RUN && !(MEM_R32(WALK_BUTTONS) & RUN_BUTTON)) return mask;
+    return mask & ~ANIMAL_BITS;
+}
+
+uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player) {
+    if (why == 56 || why == 0) mask = run_through_mask(mask, player);
     if (!g_cfg.cropwalk) return mask;
     if (why == 56 || why == 0) return mask | CROP_WALK;
     if (why == 24) return mask | CROP_FACE;
@@ -526,3 +547,23 @@ uint32_t bulk_food_pay(CPU *c, uint32_t minus_price) {
     return minus_price;
 }
 
+/* Storm-proof greenhouse (sturdygreenhouse): on a typhoon / blizzard night (800DE254, weather
+ * 8007AD00 = 3 or 4) 800C05F8 breaks a built greenhouse (80070D0C) when a roll of 100 is under 31:
+ * the roll still happens (the same random numbers after it), but it never breaks */
+uint32_t greenhouse_storm(uint32_t breaks) {
+    return g_cfg.sturdygreenhouse && build_has(1) ? 0 : breaks;
+}
+
+/* Bulk feed (bulkfood): the ranch's fodder and the poultry farm's chicken feed are bought through
+ * 8011BAFC's "how many?" (the number window, a0 = 99 at 8011BC54); its caller (ra at sp+116) tells
+ * which: 80114B2C the fodder (80070D3A), 801157E4 the chicken feed (80070D40). They are kept up to 999
+ * (800F397C / 800F3AF0 throw the rest away), so as many as still fit, at least 1 */
+uint32_t bulk_feed_most(CPU *c, uint32_t most) {
+    if (!g_cfg.bulkfood) return most;
+    uint32_t from = MEM_R32(c->r[29] + 116), kept;
+    if (from == 0x80114B2Cu) kept = 0x80070D3Au;
+    else if (from == 0x801157E4u) kept = 0x80070D40u;
+    else return most;
+    int room = 999 - (int)MEM_R16(kept);
+    return (uint32_t)(room > 1 ? room : 1);
+}

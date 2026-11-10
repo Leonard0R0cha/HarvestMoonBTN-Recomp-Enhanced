@@ -261,13 +261,48 @@ void clock_begin(CPU *c);
 void clock_window(CPU *c);
 void clock_window_done(CPU *c);
 extern int g_clock_draw;                          /* fixes.c: the clock routine is building */
+int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
+uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player);   /* ... walking through crops (and running through animals) */
+uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 int item_picture_from_disc(CPU *c);              /* fixes.c: an item's picture from the disc */
 uint32_t bulk_food_yes(CPU *c, uint32_t answer); /* ... bulk food at the shops */
 int bulk_food_state(CPU *c);
+uint32_t sprite_talked(CPU *c, uint32_t flags);  /* sprites.c: the sprites hired through the Chef */
+uint32_t sprite_friendship(CPU *c, uint32_t friendship);
+uint32_t sprite_spring(uint32_t talks);
+void sprite_menu(CPU *c);
+uint32_t sprite_days_answer(CPU *c, uint32_t answer);
+void sprite_hired(CPU *c);
+void sprite_text_loaded(void);
+void sprite_text_tick(CPU *c);
+void sprite_talk_text(CPU *c);
+void sprite_menu_answered(CPU *c, uint32_t answer);
+void sprite_night(CPU *c);
+void sprite_update(CPU *c);
 uint32_t bulk_food_pay(CPU *c, uint32_t minus_price);
-int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why);   /* ... walking through crops */
-uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
+uint32_t greenhouse_storm(uint32_t breaks);
+uint32_t gh_addr(uint32_t a);                    /* greenhouse.c: the bigger greenhouse */
+int gh_field_at(CPU *c);
+uint32_t gh_row_ok(uint32_t y, uint32_t ok);
+uint32_t gh_fields(uint32_t n);
+void gh_night_rows(CPU *c);
+void gh_clear(void);
+void gh_walk_area(void);
+void gh_floor_paint(CPU *c);
+void gh_model(CPU *c);
+void gh_card_save(void);
+void gh_card_load(void);
+void build_offer(CPU *c);                        /* buildorder.c: the carpenter's building order */
+void build_text_loaded(void);
+void build_menu_answered(uint32_t line);
+void build_started(CPU *c);
+uint32_t build_night(CPU *c, uint32_t first);
+uint32_t build_next(uint32_t next);
+uint32_t build_label(uint32_t name);
+int build_has(int bit);              /* the sturdy (1) / bigger (2) greenhouse paid for */
+void build_card_save(void);
+void build_card_load(void);      /* fixes.c: the greenhouse stands through the storms */
+uint32_t bulk_feed_most(CPU *c, uint32_t most);   /* ... and fodder / chicken feed up to 999 */
 uint32_t sprite_spot_z(uint32_t z, uint32_t actor);    /* ... the yellow sprite off the chair */
 void p2_tick_end(void);
 int p2_faint_skipped(void);

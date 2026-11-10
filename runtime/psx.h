@@ -215,12 +215,12 @@ void machine_hold(void);
 void machine_unhold(void);
 void machine_split_request(void);   /* farmer 2 goes through a door (p2.c) */
 int machine_split(void);            /* the farmers are in different places */
+void machine_bring_back(void);
 uint32_t machine_hash(uint32_t h);  /* netplay's RAM hash goes on over the second machine's RAM (apart) */
 extern int g_heard;                 /* the machine heard on this PC: 1 the second (online guest, apart) */
 void p2_away(void);
 void p2_become_player(void);
 void p2_come_back(const uint8_t *b, int beside);
-void machine_bring_back(void);
 void p2view_rejoin(void);
 int machine_split_player(void);
 int p2_player_at_door(void);
@@ -280,6 +280,11 @@ typedef struct {
     int  cropwalk;              /* the player walks through planted crops (fixes.c) */
     int  spritechair;           /* the yellow Harvest Sprite stands off the chair at home (fixes.c) */
     int  staminabar;            /* the stamina and tiredness in a window under the clock (fixes.c) */
+    int  biggreenhouse;         /* a built greenhouse is 7 x 19 fields */
+    int  runthrough;            /* running goes through the cows, sheep and horse (fixes.c) */
+    int  buildorder;            /* the carpenter lets the player pick the next building (buildorder.c) */
+    int  sturdygreenhouse;      /* typhoons and blizzards do not break the greenhouse */
+    int  spritehire;            /* the Chef hires the sprites: how many, 1 week / 30 days, paid; spring too */
     int  bulkfood;              /* how many of a food on a shop's shelf, the rest to the rucksack / fridge */
     int  cheat_money;           /* cheats (cheats.c): the money on the farm the first time (0 = off) */
     int  cheat_stamina;         /* the farmers never tire */

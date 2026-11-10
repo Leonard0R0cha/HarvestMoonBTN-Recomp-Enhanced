@@ -278,7 +278,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `overclock` | `200` | CPU speed in percent (`100` = the console, up to `400`): the game no longer drops frames when a lot is going on, e.g. running around the farm while switching tools; video, sound and timing stay the same |
 |  | `emptybag` | `1` | R1 / R2 do nothing when there is no tool / item to switch to, so they no longer stop the player for a moment while running; `0` = original |
 |  | `spritechair` | `1` | in the Harvest Sprites' house the yellow sprite stands a little farther back from the table, so the chair no longer cuts in and out of its feet as the camera moves; `0` = original spot |
-|  | `earlycabinet`, `cropwalk`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
+|  | `earlycabinet`, `cropwalk`, `runthrough`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
 |  | `split` | `0` | `1` = farmer 2 can go into buildings alone (experimental), see [Co-op](#co-op) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
 | `[cheats]` | `cheat_money`, `cheat_stamina`, `cheat_clock`, `cheat_bag`, `cheat_items`, `cheat_tools` | `0` | see [Mods and cheats](#mods-and-cheats) |
@@ -341,6 +341,7 @@ plays. All are off by default; in online co-op the host's choice counts.
 | Setting | |
 |---|---|
 | `earlycabinet` | Cabinet in the first house: the pile of boxes opens the cabinet before the house is extended |
+| `runthrough` | Run through animals: running goes through the cows, the sheep and the horse; walking still pushes them |
 | `cropwalk` | Walk through crops and weeds: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach |
 | `staminabar` | Stamina under the clock: a window under the clock shows your stamina (S) and tiredness (F), which the game never shows |
 | `bulkfood` | Buy food in bulk: at a shop shelf you choose how many: one stays in your hands, the rest go to the rucksack and then the fridge |

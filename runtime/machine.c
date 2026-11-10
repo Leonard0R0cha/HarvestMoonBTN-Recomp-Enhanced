@@ -59,6 +59,10 @@ static void *gs_armed;
 #define WORLD_N 0x10000u
 enum { W_MERGE, W_SKIP, W_FIRST };
 static uint8_t *world_kind, *world_seen;
+#define GH_ROWS_AT 0x9B9E0u              /* the building picked at the carpenter's (buildorder.c, 16 bytes) and the
+                                          * bigger greenhouse's rows 7-18 (greenhouse.c), out of the block */
+#define GH_ROWS_N (16 + 672)
+static uint8_t gh_seen[GH_ROWS_N];
 static int32_t money_seen;
 /* The clock: the minute goes on when a counter (a word at 8006C90C) reaches the hour's pace; in the
  * houses neither moves. Each machine has its own, so the clock is the one of a machine whose clock
@@ -432,6 +436,7 @@ static void world_sync(uint8_t *b, int first_time) {
     memcpy(&sb, b - WORLD_LO + SUBMINUTE, 4);
     if (first_time) {               /* b: the RAM the two start from */
         memcpy(s, b, WORLD_N);
+        memcpy(gh_seen, b - WORLD_LO + GH_ROWS_AT, GH_ROWS_N);
         money_seen = mb;
         memcpy(clock_seen, cb, CLOCK_N);
         sub_seen = sb;
@@ -458,6 +463,13 @@ static void world_sync(uint8_t *b, int first_time) {
             else if (a[k] != s[k]) v = a[k];
             else v = b[k];
             a[k] = b[k] = s[k] = v;
+        }
+    }
+    {
+        uint8_t *ga = g_ram + GH_ROWS_AT, *gb = b - WORLD_LO + GH_ROWS_AT;
+        for (uint32_t k = 0; k < GH_ROWS_N; k++) {
+            uint8_t v = ga[k] != gh_seen[k] ? ga[k] : gb[k];
+            ga[k] = gb[k] = gh_seen[k] = v;
         }
     }
     int32_t m = money_seen + (ma - money_seen) + (mb - money_seen);
