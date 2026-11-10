@@ -208,7 +208,7 @@ TEXT = {
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
-        'split': ('Farmer 2 goes into buildings alone (experimental)', 'On the farm, farmer 2 can go through a '
+        'split': ('Farmer 2 goes into buildings alone (online co-op only, experimental)', 'On the farm, farmer 2 can go through a '
                   'door on its own (X at a door outside): it plays in its own window, in a second copy of the game, '
                   'while farmer 1 stays where it is. Time, money and the farm are the same for both. They are '
                   'together again when both are in the same place. Uses about twice the processor while apart. '
@@ -293,7 +293,7 @@ TEXT = {
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
-        'split': ('Fazendeiro 2 entra nas construções sozinho (experimental)', 'Na fazenda o fazendeiro 2 pode '
+        'split': ('Fazendeiro 2 entra nas construções sozinho (só coop online, experimental)', 'Na fazenda o fazendeiro 2 pode '
                   'passar por uma porta sozinho (X na porta, do lado de fora): ele joga na janela dele, numa segunda '
                   'cópia do jogo, e o fazendeiro 1 fica onde está. Hora, dinheiro e fazenda são os mesmos para os '
                   'dois. Eles se juntam de novo quando os dois estão no mesmo lugar. Usa cerca do dobro do '
@@ -381,7 +381,7 @@ TEXT = {
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),
-        'split': ('El granjero 2 entra solo en los edificios (experimental)', 'En la granja el granjero 2 puede '
+        'split': ('El granjero 2 entra solo en los edificios (solo coop online, experimental)', 'En la granja el granjero 2 puede '
                   'pasar solo por una puerta (X en la puerta, desde fuera): juega en su ventana, en una segunda '
                   'copia del juego, y el granjero 1 se queda donde está. La hora, el dinero y la granja son los '
                   'mismos para los dos. Se juntan otra vez cuando los dos están en el mismo lugar. Usa cerca del '

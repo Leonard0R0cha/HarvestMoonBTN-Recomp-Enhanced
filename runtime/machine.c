@@ -172,6 +172,12 @@ void machine_init(void (*boot)(void)) {
         LOGW("--split: only with farmer 2 (and its window, on one PC)");
         g_split = 0;
     }
+    /* on one PC the second machine costs too much: farmer 2 follows farmer 1 there; the split is
+     * for the online co-op only (a replay of an online session still gets it) */
+    if (g_split && !netplay_role() && !g_cfg.input_script[0]) {
+        LOGW("split: online co-op only");
+        g_split = 0;
+    }
     if (g_mirror && g_split) g_mirror = 0;
     if (!g_mirror && !g_split) return;
 #ifndef _WIN32
