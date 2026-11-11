@@ -21,7 +21,7 @@ LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
 # the one to use when that cannot be read
 PORTRAITS_INFO = 'https://raw.githubusercontent.com/d4rksp4rt4n/HMBTN-ReFarmed/main/portraits.json'
 PORTRAITS = {'version': '2', 'sha256': '6c98a72b8d07bee754c258488079038fd2ec82cf4221fa950eade9f708d4a44d',
-             'url': 'https://github.com/Leonard0R0cha/HarvestMoonBTN-Recomp-Enhanced/releases/download/portraits-v2/portraits.zip'}
+             'url': 'https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/portraits-v2/portraits.zip'}
 PORTRAITS_DIR = os.path.join(HERE, 'textures', 'portraits')
 PORTRAITS_MARK = os.path.join(PORTRAITS_DIR, 'pack.txt')     # the version there (the game reads only <key>.png)
 GAME_FILES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')    # what build.py reads from the disc (extract/)
