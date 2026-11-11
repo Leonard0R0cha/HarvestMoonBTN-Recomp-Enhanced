@@ -441,7 +441,7 @@ title screen's pictures.
 Redrawn dialogue portraits (the 80×80 faces in conversations) are a pack of their own in
 `textures/portraits/`, same names and format, switched with `portraits = 1` (`--portraits`; launcher:
 Video → Redrawn portraits), so they can be turned off without turning off the rest of the pack.
-The images are not in the repository: when the option is switched on (or the game is started with it
+The images (the portraits and the redrawn title logo) are not in the repository: when the option is switched on (or the game is started with it
 on), the launcher downloads them once from a release (`PORTRAITS_URL` in `launcher.pyw`), checks the
 SHA-256 and puts them there, with `pack.txt` for the version. A newer pack is a new release, URL,
 hash and `PORTRAITS_VERSION`.

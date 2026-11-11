@@ -15,11 +15,11 @@ EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMo
 VERSION = '1.3.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
-# the redrawn dialogue portraits (portraits = 1) are not in the code: the launcher downloads them into
-# textures/portraits the first time the option is on (and again for a newer version)
-PORTRAITS_VERSION = '1'
-PORTRAITS_URL = 'https://github.com/Leonard0R0cha/HarvestMoonBTN-Recomp-Enhanced/releases/download/portraits-v1/portraits.zip'
-PORTRAITS_SHA = '9229287377c0cc7f4e8e70297aec7d7cfd6256e1bbadfeef24447aad6611df70'
+# the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
+# them into textures/portraits the first time the option is on (and again for a newer version)
+PORTRAITS_VERSION = '2'
+PORTRAITS_URL = 'https://github.com/Leonard0R0cha/HarvestMoonBTN-Recomp-Enhanced/releases/download/portraits-v2/portraits.zip'
+PORTRAITS_SHA = '6c98a72b8d07bee754c258488079038fd2ec82cf4221fa950eade9f708d4a44d'
 PORTRAITS_DIR = os.path.join(HERE, 'textures', 'portraits')
 PORTRAITS_MARK = os.path.join(PORTRAITS_DIR, 'pack.txt')     # the version there (the game reads only <key>.png)
 GAME_FILES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')    # what build.py reads from the disc (extract/)
