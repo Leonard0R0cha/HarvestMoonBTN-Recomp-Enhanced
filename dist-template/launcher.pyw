@@ -16,10 +16,12 @@ VERSION = '1.3.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
 # the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
-# them into textures/portraits the first time the option is on (and again for a newer version)
-PORTRAITS_VERSION = '2'
-PORTRAITS_URL = 'https://github.com/Leonard0R0cha/HarvestMoonBTN-Recomp-Enhanced/releases/download/portraits-v2/portraits.zip'
-PORTRAITS_SHA = '6c98a72b8d07bee754c258488079038fd2ec82cf4221fa950eade9f708d4a44d'
+# them into textures/portraits the first time the option is on, and again for a newer pack. Which pack is
+# portraits.json in the repository (version, url, sha256), so a new one needs no new launcher; this is
+# the one to use when that cannot be read
+PORTRAITS_INFO = 'https://raw.githubusercontent.com/d4rksp4rt4n/HMBTN-ReFarmed/main/portraits.json'
+PORTRAITS = {'version': '2', 'sha256': '6c98a72b8d07bee754c258488079038fd2ec82cf4221fa950eade9f708d4a44d',
+             'url': 'https://github.com/Leonard0R0cha/HarvestMoonBTN-Recomp-Enhanced/releases/download/portraits-v2/portraits.zip'}
 PORTRAITS_DIR = os.path.join(HERE, 'textures', 'portraits')
 PORTRAITS_MARK = os.path.join(PORTRAITS_DIR, 'pack.txt')     # the version there (the game reads only <key>.png)
 GAME_FILES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')    # what build.py reads from the disc (extract/)
@@ -889,10 +891,24 @@ def self_update(url, sha):
     os.replace(me + '.new', me)
 
 
+def portraits_info():
+    """the pack portraits.json names (into PORTRAITS); offline or a bad file: the built-in one stays"""
+    import json, urllib.request
+    try:
+        with urllib.request.urlopen(urllib.request.Request(PORTRAITS_INFO, headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
+                                    timeout=10) as r:
+            info = json.load(r)
+        version, url, sha = str(info['version']).strip(), str(info['url']), str(info['sha256']).lower()
+        if version and url.startswith('https://') and re.fullmatch(r'[0-9a-f]{64}', sha):
+            PORTRAITS.update(version=version, url=url, sha256=sha)
+    except Exception:
+        pass
+
+
 def portraits_ready():
     try:
         with open(PORTRAITS_MARK, encoding='utf-8') as f:
-            return f.read().strip() == PORTRAITS_VERSION
+            return f.read().strip() == PORTRAITS['version']
     except OSError:
         return False
 
@@ -901,7 +917,8 @@ def get_portraits(progress):
     """download the portraits' zip, check it and put its images in textures/portraits (other images
     there are kept); progress(percent) along the way"""
     import hashlib, io, urllib.request, zipfile
-    with urllib.request.urlopen(urllib.request.Request(PORTRAITS_URL, headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
+    pack = dict(PORTRAITS)
+    with urllib.request.urlopen(urllib.request.Request(pack['url'], headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
                                 timeout=60) as r:
         total, data = int(r.headers.get('Content-Length') or 0), bytearray()
         while True:
@@ -911,7 +928,7 @@ def get_portraits(progress):
             data += chunk
             if total:
                 progress(min(99, len(data) * 100 // total))
-    if hashlib.sha256(data).hexdigest() != PORTRAITS_SHA:
+    if hashlib.sha256(data).hexdigest() != pack['sha256']:
         raise OSError('the download is damaged (checksum)')
     os.makedirs(PORTRAITS_DIR, exist_ok=True)
     with zipfile.ZipFile(io.BytesIO(bytes(data))) as z:
@@ -922,7 +939,7 @@ def get_portraits(progress):
             with open(os.path.join(PORTRAITS_DIR, name), 'wb') as f:
                 f.write(z.read(info))
     with open(PORTRAITS_MARK, 'w', encoding='utf-8') as f:
-        f.write(PORTRAITS_VERSION + '\n')
+        f.write(pack['version'] + '\n')
     progress(100)
 
 
@@ -1676,6 +1693,23 @@ def main():
     # switched on: the portraits come at once (and before the game starts, if that comes first)
     vars_['portraits'].trace_add('write', lambda *_: val('portraits') == '1' and fetch_portraits())
 
+    def check_portraits():
+        """read portraits.json in the background; with the option on, a newer pack comes at once"""
+        import threading
+        done = []
+
+        def work():
+            portraits_info()
+            done.append(1)
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            if not done:
+                return root.after(300, poll)
+            if val('portraits') == '1' and not portraits_ready():
+                fetch_portraits()
+        poll()
+
     def play(args=()):
         save()
         if not os.path.exists(EXE):
@@ -1864,6 +1898,7 @@ def main():
         start_build()
     elif getattr(sys, 'frozen', False) and not live:   # only an exe can replace itself
         check_updates()
+    check_portraits()
     root.mainloop()
 
 
