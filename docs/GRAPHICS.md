@@ -441,6 +441,9 @@ title screen's pictures.
 Redrawn dialogue portraits (the 80×80 faces in conversations) are a pack of their own in
 `textures/portraits/`, same names and format, switched with `portraits = 1` (`--portraits`; launcher:
 Video → Redrawn portraits), so they can be turned off without turning off the rest of the pack.
+The full set (242 portraits) comes with the game: it is in `dist-template/textures/portraits/` and
+the build copies it into the game's folder, so nothing has to be installed. They are new drawings
+named by the texture keys (hashes), not images from the disc.
 
 `tools/texpack_sample.py` makes a sample pack from dumps: each image enlarged 4× with Scale2x applied
 twice (smooth diagonals instead of 4×4 blocks). It is made from your own dump, so no game art is

@@ -83,6 +83,11 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
         os.makedirs(os.path.join(out, 'launcher-assets'), exist_ok=True)
         for n in os.listdir(assets):
             shutil.copy2(os.path.join(assets, n), os.path.join(out, 'launcher-assets', n))
+    # the redrawn dialogue portraits (portraits = 1), ready in the game's folder; other images there
+    # (a pack of the player's own) are kept, ours are replaced
+    portraits = os.path.join(TPL, 'textures', 'portraits')
+    if os.path.isdir(portraits):
+        shutil.copytree(portraits, os.path.join(out, 'textures', 'portraits'), dirs_exist_ok=True)
 
     if make_zip:
         zpath = out + '.zip'
