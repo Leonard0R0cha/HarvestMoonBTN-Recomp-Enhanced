@@ -264,7 +264,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `widescreen` | `16:9` | `off`, `16:9`, `16:10` or `21:9`: wider 3D view; with `upscale` 2+ the HUD and 2D objects keep their shape and the title screen and menus fill the screen |
 |  | `interp` | `1` | `1` = 60 fps camera: the camera and the 3D scenery move every VBlank while the game runs at 30 (needs `pgxp`; 3 extra CPU threads, shows 30 pictures a second where the PC can't keep up) |
 |  | `texturepack` | `0` | `1` = draw 2D sprites (people, animals, field objects, text, HUD) with the replacement images in `textures/` next to the game ([texture packs](docs/GRAPHICS.md#texture-packs); needs `upscale` 2+) |
-|  | `portraits` | `0` | `1` = draw the dialogue portraits with the redrawn images in `textures/portraits/` (all 242 come with the game, nothing to install; same format as a texture pack, switched on and off on its own; needs `upscale` 2+) |
+|  | `portraits` | `0` | `1` = draw the dialogue portraits with the redrawn images in `textures/portraits/` (same format as a texture pack, switched on and off on its own; needs `upscale` 2+; the launcher downloads them the first time) |
 |  | `dumptextures` | `0` | `1` = write each 2D sprite texture the game shows to `textures/dump/`, to draw a texture pack from (needs `upscale` 2+) |
 |  | `p2view_upscale` | `auto` | resolution of farmer 2's window in local co-op; `1` is the lightest |
 | `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |

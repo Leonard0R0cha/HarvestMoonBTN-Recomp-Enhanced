@@ -37,8 +37,8 @@ the game, a commented file you can also edit by hand.
   resolution 2, 4 cores: 3); every effect stays on. "renderer = vulkan" (Windows, experimental)
   lets the graphics card draw it instead, and falls back to the CPU without Vulkan.
 * Texture packs: replacement images for the 2D sprites go in the "textures" folder, redrawn
-  dialogue portraits in "textures\portraits" (all of them come with the game: turn on
-  "Redrawn portraits"; resolution 2 or more).
+  dialogue portraits in "textures\portraits" (resolution 2 or more; the launcher downloads them
+  when "Redrawn portraits" is switched on).
 * Time savers: shorter loading, quick menus and fades, faster text, saving without the slot
   menu, Start held in a cutscene runs it at full speed (it stops at each dialogue).
 

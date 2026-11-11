@@ -441,9 +441,19 @@ title screen's pictures.
 Redrawn dialogue portraits (the 80×80 faces in conversations) are a pack of their own in
 `textures/portraits/`, same names and format, switched with `portraits = 1` (`--portraits`; launcher:
 Video → Redrawn portraits), so they can be turned off without turning off the rest of the pack.
-The full set (242 portraits) comes with the game: it is in `dist-template/textures/portraits/` and
-the build copies it into the game's folder, so nothing has to be installed. They are new drawings
-named by the texture keys (hashes), not images from the disc.
+The images (the portraits and the redrawn title logo) are not in the repository: when the option is
+switched on, the launcher is opened with it on, or the game is started with it on, the launcher
+downloads the pack named by `portraits.json` (at the repository's root, read from `main`), checks the
+SHA-256 and puts the images there, with `pack.txt` for the version. Offline, or with a bad file, it
+uses the pack written in `launcher.pyw` (`PORTRAITS`).
+
+A new pack needs no new launcher:
+1. Zip all the images (the old ones too), named `<key>.png`, flat (no folders): `portraits.zip`.
+2. Make a release (`portraits-v3`, ...) with it, **not set as the latest release**: the launcher's own
+   update looks at the latest.
+3. Edit `portraits.json` on `main`: a new `version`, the zip's download `url` and its `sha256`
+   (`certutil -hashfile portraits.zip SHA256` on Windows, `sha256sum portraits.zip` elsewhere).
+Every launcher then downloads it the next time it is opened with the option on.
 
 `tools/texpack_sample.py` makes a sample pack from dumps: each image enlarged 4× with Scale2x applied
 twice (smooth diagonals instead of 4×4 blocks). It is made from your own dump, so no game art is

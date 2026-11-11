@@ -15,6 +15,15 @@ EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMo
 VERSION = '1.3.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
+# the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
+# them into textures/portraits the first time the option is on, and again for a newer pack. Which pack is
+# portraits.json in the repository (version, url, sha256), so a new one needs no new launcher; this is
+# the one to use when that cannot be read
+PORTRAITS_INFO = 'https://raw.githubusercontent.com/d4rksp4rt4n/HMBTN-ReFarmed/main/portraits.json'
+PORTRAITS = {'version': '2', 'sha256': '6c98a72b8d07bee754c258488079038fd2ec82cf4221fa950eade9f708d4a44d',
+             'url': 'https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/portraits-v2/portraits.zip'}
+PORTRAITS_DIR = os.path.join(HERE, 'textures', 'portraits')
+PORTRAITS_MARK = os.path.join(PORTRAITS_DIR, 'pack.txt')     # the version there (the game reads only <key>.png)
 GAME_FILES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')    # what build.py reads from the disc (extract/)
 # the build scripts and sources for the Build page: inside Launcher.exe (tools/build_launcher.py), or the
 # checkout this folder was built from (dist/<name>); WORK gets the downloads, your game's files and the build
@@ -491,6 +500,9 @@ UI = {
         'need_cue': 'Choose your disc image (.cue or .bin) first.',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
         'updating': 'Downloading the new launcher...', 'update_failed': 'The update failed: %s',
+        'portraits_get': 'Downloading the redrawn portraits... %d%%',
+        'portraits_failed': 'The redrawn portraits could not be downloaded (%s). The game shows the original '
+                            'ones; they are downloaded again next time.',
         'ask_stop': 'A build is running. Stop it and close?',
         'build_note': 'The build-files folder holds files from your disc: it is for this PC only. To give the '
         'game to a friend, give them this launcher; they build from their own disc.',
@@ -579,6 +591,9 @@ UI = {
         'need_cue': 'Escolha primeiro a imagem do disco (.cue ou .bin).',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
         'updating': 'Baixando o novo launcher...', 'update_failed': 'A atualização falhou: %s',
+        'portraits_get': 'Baixando os retratos redesenhados... %d%%',
+        'portraits_failed': 'Não deu para baixar os retratos redesenhados (%s). O jogo mostra os originais; '
+                            'o download é tentado de novo na próxima vez.',
         'ask_stop': 'Uma montagem está em andamento. Parar e fechar?',
         'build_note': 'A pasta build-files guarda arquivos do seu disco: é só para este PC. Para dar o jogo a um '
         'amigo, dê este launcher; ele monta com o próprio disco.',
@@ -669,6 +684,9 @@ UI = {
         'need_cue': 'Elige primero la imagen del disco (.cue o .bin).',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
         'updating': 'Descargando el nuevo launcher...', 'update_failed': 'La actualización falló: %s',
+        'portraits_get': 'Descargando los retratos redibujados... %d%%',
+        'portraits_failed': 'No se pudieron descargar los retratos redibujados (%s). El juego muestra los '
+                            'originales; se descargan de nuevo la próxima vez.',
         'ask_stop': 'Hay una creación en curso. ¿Detenerla y cerrar?',
         'build_note': 'La carpeta build-files guarda archivos de tu disco: es solo para este PC. Para darle el '
         'juego a un amigo, dale este launcher; él lo crea con su propio disco.',
@@ -871,6 +889,58 @@ def self_update(url, sha):
         os.remove(me + '.old')
     os.replace(me, me + '.old')
     os.replace(me + '.new', me)
+
+
+def portraits_info():
+    """the pack portraits.json names (into PORTRAITS); offline or a bad file: the built-in one stays"""
+    import json, urllib.request
+    try:
+        with urllib.request.urlopen(urllib.request.Request(PORTRAITS_INFO, headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
+                                    timeout=10) as r:
+            info = json.load(r)
+        version, url, sha = str(info['version']).strip(), str(info['url']), str(info['sha256']).lower()
+        if version and url.startswith('https://') and re.fullmatch(r'[0-9a-f]{64}', sha):
+            PORTRAITS.update(version=version, url=url, sha256=sha)
+    except Exception:
+        pass
+
+
+def portraits_ready():
+    try:
+        with open(PORTRAITS_MARK, encoding='utf-8') as f:
+            return f.read().strip() == PORTRAITS['version']
+    except OSError:
+        return False
+
+
+def get_portraits(progress):
+    """download the portraits' zip, check it and put its images in textures/portraits (other images
+    there are kept); progress(percent) along the way"""
+    import hashlib, io, urllib.request, zipfile
+    pack = dict(PORTRAITS)
+    with urllib.request.urlopen(urllib.request.Request(pack['url'], headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
+                                timeout=60) as r:
+        total, data = int(r.headers.get('Content-Length') or 0), bytearray()
+        while True:
+            chunk = r.read(1 << 16)
+            if not chunk:
+                break
+            data += chunk
+            if total:
+                progress(min(99, len(data) * 100 // total))
+    if hashlib.sha256(data).hexdigest() != pack['sha256']:
+        raise OSError('the download is damaged (checksum)')
+    os.makedirs(PORTRAITS_DIR, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(bytes(data))) as z:
+        for info in z.infolist():
+            name = info.filename
+            if '/' in name or '\\' in name or not name.lower().endswith('.png'):
+                continue                            # only the images, right in the folder
+            with open(os.path.join(PORTRAITS_DIR, name), 'wb') as f:
+                f.write(z.read(info))
+    with open(PORTRAITS_MARK, 'w', encoding='utf-8') as f:
+        f.write(pack['version'] + '\n')
+    progress(100)
 
 
 def build_id():
@@ -1586,6 +1656,60 @@ def main():
             f.write(text)
         build()
 
+    def fetch_portraits(then=None):
+        """download the redrawn portraits in the background (the progress in the status line), then then()"""
+        if then:
+            state['portraits_then'] = then
+        if state.get('portraits_job'):
+            return
+        if portraits_ready():
+            state.pop('portraits_then', lambda: None)()
+            return
+        import threading
+        state['portraits_job'] = True
+        prog = [0, None]                         # percent, then 'ok' or the error
+
+        def work():
+            try:
+                get_portraits(lambda p: prog.__setitem__(0, p))
+                prog[1] = 'ok'
+            except Exception as e:
+                prog[1] = e
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            if prog[1] is None:
+                state['note'] = T('portraits_get') % prog[0]
+                refresh()
+                return root.after(200, poll)
+            state['portraits_job'] = False
+            state['note'] = ''
+            refresh()
+            if prog[1] != 'ok':
+                messagebox.showwarning('Harvest Moon', T('portraits_failed') % prog[1])
+            state.pop('portraits_then', lambda: None)()
+        poll()
+
+    # switched on: the portraits come at once (and before the game starts, if that comes first)
+    vars_['portraits'].trace_add('write', lambda *_: val('portraits') == '1' and fetch_portraits())
+
+    def check_portraits():
+        """read portraits.json in the background; with the option on, a newer pack comes at once"""
+        import threading
+        done = []
+
+        def work():
+            portraits_info()
+            done.append(1)
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            if not done:
+                return root.after(300, poll)
+            if val('portraits') == '1' and not portraits_ready():
+                fetch_portraits()
+        poll()
+
     def play(args=()):
         save()
         if not os.path.exists(EXE):
@@ -1594,6 +1718,12 @@ def main():
             else:
                 messagebox.showerror('Harvest Moon', T('missing') % EXE)
             return
+        if val('portraits') == '1' and not portraits_ready():
+            fetch_portraits(lambda: launch(args))
+            return
+        launch(args)
+
+    def launch(args):
         # the game opens this launcher again with F5: it must not inherit this one's PyInstaller
         # variables (its files are gone by then: "Failed to load Python DLL")
         env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1')
@@ -1768,6 +1898,7 @@ def main():
         start_build()
     elif getattr(sys, 'frozen', False) and not live:   # only an exe can replace itself
         check_updates()
+    check_portraits()
     root.mainloop()
 
 
