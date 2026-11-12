@@ -123,11 +123,16 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
     # experiment: parallel-psx (runtime/vk, C++; Vulkan is loaded at runtime) behind "renderer = vulkan"
     vk = os.path.join(rt, 'vk')
     cxx = None
-    if IS_WIN and not linux_cross and os.path.isdir(vk):
+    if os.path.isdir(vk):
         pp = os.path.join(vk, 'ppsx')
         inc = ['-I' + os.path.join(vk, 'compat')] + ['-I' + os.path.join(pp, *d) for d in (
             ('renderer',), ('glsl', 'prebuilt'), ('volk',), ('khronos', 'include'), ('SPIRV-Cross',))]
-        cxx = [cc[0].replace('clang.exe', 'clang++.exe')]
+        if linux_cross:
+            cxx = [cc[0], 'c++']
+        elif IS_WIN:
+            cxx = [cc[0].replace('clang.exe', 'clang++.exe')]
+        else:
+            cxx = os.environ.get('CXX', 'c++').split()
         cxxflags = target + ['-std=gnu++14', '-O2', '-DNDEBUG', '-DSPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS'] + inc
         srcs = [(s, f + ['-DHMBTN_VULKAN']) for s, f in srcs]
         srcs.append((os.path.join(vk, 'vk_renderer.cpp'), cxxflags + ['-Wall']))
@@ -181,7 +186,8 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         if code:
             sys.exit('ICON FAILED\n' + out)
         objs.append(res)
-    link = (cxx + ['-static-libstdc++'] if cxx else cc) + target + objs + sdl_libs + ['-o', exe]
+    # Windows: libstdc++ in the .exe; Linux: the system's (Zig links its libc++ in)
+    link = (cxx + (['-static-libstdc++'] if IS_WIN and not linux_cross else []) if cxx else cc) + target + objs + sdl_libs + ['-o', exe]
     if linux_cross:
         link += ['-lm', '-ldl', '-lpthread', '-Wl,-z,stack-size=16777216', '-s']
     elif IS_WIN:

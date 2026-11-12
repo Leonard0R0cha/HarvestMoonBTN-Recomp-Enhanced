@@ -17,7 +17,10 @@
     X(SDL_QueueAudio) X(SDL_Quit) X(SDL_RenderClear) X(SDL_RenderCopy) X(SDL_RenderCopyF) X(SDL_SetTextureBlendMode) X(SDL_RenderPresent) \
     X(SDL_SetHint) X(SDL_SetRenderDrawColor) X(SDL_SetWindowFullscreen) X(SDL_SetWindowTitle) \
     X(SDL_ShowSimpleMessageBox) X(SDL_UpdateTexture) X(SDL_memset) \
-    X(SDL_CreateSemaphore) X(SDL_CreateThread) X(SDL_SemPost) X(SDL_SemTryWait) X(SDL_SemWait)
+    X(SDL_CreateSemaphore) X(SDL_CreateThread) X(SDL_SemPost) X(SDL_SemTryWait) X(SDL_SemWait) \
+    X(SDL_JoystickGetDeviceInstanceID) X(SDL_SetThreadPriority) X(SDL_GetDisplayUsableBounds) \
+    X(SDL_RaiseWindow) X(SDL_SetWindowPosition) X(SDL_GetWindowID) \
+    X(SDL_DestroyRenderer) X(SDL_GetWindowWMInfo) X(SDL_Vulkan_GetDrawableSize)
 
 #define SDL_DYN_DECL(f) static __typeof__(&f) dyn_##f;
 SDL_DYN_FUNCS(SDL_DYN_DECL)
@@ -35,6 +38,15 @@ static const char *sdl_dyn_load(void) {
 
 /* route every SDL call in platform_sdl.c through the loaded pointers */
 #define SDL_ClearQueuedAudio dyn_SDL_ClearQueuedAudio
+#define SDL_JoystickGetDeviceInstanceID dyn_SDL_JoystickGetDeviceInstanceID
+#define SDL_SetThreadPriority dyn_SDL_SetThreadPriority
+#define SDL_GetDisplayUsableBounds dyn_SDL_GetDisplayUsableBounds
+#define SDL_RaiseWindow dyn_SDL_RaiseWindow
+#define SDL_SetWindowPosition dyn_SDL_SetWindowPosition
+#define SDL_GetWindowID dyn_SDL_GetWindowID
+#define SDL_DestroyRenderer dyn_SDL_DestroyRenderer
+#define SDL_GetWindowWMInfo dyn_SDL_GetWindowWMInfo
+#define SDL_Vulkan_GetDrawableSize dyn_SDL_Vulkan_GetDrawableSize
 #define SDL_CloseAudioDevice dyn_SDL_CloseAudioDevice
 #define SDL_CreateRenderer dyn_SDL_CreateRenderer
 #define SDL_CreateTexture dyn_SDL_CreateTexture

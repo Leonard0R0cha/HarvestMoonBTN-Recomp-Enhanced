@@ -34,7 +34,7 @@ the game, a commented file you can also edit by hand.
   title screen and menus included) and a camera that moves at 60 fps (F9 compares).
 * The CPU renderer draws the picture with the processor, so no graphics card is needed; the
   resolution is what costs. On a slower PC pick the quick setup for its number of cores (2 cores:
-  resolution 2, 4 cores: 3); every effect stays on. "renderer = vulkan" (Windows, experimental)
+  resolution 2, 4 cores: 3); every effect stays on. "renderer = vulkan" (experimental)
   lets the graphics card draw it instead, and falls back to the CPU without Vulkan.
 * Texture packs: replacement images for the 2D sprites go in the "textures" folder, redrawn
   dialogue portraits in "textures\portraits" (resolution 2 or more; the launcher downloads them

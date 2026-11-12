@@ -37,12 +37,14 @@ void vkr_display(uint32_t *out, int *w, int *h, int x, int y, int dw, int dh);  
 void vkr_vblank(int shown, int x, int y, int dw, int dh);   /* shown: that display area (starts its picture) */
 void vkr_kick(int x, int y, int dw, int dh);   /* start the picture of that display area now */
 
-/* Direct display: window win (0 the game's, 1 farmer 2's; hwnd: its HWND) shows the pictures from
- * the GPU (0: can't). vkr_display then reads pictures back only when pixels are wanted
+/* Direct display: window win (0 the game's, 1 farmer 2's) shows the pictures from the GPU (0: can't).
+ * kind: 0 Win32 (a, b: HINSTANCE, HWND), 1 X11 (Display *, Window), 2 Wayland (wl_display *,
+ * wl_surface *). vkr_window_size: its size in pixels, before each vkr_present (Wayland needs it). vkr_display then reads pictures back only when pixels are wanted
  * (vkr_want_pixels: screenshots); vkr_keep(slot) keeps the picture it made last for vkr_present
  * (0: there was none, it was the CPU's; slot -1 forgets it), and vkr_present shows slot's picture,
  * or px (w x h, the CPU's: a video), letterboxed at aspect, scaled by scaling (SCALING_*). */
-int  vkr_window(int win, void *hwnd);
+int  vkr_window(int win, int kind, void *a, void *b);
+void vkr_window_size(int win, int w, int h);
 void vkr_want_pixels(int want);
 int  vkr_keep(int slot);
 void vkr_present(int win, int slot, const uint32_t *px, int w, int h, double aspect, int scaling);

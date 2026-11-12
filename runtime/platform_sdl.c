@@ -5,6 +5,8 @@
 #include "gpu.h"
 #include "gte.h"
 #include <SDL.h>
+#include <SDL_syswm.h>      /* the Vulkan renderer's window handles (also declares them for sdl_dyn.h) */
+#include <SDL_vulkan.h>
 #ifndef _WIN32
 #include "sdl_dyn.h"
 #endif
@@ -16,7 +18,6 @@
 #endif
 #ifdef HMBTN_VULKAN
 #include "vk/vk_renderer.h"
-#include <SDL_syswm.h>
 #endif
 
 uint16_t g_pad_buttons[2];
@@ -592,20 +593,41 @@ int platform_init(void) {
 
 /* renderer = vulkan: the windows show its pictures from the GPU (a swapchain each, vkr_present)
  * instead of SDL's renderer, which lets go of them. HMBTN_VK_COPY=1: through the CPU, as before. */
+#ifdef HMBTN_VULKAN
+static int vk_window(int i, SDL_Window *w) {
+    SDL_SysWMinfo wi;
+    SDL_VERSION(&wi.version);
+    if (!w || !SDL_GetWindowWMInfo(w, &wi)) return 0;
+#ifdef _WIN32
+    return vkr_window(i, 0, wi.info.win.hinstance, wi.info.win.window);
+#else
+    /* x11 {display, window} and wl {display, surface} start the union: read them without the
+     * X11/Wayland headers (which SDL's own headers leave out when built without them) */
+    void *h[2];
+    memcpy(h, wi.info.dummy, sizeof h);
+    return vkr_window(i, wi.subsystem == SDL_SYSWM_X11 ? 1 : wi.subsystem == SDL_SYSWM_WAYLAND ? 2 : -1, h[0], h[1]);
+#endif
+}
+
+/* before vkr_present: the window's size in pixels (Wayland's swapchain takes it from us) */
+static void vk_size(int i, SDL_Window *w) {
+    int ww, wh;
+    SDL_Vulkan_GetDrawableSize(w, &ww, &wh);
+    vkr_window_size(i, ww, wh);
+}
+#endif
+
 void platform_vulkan(void) {
 #ifdef HMBTN_VULKAN
-    SDL_SysWMinfo wi;
     if (g_cfg.headless || getenv("HMBTN_VK_COPY")) return;
-    SDL_VERSION(&wi.version);
-    if (win && SDL_GetWindowWMInfo(win, &wi) && vkr_window(0, wi.info.win.window)) {
+    if (vk_window(0, win)) {
         SDL_DestroyTexture(tex);        /* (the sharp-bilinear target is made at the first present) */
         SDL_DestroyRenderer(ren);
         tex = NULL;
         ren = NULL;
         vkp = 1;
     }
-    SDL_VERSION(&wi.version);
-    if (vkp && win2 && SDL_GetWindowWMInfo(win2, &wi) && vkr_window(1, wi.info.win.window)) {
+    if (vkp && vk_window(1, win2)) {
         if (tex2) SDL_DestroyTexture(tex2);
         if (ren2) SDL_DestroyRenderer(ren2);
         tex2 = NULL;
@@ -869,6 +891,7 @@ static void present(int w, int h, int wide, bool same) {
 #ifdef HMBTN_VULKAN
     if (vkp) {
         hd_vk(0, w > 0 && main_gpu ? hd_get(hd_main_view2) : 0);
+        vk_size(0, win);
         vkr_present(0, main_gpu ? 0 : -1, main_gpu ? NULL : frame_px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
         return;
     }
@@ -995,6 +1018,7 @@ static void present2(int wide_now) {
         const uint32_t *px = gpu ? NULL : (v2i_shown && w == v2i_w && h == v2i_h && !valid) ? v2i_px : frame2_px;
         memcpy(hd_pc, pc2, (size_t)npc2 * sizeof *pc2);
         hd_vk(1, gpu && w > 0 ? npc2 : 0);
+        vk_size(1, win2);
         vkr_present(1, gpu == 2 ? 2 : gpu ? 1 : -1, px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
         return;
     }
