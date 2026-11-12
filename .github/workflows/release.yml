@@ -94,6 +94,27 @@ jobs:
           fi
           dist-template/HarvestMoonBTN-Launcher-Linux --selftest
 
+      - name: The window opens (Tk inside)
+        run: |
+          sudo apt-get install -y xvfb >/dev/null
+          set +e; timeout 8 xvfb-run -a dist-template/HarvestMoonBTN-Launcher-Linux; code=$?; set -e
+          echo "exit $code"; [ $code -eq 124 ]
+
+      # what its Build page does on a PC without a compiler: its own Python fetches Zig and the SDL2
+      # headers, and Zig compiles the runtime (unit tests) and the Vulkan renderer
+      - name: The Build page's toolchain
+        env:
+          PYINSTALLER_RESET_ENVIRONMENT: '1'
+        run: |
+          mkdir -p /tmp/w && cp -r build.py tools runtime dist-template /tmp/w/
+          dist-template/HarvestMoonBTN-Launcher-Linux /tmp/w/tools/fetch_deps.py --min
+          cd /tmp/w
+          CC="$PWD/deps/zig/zig cc -target x86_64-linux-gnu.2.17" python tools/run_tests.py
+          Z=deps/zig/zig; T="-target x86_64-linux-gnu.2.17"; V=runtime/vk; P=$V/ppsx
+          $Z cc $T -std=gnu11 -DHMBTN_VULKAN -Iruntime -Ideps/SDL2-src/include -c runtime/platform_sdl.c -o /tmp/p.o
+          $Z c++ $T -std=gnu++14 -O1 -DSPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS -I$V/compat -I$P/renderer -I$P/glsl/prebuilt \
+            -I$P/volk -I$P/khronos/include -I$P/SPIRV-Cross -c $V/vk_renderer.cpp -o /tmp/v.o
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: linux
