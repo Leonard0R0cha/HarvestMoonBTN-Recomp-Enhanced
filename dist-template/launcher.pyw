@@ -98,7 +98,7 @@ OPTIONS = [
     ('mods', 'behaviour', 'runthrough', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
-  + [('controller', 'controller', 'stick_as_dpad', 'bool')] \
+  + [('controller', 'controller', 'stick_as_dpad', 'bool'), ('controller', 'controller', 'rumble', 'bool:1')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
      ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
   + [('cheats', 'cheats', 'cheat_money', 'edit:0|10000|100000|1000000|9999999'), ('cheats', 'cheats', 'cheat_stamina', 'bool'),
@@ -216,6 +216,7 @@ TEXT = {
         'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
+        'rumble': ('Rumble', 'The controller vibrates where the game shakes a DualShock.'),
         'coop_address': ('Host address', 'To join: the address your friend gave you (e.g. 26.12.34.56 or '
                          '26.12.34.56:7845).'),
         'coop_port': ('Port', 'The same on both PCs. Empty: 7845.'),
@@ -302,6 +303,7 @@ TEXT = {
         'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
+        'rumble': ('Vibração', 'O controle vibra onde o jogo faz o DualShock vibrar.'),
         'coop_address': ('Endereço do anfitrião', 'Para entrar: o endereço que seu amigo passou (ex.: '
                          '26.12.34.56 ou 26.12.34.56:7845).'),
         'coop_port': ('Porta', 'A mesma nos dois PCs. Vazio: 7845.'),
@@ -391,6 +393,7 @@ TEXT = {
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
         'stick_as_dpad': ('El stick izquierdo también mueve', 'El stick izquierdo funciona como la cruceta.'),
+        'rumble': ('Vibración', 'El mando vibra donde el juego hace vibrar el DualShock.'),
         'coop_address': ('Dirección del anfitrión', 'Para entrar: la dirección que te pasó tu amigo (por ejemplo '
                          '26.12.34.56 o 26.12.34.56:7845).'),
         'coop_port': ('Puerto', 'El mismo en los dos PCs. Vacío: 7845.'),

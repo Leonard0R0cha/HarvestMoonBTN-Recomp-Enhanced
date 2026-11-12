@@ -74,10 +74,12 @@ static char bind_pad[14][128] = {
 static SDL_Scancode key_codes[14][MAX_BIND];
 static int pad_codes[14][MAX_BIND];     /* SDL_GameControllerButton, or 1000+axis for triggers */
 static int stick_as_dpad = 1;
+static int rumble = 1;
 
 bool platform_set_binding(const char *key, const char *val) {
     int is_key = !strncmp(key, "key_", 4), is_pad = !strncmp(key, "pad_", 4);
     if (!strcmp(key, "stick_as_dpad")) { stick_as_dpad = atoi(val); return true; }
+    if (!strcmp(key, "rumble")) { rumble = atoi(val); return true; }
     if (!is_key && !is_pad) return false;
     for (int i = 0; i < 14; i++) {
         if (!strcmp(key + 4, ps_buttons[i].name)) {
@@ -169,9 +171,11 @@ static void parse_script(const char *s) {
             g_cfg.fast_cd = atoi(tok + 7);
             g_cfg.precisecull = 0;              /* recordings made before it have no precisecull= */
             g_cfg.spritechair = 0;              /* nor spritechair= */
+            g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
             continue;
         }
         if (!strncmp(tok, "precisecull=", 12)) { g_cfg.precisecull = atoi(tok + 12); continue; }
+        if (!strncmp(tok, "dualshock=", 10)) { g_cfg.dualshock = atoi(tok + 10); continue; }
         if (!strncmp(tok, "widescreen=", 11)) {     /* from --record: widescreen changes what the game does */
             if (sscanf(tok + 11, "%d:%d", &g_cfg.ws_w, &g_cfg.ws_h) != 2) g_cfg.ws_w = g_cfg.ws_h = 0;
             continue;
@@ -524,6 +528,7 @@ int platform_init(void) {
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
             fprintf(rec_file, "spritechair=%d\n", g_cfg.spritechair);
             fprintf(rec_file, "precisecull=%d\n", g_cfg.precisecull);   /* changes what the game draws */
+            fprintf(rec_file, "dualshock=%d\n", g_cfg.dualshock);       /* the pad's answers change the game's code */
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
             if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
             if (g_cfg.spritehire) fprintf(rec_file, "spritehire=%d\n", g_cfg.spritehire);
@@ -727,6 +732,29 @@ static uint16_t read_controllers(void) {
     }
     p2_pad = p2;
     return b;
+}
+
+/* the DualShock motors the game drives (sio.c) on farmer 1's controllers: the large one is the
+ * low-frequency rumble, the small one (on/off) the high-frequency buzz */
+static void update_rumble(void) {
+    static uint16_t last_lo, last_hi;
+    static int refresh, hold;
+    /* the game's buzzes are the small motor for 4 frames: a DualShock's spins up at once, an Xbox
+     * pad's high-frequency motor barely starts in that time, so the buzz also drives the big motor
+     * and lasts 8 frames at least */
+    if (g_pad_motor[0][0] & 1) hold = 8;
+    else if (hold) hold--;
+    uint16_t lo = rumble ? (uint16_t)(g_pad_motor[0][1] * 257) : 0;
+    uint16_t hi = rumble && hold ? 0xFFFF : 0;
+    if (hi && lo < 0xC000) lo = 0xC000;
+    if (lo == last_lo && hi == last_hi && (!(lo | hi) || ++refresh < 30)) return;
+    int ok = 1;
+    for (int p = 0; p < MAX_PADS; p++)     /* each call lasts 1 s at most: a stop or a stall can't leave it on */
+        if (pads[p] && !(g_p2_enabled && p == 1)) {
+            if (SDL_GameControllerRumble(pads[p], lo, hi, 1000)) ok = 0;
+        }
+    if (!ok) return;    /* refused (on Windows SDL pairs an Xbox pad with XInput at its first press): retry next frame */
+    last_lo = lo; last_hi = hi; refresh = 0;
 }
 
 static double t_upload, t_present;
@@ -1265,6 +1293,7 @@ void platform_frame(void) {
             fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
         }
         uint16_t b = read_controllers();
+        update_rumble();
         static uint16_t mine;           /* Alt held: keeps the buttons as they were */
         if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
         if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);

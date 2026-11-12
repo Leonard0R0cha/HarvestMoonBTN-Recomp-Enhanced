@@ -24,12 +24,20 @@ static struct {
     uint8_t mc_cmd, mc_msb, mc_lsb, mc_chk, mc_prev;
     uint8_t mc_buf[128];
     uint8_t mc_flag[2];
+    /* DualShock state */
+    uint8_t pad_cmd, pad_arg, pad_len;
+    uint8_t pad_config[2], pad_analog[2];
+    uint8_t pad_map[2][6];      /* per poll byte: 00 small motor, 01 large, FFh none */
 } s;
+
+uint8_t g_pad_motor[2][2];      /* port: small (on when bit 0), large (00-FF): the platform rumbles them */
 
 void sio_init(void) {
     memset(&s, 0, sizeof s);
     s.stat = 0x05;
     s.mc_flag[0] = s.mc_flag[1] = 0x08;   /* "new card" until the first write */
+    memset(s.pad_map, 0xFF, sizeof s.pad_map);
+    memset(g_pad_motor, 0, sizeof g_pad_motor);
 }
 
 static int cur_port(void) { return (s.ctrl >> 13) & 1; }
@@ -52,18 +60,59 @@ static void update_irq(bool rising) {
 }
 
 /* ------------------------------------------------------------------ devices */
+/* A DualShock (psx-spx "Controllers and Memory Cards"): it starts as a digital pad (41h) and
+ * the game may enter config mode (43h) to read its status (45h-4Ch), pick digital or analog
+ * (44h) and map the motors onto the poll's bytes (4Dh); each 42h poll then sends the motor
+ * values.  g_cfg.dualshock = 0 is the plain digital pad (42h only) older recordings were made with. */
 static uint8_t pad_exchange(int port, uint8_t in, bool *ack) {
-    (void)in;
     uint16_t btn = (uint16_t)~g_pad_buttons[port];
-    switch (s.step) {
-    case 1:                                        /* command: digital pads only know 42h */
-        if (in != 0x42) { *ack = false; return 0xFF; }
-        *ack = true; return 0x41;                  /* ID low: digital pad */
-    case 2: *ack = true; return 0x5A;              /* ID high */
-    case 3: *ack = true; return (uint8_t)(btn & 0xFF);
-    case 4: *ack = false; return (uint8_t)(btn >> 8);
-    default: *ack = false; return 0xFF;
+    int k = s.step - 3;                                         /* data byte index */
+    if (s.step == 1) {
+        s.pad_cmd = in;
+        s.pad_len = s.pad_config[port] || s.pad_analog[port] ? 6 : 2;   /* a mode change waits for the next packet */
+        bool poll = in == 0x42 || (in == 0x43 && g_cfg.dualshock);
+        if (s.pad_config[port]) *ack = true;
+        else if (!poll) { *ack = false; return 0xFF; }
+        else *ack = true;
+        return s.pad_config[port] ? 0xF3 : s.pad_analog[port] ? 0x73 : 0x41;
     }
+    if (s.step == 2) { *ack = true; return 0x5A; }
+    if (k >= 6) { *ack = false; return 0xFF; }
+    if (k == 0) s.pad_arg = in;
+    bool config = s.pad_config[port] && s.pad_cmd != 0x42 && s.pad_cmd != 0x43;
+    uint8_t out = 0x00;
+    if (!config) {                      /* 42h poll / 43h: the buttons (and centred sticks) */
+        out = k == 0 ? (uint8_t)btn : k == 1 ? (uint8_t)(btn >> 8) : 0x80;
+        if (s.pad_cmd == 0x42 && g_cfg.dualshock && !g_machine && !g_machine_probe) {
+            uint8_t *m = s.pad_map[port][k] <= 1 ? &g_pad_motor[port][s.pad_map[port][k]] : NULL;   /* 0 small, 1 large */
+            if (m && *m != in) { *m = in; LOGD("pad %d motor %d = %02X", port, s.pad_map[port][k], in); }
+        }
+        if (s.pad_cmd == 0x43 && k == 0) s.pad_config[port] = in == 0x01;
+    } else switch (s.pad_cmd) {
+    case 0x44:                          /* set mode: 00 digital, 01 analog */
+        if (k == 0 && in <= 1) s.pad_analog[port] = in;
+        break;
+    case 0x45: {                        /* status: DualShock, analog LED */
+        static const uint8_t st[6] = { 0x03, 0x02, 0x00, 0x02, 0x01, 0x00 };
+        out = k == 2 ? s.pad_analog[port] : st[k];
+        break;
+    }
+    case 0x46: {
+        static const uint8_t a[2][4] = { { 0x01, 0x02, 0x00, 0x0A }, { 0x01, 0x01, 0x01, 0x14 } };
+        out = k >= 2 && s.pad_arg <= 1 ? a[s.pad_arg][k - 2] : 0x00;
+        break;
+    }
+    case 0x47: { static const uint8_t a[6] = { 0x00, 0x00, 0x02, 0x00, 0x01, 0x00 }; out = a[k]; break; }
+    case 0x4C: out = k == 3 && s.pad_arg <= 1 ? (s.pad_arg ? 0x07 : 0x04) : 0x00; break;
+    case 0x4D:                          /* motor mapping: answers the old one */
+        out = s.pad_map[port][k];
+        s.pad_map[port][k] = in;
+        break;
+    default: break;
+    }
+    *ack = k < s.pad_len - 1;
+    LOGT("pad cmd %02X byte %d in %02X out %02X", s.pad_cmd, k, in, out);
+    return out;
 }
 
 static uint8_t card_exchange(int port, uint8_t in, bool *ack) {

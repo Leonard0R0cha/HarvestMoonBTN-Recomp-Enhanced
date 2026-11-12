@@ -66,7 +66,8 @@ CONTROLS
   Start (hold)       fast-forward a cutscene (stops at each dialogue)
 
 All keys and buttons can be remapped in the launcher or hmbtn.ini. Controllers can be plugged
-in at any time.
+in at any time. They vibrate where the game shakes a DualShock (rumble = 0 in [controller], or
+the launcher's Controller page, turns it off).
 
 SAVES
 -----

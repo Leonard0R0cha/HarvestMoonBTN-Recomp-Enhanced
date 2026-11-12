@@ -8,7 +8,7 @@
     X(SDL_DestroyTexture) X(SDL_SetRenderTarget) X(SDL_SetTextureScaleMode) \
     X(SDL_CreateWindow) X(SDL_Delay) X(SDL_GameControllerClose) X(SDL_GameControllerGetAxis) \
     X(SDL_GameControllerGetButton) X(SDL_GameControllerGetButtonFromString) \
-    X(SDL_GameControllerGetJoystick) X(SDL_GameControllerName) X(SDL_GameControllerOpen) \
+    X(SDL_GameControllerGetJoystick) X(SDL_GameControllerName) X(SDL_GameControllerOpen) X(SDL_GameControllerRumble) \
     X(SDL_GetCurrentAudioDriver) X(SDL_GetError) X(SDL_GetKeyboardState) X(SDL_GetModState) \
     X(SDL_GetNumAudioDevices) X(SDL_GetPerformanceCounter) X(SDL_GetPerformanceFrequency) \
     X(SDL_GetQueuedAudioSize) X(SDL_GetRendererInfo) X(SDL_GetRendererOutputSize) \
@@ -67,6 +67,7 @@ static const char *sdl_dyn_load(void) {
 #define SDL_GameControllerGetJoystick dyn_SDL_GameControllerGetJoystick
 #define SDL_GameControllerName dyn_SDL_GameControllerName
 #define SDL_GameControllerOpen dyn_SDL_GameControllerOpen
+#define SDL_GameControllerRumble dyn_SDL_GameControllerRumble
 #define SDL_GetCurrentAudioDriver dyn_SDL_GetCurrentAudioDriver
 #define SDL_GetError dyn_SDL_GetError
 #define SDL_GetKeyboardState dyn_SDL_GetKeyboardState

@@ -107,6 +107,7 @@ enum {
     PAD_L2 = 0x0100, PAD_R2 = 0x0200, PAD_L1 = 0x0400, PAD_R1 = 0x0800,
     PAD_TRIANGLE = 0x1000, PAD_CIRCLE = 0x2000, PAD_CROSS = 0x4000, PAD_SQUARE = 0x8000
 };
+extern uint8_t g_pad_motor[2][2];   /* DualShock motors per port: small (bit 0), large (00-FF), sio.c */
 extern uint16_t g_pad_buttons[2];   /* active-high button masks set by the platform layer */
 extern bool g_pad_connected[2];
 
@@ -250,6 +251,7 @@ typedef struct {
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
     int  crackfix;              /* close the cracks between models (needs pgxp) */
     int  depthtest;             /* 3D drawn after a 2D object doesn't cover it where it's behind (needs pgxp) */
+    int  dualshock;             /* the pad answers as a DualShock (0: the digital pad of older recordings) */
     int  precisecull;           /* NCLIP from the precise positions: -1 = with pgxp (recorded, co-op host's) */
     int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
     int  renderer_vk;           /* experiment: parallel-psx (Vulkan) draws the picture (renderer = vulkan) */
