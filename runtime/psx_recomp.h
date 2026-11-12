@@ -304,6 +304,8 @@ uint32_t build_night(CPU *c, uint32_t first);
 uint32_t build_next(uint32_t next);
 uint32_t build_label(uint32_t name);
 int build_has(int bit);              /* the sturdy (1) / bigger (2) greenhouse paid for */
+uint32_t farm_area_size(uint32_t entry, uint32_t size);   /* farmmix.c: the farm outside as built */
+void farm_area_loaded(uint32_t entry);
 void build_card_save(void);
 void build_card_load(void);      /* fixes.c: the greenhouse stands through the storms */
 uint32_t bulk_feed_most(CPU *c, uint32_t most);   /* ... and fodder / chicken feed up to 999 */
