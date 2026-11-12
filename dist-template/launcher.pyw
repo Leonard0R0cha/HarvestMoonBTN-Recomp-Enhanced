@@ -12,7 +12,7 @@ INI = os.path.join(HERE, 'hmbtn.ini')
 EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMoonBTN')
 # the launcher's release: .github/workflows/release.yml publishes it on GitHub as v<VERSION>, with Launcher.exe;
 # a Launcher.exe finds newer ones there, updates itself and rebuilds the game
-VERSION = '1.4.0'
+VERSION = '1.5.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
 # the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
