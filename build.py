@@ -224,8 +224,10 @@ def behind_main():
     git = lambda *a: subprocess.run(['git', '-C', ROOT, *a], capture_output=True, text=True, timeout=30,
                                     creationflags=native.NO_WINDOW)
     try:
-        if git('rev-parse', '--is-inside-work-tree').stdout.strip() != 'true':
-            return
+        top = git('rev-parse', '--show-toplevel').stdout.strip()
+        if not top or not os.path.samefile(top, ROOT):
+            return                                  # not a checkout of this repository (e.g. the launcher's
+                                                    # build-files sitting inside some other clone's folder)
         remotes = git('remote').stdout.split()
         remote = 'upstream' if 'upstream' in remotes else 'origin' if 'origin' in remotes else None
         if not remote or git('fetch', '--quiet', remote, 'main').returncode:
