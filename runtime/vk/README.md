@@ -2,10 +2,14 @@
 
 parallel-psx, a Vulkan PS1 GPU renderer, draws the upscaled picture. gpu.c keeps drawing the
 console's native VRAM (exact, for what the game and the port read back) and hands parallel-psx
-every command it runs (`vk_renderer.h`). Windows only (compiled in by tools/compile.py); Vulkan is
-loaded at runtime, and without it the game falls back to the CPU renderer.
+every command it runs (`vk_renderer.h`). Windows and Linux (compiled in by tools/compile.py);
+Vulkan is loaded at runtime (volk: `vulkan-1.dll`, `libvulkan.so.1`), and without it the game falls
+back to the CPU renderer.
 The windows show the pictures straight from the GPU (a Vulkan swapchain each, replacing SDL's
-renderer; letterbox and scaling as before); pictures are read back only for screenshots.
+renderer; letterbox and scaling as before); pictures are read back only for screenshots. The
+surface comes from SDL's window handles (`SDL_GetWindowWMInfo`): Win32, X11 (Xlib) or Wayland,
+without their headers (`vkr_window`). Wayland leaves the swapchain's size to us: the window's size
+in pixels (`vkr_window_size`, from `SDL_Vulkan_GetDrawableSize`).
 
 Supported: upscale 1–8, pgxp and perspective-correct textures, widescreen with the HUD kept 4:3,
 sprite anchors and depth, texture packs, in-between pictures (interp), the crack fix (background and

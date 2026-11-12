@@ -37,8 +37,7 @@ def sdl_dyn_missing():
     dyn = open(os.path.join(RT, 'sdl_dyn.h'), encoding='utf-8').read()
     loaded = set(re.findall(r'X\((SDL_\w+)\)', dyn)) & set(re.findall(r'#define (SDL_\w+) dyn_\1\b', dyn))
     called = set(re.findall(r'\b(SDL_\w+)\s*\(', open(os.path.join(RT, 'platform_sdl.c'), encoding='utf-8').read()))
-    platform_only = {'SDL_GetWindowWMInfo'}    # in the Windows-only Vulkan code (SDL_syswm.h)
-    return sorted(f for f in called - loaded - platform_only if not f[4:].isupper() and f != 'SDL_zero')   # macros
+    return sorted(f for f in called - loaded if not f[4:].isupper() and f != 'SDL_zero')   # macros
 
 
 def main():
