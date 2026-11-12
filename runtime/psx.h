@@ -251,7 +251,7 @@ typedef struct {
     int  sprite_depth;          /* scale 2D objects with depth (needs pgxp) */
     int  crackfix;              /* close the cracks between models (needs pgxp) */
     int  depthtest;             /* 3D drawn after a 2D object doesn't cover it where it's behind (needs pgxp) */
-    int  dualshock;             /* the pad answers as a DualShock (0: the digital pad of older recordings) */
+    int  dualshock;             /* the pad: 2 a DualShock in analog mode, 1 in digital mode, 0 the digital pad of older recordings */
     int  precisecull;           /* NCLIP from the precise positions: -1 = with pgxp (recorded, co-op host's) */
     int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
     int  renderer_vk;           /* experiment: parallel-psx (Vulkan) draws the picture (renderer = vulkan) */

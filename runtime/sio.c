@@ -37,6 +37,7 @@ void sio_init(void) {
     s.stat = 0x05;
     s.mc_flag[0] = s.mc_flag[1] = 0x08;   /* "new card" until the first write */
     memset(s.pad_map, 0xFF, sizeof s.pad_map);
+    s.pad_analog[0] = s.pad_analog[1] = g_cfg.dualshock == 2;   /* its ANALOG light on */
     memset(g_pad_motor, 0, sizeof g_pad_motor);
 }
 
@@ -63,7 +64,9 @@ static void update_irq(bool rising) {
 /* A DualShock (psx-spx "Controllers and Memory Cards"): it starts as a digital pad (41h) and
  * the game may enter config mode (43h) to read its status (45h-4Ch), pick digital or analog
  * (44h) and map the motors onto the poll's bytes (4Dh); each 42h poll then sends the motor
- * values.  g_cfg.dualshock = 0 is the plain digital pad (42h only) older recordings were made with. */
+ * values.  g_cfg.dualshock: 2 = analog mode, as with the ANALOG button pressed (the game sends the
+ * large motor in poll byte 2, which only analog mode's 6-byte poll carries: the bite when fishing),
+ * 1 = digital mode, 0 = the plain digital pad (42h only) older recordings were made with. */
 static uint8_t pad_exchange(int port, uint8_t in, bool *ack) {
     uint16_t btn = (uint16_t)~g_pad_buttons[port];
     int k = s.step - 3;                                         /* data byte index */

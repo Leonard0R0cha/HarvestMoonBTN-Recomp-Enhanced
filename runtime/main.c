@@ -429,7 +429,7 @@ int main(int argc, char **argv) {
     g_cfg.fastcard = 1;
     g_cfg.draw_threads = -1;
     g_cfg.precisecull = -1;
-    g_cfg.dualshock = 1;
+    g_cfg.dualshock = 2;
     g_cfg.sprite_depth = 1;
     g_cfg.quickui = 1;
     g_cfg.hdimages = 1;
