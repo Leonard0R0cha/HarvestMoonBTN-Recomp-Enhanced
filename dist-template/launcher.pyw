@@ -34,6 +34,19 @@ else:
 if not os.path.isfile(os.path.join(SRC, 'build.py')):
     SRC = None
 
+if getattr(sys, 'frozen', False) and sys.platform.startswith('linux') and not os.environ.get('SSL_CERT_FILE'):
+    # the OpenSSL inside the Linux launcher looks for CA certificates where the build machine (Ubuntu) keeps
+    # them, so on Fedora, Bazzite, openSUSE... every https download fails "certificate verify failed". Point
+    # it at this system's bundle; the environment also reaches the build scripts the Build page starts
+    for _ca in ('/etc/ssl/certs/ca-certificates.crt',              # Debian, Ubuntu, Arch, Gentoo, Fedora 4x
+                '/etc/pki/tls/certs/ca-bundle.crt',                # older Fedora, RHEL
+                '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem',
+                '/etc/ssl/ca-bundle.pem',                          # openSUSE
+                '/etc/ssl/cert.pem'):                              # Alpine, Void
+        if os.path.isfile(_ca):
+            os.environ['SSL_CERT_FILE'] = _ca
+            break
+
 if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py'):
     # "Launcher.exe script.py ...": the Build page runs the build scripts with the Python this exe carries
     import runpy, traceback
