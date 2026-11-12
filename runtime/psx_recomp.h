@@ -38,6 +38,10 @@ typedef struct {
 } ModuleDesc;
 extern const ModuleDesc g_modules[];
 extern const int g_num_modules;
+/* the language of the game's text (generated, from the disc the code came from): 0 English, 1 Portuguese */
+extern const int g_game_lang;
+extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt": the launcher reads it in the exe */
+#define GAME_PT (g_game_lang == 1)
 
 extern uint8_t g_ram[0x200000];
 extern uint8_t g_scratch[0x400];

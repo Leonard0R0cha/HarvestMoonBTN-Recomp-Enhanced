@@ -9,6 +9,7 @@
 
 # game files read from the disc, and the game code recompiled from them
 /extract/
+/extract-*/
 /generated/
 
 # build output: executables contain the recompiled game code, the data pack the game data

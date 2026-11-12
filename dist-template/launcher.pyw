@@ -72,6 +72,7 @@ OPTIONS = [
     ('video', 'video', 'fullscreen', 'bool'),
     ('video', 'video', 'scaling', 'choice:sharp-bilinear|sharp|smooth'),
     ('video', 'video', 'aspect43', 'bool'),
+    ('game', 'launcher', 'game_pt', 'bool'),        # the game's language: the launcher switches the exe (see play)
     ('game', 'general', 'disc', 'file'),
     ('game', 'general', 'savedir', 'dir'),
     ('game', 'behaviour', 'autoslot', 'bool'),
@@ -180,6 +181,7 @@ TEXT = {
         'scaling': ('Scaling to the screen', 'sharp-bilinear: sharp, even pixels (recommended). sharp: plain '
                     'nearest pixel. smooth: soft.'),
         'aspect43': ('4:3 picture', 'Like a CRT TV. Off: square pixels.'),
+        'game_pt': ('Game text in Portuguese', 'The Brazilian Portuguese fan translation by GabriPires. A language built before is switched at once; the first time, Play builds the game in it from your disc (about a minute: it downloads the translation and applies it to a copy of your disc image, in disc-pt). For online co-op both need the same language.'),
         'disc': ('Game disc', 'Your copy of the game: a .cue/.bin image or a .pak data pack. Empty: the disc '
                  'folder or HarvestMoonBTN.pak next to the game.'),
         'savedir': ('Memory card folder', 'Where the memory cards (card1.mcd ... card1_4.mcd) are kept. Empty: '
@@ -266,6 +268,7 @@ TEXT = {
         'scaling': ('Ajuste à tela', 'sharp-bilinear: pixels nítidos e iguais (recomendado). sharp: pixel mais '
                     'próximo. smooth: suave.'),
         'aspect43': ('Imagem 4:3', 'Como numa TV de tubo. Desligado: pixels quadrados.'),
+        'game_pt': ('Texto do jogo em português', 'A tradução de fã para português do Brasil, feita por GabriPires. Uma língua já montada troca na hora; na primeira vez, o Jogar monta o jogo nela a partir do seu disco (cerca de um minuto: baixa a tradução e aplica numa cópia da sua imagem do disco, na pasta disc-pt). No coop online os dois precisam da mesma língua.'),
         'disc': ('Disco do jogo', 'Sua cópia do jogo: imagem .cue/.bin ou pacote .pak. Vazio: a pasta disc ou '
                  'o HarvestMoonBTN.pak ao lado do jogo.'),
         'savedir': ('Pasta dos memory cards', 'Onde ficam os memory cards (card1.mcd ... card1_4.mcd). Vazio: a '
@@ -352,6 +355,7 @@ TEXT = {
         'scaling': ('Ajuste a la pantalla', 'sharp-bilinear: píxeles nítidos y parejos (recomendado). sharp: '
                     'píxel más cercano. smooth: suave.'),
         'aspect43': ('Imagen 4:3', 'Como en un televisor de tubo. Apagado: píxeles cuadrados.'),
+        'game_pt': ('Texto del juego en portugués', 'La traducción de fans al portugués de Brasil, de GabriPires. Un idioma ya construido cambia al instante; la primera vez, Jugar construye el juego en él desde tu disco (cerca de un minuto: descarga la traducción y la aplica a una copia de tu imagen del disco, en disc-pt). En el coop online los dos necesitan el mismo idioma.'),
         'disc': ('Disco del juego', 'Tu copia del juego: imagen .cue/.bin o paquete .pak. Vacío: la carpeta disc '
                  'o el HarvestMoonBTN.pak junto al juego.'),
         'savedir': ('Carpeta de memory cards', 'Donde se guardan las memory cards (card1.mcd ... card1_4.mcd). '
@@ -498,6 +502,7 @@ UI = {
         'build_btn': 'Build the game', 'building': 'Building... (this takes a few minutes)',
         'built': 'Done: the game is ready.', 'build_failed': 'The build stopped: the last lines above say why.',
         'need_cue': 'Choose your disc image (.cue or .bin) first.',
+        'built_lang': 'The game built here is in %s.', 'lang_en': 'English', 'lang_pt': 'Portuguese',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
         'updating': 'Downloading the new launcher...', 'update_failed': 'The update failed: %s',
         'portraits_get': 'Downloading the redrawn portraits... %d%%',
@@ -589,6 +594,7 @@ UI = {
         'build_btn': 'Montar o jogo', 'building': 'Montando... (leva alguns minutos)',
         'built': 'Pronto: o jogo está montado.', 'build_failed': 'A montagem parou: as últimas linhas acima dizem por quê.',
         'need_cue': 'Escolha primeiro a imagem do disco (.cue ou .bin).',
+        'built_lang': 'O jogo montado aqui está em %s.', 'lang_en': 'inglês', 'lang_pt': 'português',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
         'updating': 'Baixando o novo launcher...', 'update_failed': 'A atualização falhou: %s',
         'portraits_get': 'Baixando os retratos redesenhados... %d%%',
@@ -682,6 +688,7 @@ UI = {
         'built': 'Listo: el juego está creado.', 'build_failed': 'La creación se detuvo: las últimas líneas de '
         'arriba dicen por qué.',
         'need_cue': 'Elige primero la imagen del disco (.cue o .bin).',
+        'built_lang': 'El juego construido aquí está en %s.', 'lang_en': 'inglés', 'lang_pt': 'portugués',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
         'updating': 'Descargando el nuevo launcher...', 'update_failed': 'La actualización falló: %s',
         'portraits_get': 'Descargando los retratos redibujados... %d%%',
@@ -941,6 +948,16 @@ def get_portraits(progress):
     with open(PORTRAITS_MARK, 'w', encoding='utf-8') as f:
         f.write(pack['version'] + '\n')
     progress(100)
+
+
+def game_lang():
+    """the language of the built game's text (runtime/psx_recomp.h keeps it as text in the executable)"""
+    try:
+        with open(EXE, 'rb') as f:
+            m = re.search(rb'HMBTN-LANG ([a-z]{2})', f.read())
+        return m.group(1).decode() if m else None
+    except OSError:
+        return None
 
 
 def build_id():
@@ -1534,6 +1551,10 @@ def main():
         c = card(parent)
         option_row(c, 'disc', 'file', *TEXT[state['lang']]['disc'], True)
         option_row(c, 'build_pak', 'bool', T('pak'), T('pak_d'), False)
+        lang = game_lang()
+        if lang:
+            tk.Label(c, text=T('built_lang') % T('lang_' + lang), font=F['s'], bg=CARD, fg=OK,
+                     anchor='w').pack(fill='x', pady=(6, 0))
         row = tk.Frame(parent, bg=BG)
         row.pack(fill='x', padx=24, pady=(0, 10))
         button(row, T('build_btn'), start_build, accent=True).pack(side='left')
@@ -1580,7 +1601,8 @@ def main():
                 shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy2(s, d)
         cmds = [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']] if os.name == 'nt' else []
         cmds.append([sys.executable, os.path.join(WORK, 'build.py'), '--into', HERE] +
-                    (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []))
+                    (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []) +
+                    (['--lang', 'pt'] if val('game_pt') == '1' else []))
         env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1', PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
         lines = queue.Queue()
         job.update(log=[], ok=None, proc=True)
@@ -1617,6 +1639,9 @@ def main():
             job.update(proc=None, ok=done)
             if done:                        # the game is there now: the pages that show it
                 build()
+                if 'play_after_build' in state:
+                    return launch(state.pop('play_after_build'))
+            state.pop('play_after_build', None)
             show_log()
         poll()
 
@@ -1690,6 +1715,8 @@ def main():
             state.pop('portraits_then', lambda: None)()
         poll()
 
+    # another language: the copy built before comes at once (the Build page shows which one is there)
+    vars_['game_pt'].trace_add('write', lambda *_: switch_lang())
     # switched on: the portraits come at once (and before the game starts, if that comes first)
     vars_['portraits'].trace_add('write', lambda *_: val('portraits') == '1' and fetch_portraits())
 
@@ -1710,11 +1737,34 @@ def main():
                 fetch_portraits()
         poll()
 
+    def lang_exe(lang):
+        """the copy of the game in that language the build keeps (build.py keep_language)"""
+        name, ext = os.path.splitext(os.path.basename(EXE))
+        return os.path.join(HERE, 'languages', '%s-%s%s' % (name, lang, ext))
+
+    def switch_lang():
+        """the game in the language picked, from the copy built before; False when it must be built"""
+        want = 'pt' if val('game_pt') == '1' else 'en'
+        if (game_lang() or 'en') == want:
+            return True
+        copy = lang_exe(want)
+        if not os.path.isfile(copy) or (want != 'en' and not os.path.isdir(os.path.join(HERE, 'disc-' + want))):
+            return False
+        try:
+            import shutil
+            shutil.copy2(copy, EXE)
+        except OSError:                     # the game is running (F5): it is switched at the next Play
+            return False
+        return True
+
     def play(args=()):
         save()
-        if not os.path.exists(EXE):
+        if not os.path.exists(EXE) or not switch_lang():
             if SRC:
+                state['play_after_build'] = list(args)
                 show('build')
+                if os.path.exists(EXE):     # another language: built now, then the game starts
+                    start_build()
             else:
                 messagebox.showerror('Harvest Moon', T('missing') % EXE)
             return

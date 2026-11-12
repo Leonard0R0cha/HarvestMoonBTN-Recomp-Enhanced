@@ -6,6 +6,8 @@
 /* stubs for runtime pieces not needed here */
 const ModuleDesc g_modules[1];
 const int g_num_modules = 0;
+const int g_game_lang = 0;
+const char g_game_lang_tag[] = "HMBTN-LANG en";
 Config g_cfg;
 int g_log_level = LOG_WARN;
 volatile int g_quit;
