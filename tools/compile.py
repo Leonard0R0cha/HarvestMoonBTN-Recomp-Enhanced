@@ -4,8 +4,9 @@ Normally run through ../build.py, which first creates generated/ from your disc.
 
 Windows: uses the llvm-mingw toolchain + SDL2 from deps/ (tools/fetch_deps.py downloads them);
          --linux cross-builds the Linux version with Zig (fetch_deps.py --linux).
-Linux:   uses the system C compiler ($CC, default cc) and the SDL2 headers (sdl2-config or
-         pkg-config sdl2). SDL2 itself is loaded at runtime.
+Linux:   uses Zig and the SDL2 headers from deps/ when there (fetch_deps.py, as the launcher does),
+         else the system C compiler ($CC, default cc; $CXX, default c++) and the SDL2 headers
+         (sdl2-config or pkg-config sdl2). SDL2 itself is loaded at runtime.
 
 usage: compile.py [--release] [--linux] [--clean] [--jobs N]
 """
@@ -32,24 +33,6 @@ def sh(cmd):
     return r.returncode, r.stdout + r.stderr
 
 
-def make_sdl_stub(cc, target, objdir, platform_obj):
-    """Build a stub libSDL2-2.0.so.0 exporting the SDL symbols we use, so the cross-linked
-    binary records a dependency on the system's real SDL2 without needing it at build time."""
-    nm = os.path.join(DEPS, 'llvm-mingw', 'bin', 'llvm-nm.exe')
-    out = subprocess.check_output([nm, '-u', platform_obj], text=True)
-    syms = sorted({l.split()[-1] for l in out.splitlines() if l.split() and l.split()[-1].startswith('SDL_')})
-    stub_c = os.path.join(objdir, 'sdl_stub.c')
-    with open(stub_c, 'w') as f:
-        for sym in syms:
-            f.write('void %s(void) {}' % sym + chr(10))
-    so = os.path.join(objdir, 'libSDL2-2.0.so.0')
-    code, msg = sh(cc + target + ['-shared', '-fPIC', stub_c, '-o', so, '-Wl,-soname,libSDL2-2.0.so.0'])
-    if code:
-        print(msg)
-        sys.exit(1)
-    return so
-
-
 def output_dir(release, linux_cross):
     return os.path.join(ROOT, 'build', ('linux-' if linux_cross else '') + ('release' if release else 'debug'))
 
@@ -66,10 +49,12 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         shutil.rmtree(outdir)
     os.makedirs(objdir, exist_ok=True)
 
-    if linux_cross:
-        # cross-compile from Windows with zig; glibc 2.17 baseline, SDL2 resolved at runtime
-        need(os.path.join(DEPS, 'llvm-mingw', 'bin', 'llvm-nm.exe'), 'llvm-mingw')
-        cc = [need(os.path.join(DEPS, 'zig', 'zig.exe'), 'Zig', True), 'cc']
+    zig = os.path.join(DEPS, 'zig', 'zig.exe' if IS_WIN else 'zig')
+    use_zig = linux_cross or (not IS_WIN and os.path.exists(zig))
+    if use_zig:
+        # zig: cross-compiling from Windows, or on Linux without a compiler of its own (fetch_deps.py);
+        # glibc 2.17 baseline, SDL2 resolved at runtime
+        cc = [need(zig, 'Zig', True), 'cc']
         target = ['-target', 'x86_64-linux-gnu.2.17']
         sdl_cflags = ['-I' + need(os.path.join(DEPS, 'SDL2-src', 'include'), 'SDL2 headers', True), '-D_REENTRANT']
         sdl_libs = []
@@ -127,7 +112,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         pp = os.path.join(vk, 'ppsx')
         inc = ['-I' + os.path.join(vk, 'compat')] + ['-I' + os.path.join(pp, *d) for d in (
             ('renderer',), ('glsl', 'prebuilt'), ('volk',), ('khronos', 'include'), ('SPIRV-Cross',))]
-        if linux_cross:
+        if use_zig:
             cxx = [cc[0], 'c++']
         elif IS_WIN:
             cxx = [cc[0].replace('clang.exe', 'clang++.exe')]
@@ -188,7 +173,7 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         objs.append(res)
     # Windows: libstdc++ in the .exe; Linux: the system's (Zig links its libc++ in)
     link = (cxx + (['-static-libstdc++'] if IS_WIN and not linux_cross else []) if cxx else cc) + target + objs + sdl_libs + ['-o', exe]
-    if linux_cross:
+    if use_zig:
         link += ['-lm', '-ldl', '-lpthread', '-Wl,-z,stack-size=16777216', '-s']
     elif IS_WIN:
         link += ['-static-libgcc', '-Wl,--stack,16777216']

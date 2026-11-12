@@ -138,7 +138,14 @@ python build.py
 
 ### Linux
 
-Requirements: Python 3.8+, a C and C++ compiler and the SDL2 development package.
+**With the launcher:** download `HarvestMoonBTN-Launcher-Linux` from
+[Releases](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest), put it in an empty folder,
+make it executable (`chmod +x HarvestMoonBTN-Launcher-Linux`) and open it; **Build from my disc**
+works as on Windows and it updates itself the same way. Nothing needs installing, Bazzite and other
+immutable systems included: the first build downloads [Zig](https://ziglang.org) (a self-contained
+C/C++ compiler) and the SDL2 headers, about 65 MB, each checked against a pinned SHA-256.
+
+**From the source:** Python 3.8+, a C and C++ compiler and the SDL2 development package.
 
 ```sh
 sudo apt install build-essential python3 libsdl2-dev      # Debian / Ubuntu

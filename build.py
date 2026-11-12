@@ -246,11 +246,12 @@ def behind_main():
 
 
 def build_launcher():
-    """(re)build dist-template/HarvestMoonBTN-Launcher.exe for the game folder when it is missing or older
+    """(re)build dist-template/HarvestMoonBTN-Launcher.exe (-Linux on Linux) for the game folder when it is missing or older
     than what it carries (tools/build_launcher.py). Not in git: releases are built on GitHub"""
     if getattr(sys, 'frozen', False):
         return                          # the launcher's own Build page: that launcher is already there
-    exe = os.path.join(ROOT, 'dist-template', 'HarvestMoonBTN-Launcher.exe')
+    exe = os.path.join(ROOT, 'dist-template', 'HarvestMoonBTN-Launcher.exe' if os.name == 'nt'
+                       else 'HarvestMoonBTN-Launcher-Linux')
     srcs = [os.path.join(ROOT, 'build.py')]
     for top in ('dist-template', 'runtime', 'tools'):
         for d, dirs, names in os.walk(os.path.join(ROOT, top)):
@@ -301,7 +302,7 @@ def main():
     recompile(opt('--clean'), lang, extract_dir)
     exe = native.build(release=not opt('--debug'), linux_cross=opt('--linux'), clean=opt('--clean'), jobs=jobs)
     pak = make_pak(img[:-4] + '.cue' if lang else disc_path) if opt('--pak') else None
-    if not linux:
+    if not opt('--linux'):              # (PyInstaller builds for the system it runs on)
         build_launcher()
 
     files = [(exe, os.path.basename(exe))]

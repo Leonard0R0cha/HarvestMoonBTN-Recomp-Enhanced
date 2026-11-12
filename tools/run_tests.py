@@ -30,11 +30,26 @@ TESTS = {
 }
 
 
+def sdl_dyn_missing():
+    """SDL functions platform_sdl.c calls that runtime/sdl_dyn.h doesn't load: on Linux, where SDL2 is
+    loaded with dlopen, each one is an undefined reference when the game is linked"""
+    import re
+    dyn = open(os.path.join(RT, 'sdl_dyn.h'), encoding='utf-8').read()
+    loaded = set(re.findall(r'X\((SDL_\w+)\)', dyn)) & set(re.findall(r'#define (SDL_\w+) dyn_\1\b', dyn))
+    called = set(re.findall(r'\b(SDL_\w+)\s*\(', open(os.path.join(RT, 'platform_sdl.c'), encoding='utf-8').read()))
+    return sorted(f for f in called - loaded if not f[4:].isupper() and f != 'SDL_zero')   # macros
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     everything = [f for f in sorted(glob.glob(os.path.join(RT, '*.c')))
                   if os.path.basename(f) not in ('main.c', 'platform_sdl.c', 'netplay.c')]
     failed = []
+    missing = sdl_dyn_missing()
+    print('%-16s %s  %s' % ('sdl_dyn', 'FAIL' if missing else 'ok  ',
+                            'not in runtime/sdl_dyn.h: ' + ', '.join(missing) if missing else 'every SDL call is loaded'))
+    if missing:
+        failed.append('sdl_dyn')
     for name, deps in TESTS.items():
         srcs = [os.path.join(RT, 'tests', name + '.c')]
         srcs += everything if deps is None else [os.path.join(RT, d) for d in deps]
