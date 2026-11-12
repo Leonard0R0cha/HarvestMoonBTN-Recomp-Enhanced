@@ -138,11 +138,11 @@ python build.py
 
 ### Linux
 
-Requirements: Python 3.8+, a C compiler and the SDL2 development package.
+Requirements: Python 3.8+, a C and C++ compiler and the SDL2 development package.
 
 ```sh
 sudo apt install build-essential python3 libsdl2-dev      # Debian / Ubuntu
-sudo dnf install gcc python3 SDL2-devel                   # Fedora
+sudo dnf install gcc gcc-c++ python3 SDL2-devel           # Fedora
 sudo pacman -S base-devel python sdl2                     # Arch
 
 git clone https://github.com/d4rksp4rt4n/HMBTN-ReFarmed.git
@@ -151,8 +151,9 @@ python3 build.py
 ```
 
 The result is in **`dist/HarvestMoonBTN-Linux-x64/`**; `launcher.pyw` there runs with Python
-(and Tk). The Vulkan renderer is Windows-only for now: Linux uses the CPU renderer, with all
-the other enhancements. To build the Linux version on Windows instead (cross-compiling with
+(and Tk). `renderer = vulkan` works there too (X11 or Wayland), with the system's Vulkan
+driver (`libvulkan.so.1`, from Mesa or the NVIDIA driver); without it the game uses the CPU
+renderer. To build the Linux version on Windows instead (cross-compiling with
 [Zig](https://ziglang.org)), run `python tools\fetch_deps.py --linux` once and then
 `python build.py --linux`.
 
@@ -253,7 +254,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `fullscreen` | `0` | start in fullscreen |
 |  | `scaling` | `sharp-bilinear` | `sharp-bilinear` = sharp pixels that stay even at any size, `sharp` = nearest pixel, `smooth` = bilinear |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
-|  | `renderer` | `cpu` | `vulkan` = the graphics card draws the picture (experimental, Windows; falls back to `cpu` without Vulkan) |
+|  | `renderer` | `cpu` | `vulkan` = the graphics card draws the picture (experimental; falls back to `cpu` without Vulkan) |
 |  | `upscale` | `2` | internal resolution 1–4, 1–8 with `renderer = vulkan` (2+ = smoother 3D edges; 4 = 1280×960, 8 = 2560×1920) |
 |  | `drawthreads` | `auto` | threads that draw the upscaled 3D with the CPU renderer, `0`–`4`; `auto` = by processor |
 |  | `pgxp` | `1` | `1` = precise 3D vertex positions, no wobble; 2D objects get smaller further away, like the 3D ground (needs `upscale` 2+) |

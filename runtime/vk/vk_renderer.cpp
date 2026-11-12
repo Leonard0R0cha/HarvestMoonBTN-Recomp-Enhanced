@@ -134,7 +134,11 @@ extern "C" int vkr_init(int s)
 {
 	if (volkInitialize() != VK_SUCCESS)
 	{
+#ifdef _WIN32
 		log_msg(1, "vk: no Vulkan loader (vulkan-1.dll)");
+#else
+		log_msg(1, "vk: no Vulkan loader (libvulkan.so.1)");
+#endif
 		return 0;
 	}
 	VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
@@ -143,18 +147,28 @@ extern "C" int vkr_init(int s)
 	VkInstanceCreateInfo ici = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 	ici.pApplicationInfo = &app;
 	/* windows to show pictures in (vkr_window), when the driver has them */
+#ifdef _WIN32
 	static const char *surface_ext[] = { "VK_KHR_surface", "VK_KHR_win32_surface" };
-	uint32_t n = 0, found = 0;
+#else
+	static const char *surface_ext[] = { "VK_KHR_surface", "VK_KHR_xlib_surface", "VK_KHR_wayland_surface" };
+#endif
+	uint32_t n = 0;
 	vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
 	std::vector<VkExtensionProperties> exts(n);
 	vkEnumerateInstanceExtensionProperties(nullptr, &n, exts.data());
-	for (auto &e : exts)
-		for (const char *want : surface_ext)
-			found += !strcmp(e.extensionName, want);
-	if (found == 2)
+	std::vector<const char *> on;      /* the ones the driver has */
+	for (const char *want : surface_ext)
+		for (auto &e : exts)
+			if (!strcmp(e.extensionName, want))
+			{
+				on.push_back(want);
+				break;
+			}
+	bool windows = on.size() >= 2 && on[0] == surface_ext[0];   /* VK_KHR_surface and a window kind */
+	if (windows)
 	{
-		ici.enabledExtensionCount = 2;
-		ici.ppEnabledExtensionNames = surface_ext;
+		ici.enabledExtensionCount = uint32_t(on.size());
+		ici.ppEnabledExtensionNames = on.data();
 	}
 	if (vkCreateInstance(&ici, nullptr, &instance) != VK_SUCCESS)
 	{
@@ -164,8 +178,8 @@ extern "C" int vkr_init(int s)
 	volkLoadInstance(instance);
 	static const VkPhysicalDeviceFeatures none = {};   /* it turns on what it can use */
 	static const char *swap_ext[] = { "VK_KHR_swapchain" };
-	context = new Context(instance, VK_NULL_HANDLE, VK_NULL_HANDLE, swap_ext, found == 2, nullptr, 0, &none);
-	if (!context->is_valid() && found == 2)    /* no swapchains: pictures go through the CPU */
+	context = new Context(instance, VK_NULL_HANDLE, VK_NULL_HANDLE, swap_ext, windows, nullptr, 0, &none);
+	if (!context->is_valid() && windows)    /* no swapchains: pictures go through the CPU */
 	{
 		delete context;
 		context = new Context(instance, VK_NULL_HANDLE, VK_NULL_HANDLE, nullptr, 0, nullptr, 0, &none);
@@ -1228,21 +1242,23 @@ extern "C" int vkr_keep(int slot)
 	return 1;
 }
 
-/* Win32 surface, without windows.h (vulkan_win32.h's struct, its handles as pointers) */
-struct Win32SurfaceInfo
+/* a window's surface, without windows.h or the X11/Wayland headers: vulkan_win32.h's, _xlib.h's and
+ * _wayland.h's structs are the same, two handles (hinstance, hwnd; Display *, Window; wl_display *,
+ * wl_surface *) after flags. Window is an unsigned long, a pointer's size on 64-bit Linux. */
+struct SurfaceInfo
 {
 	VkStructureType sType;
 	const void *pNext;
 	VkFlags flags;
-	void *hinstance, *hwnd;
+	void *a, *b;
 };
-extern "C" __declspec(dllimport) void *__stdcall GetModuleHandleW(const wchar_t *);
 
 static struct Swap
 {
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkSwapchainKHR chain = VK_NULL_HANDLE;
 	VkExtent2D extent = {};
+	VkExtent2D size = {};       /* the window's pixels (vkr_window_size): for Wayland, which leaves it to us */
 	std::vector<VkImage> images;
 	VkCommandPool pool = VK_NULL_HANDLE;
 	VkCommandBuffer cb[2] = {};
@@ -1258,12 +1274,21 @@ static struct Swap
 	unsigned n = 0;
 } swaps[2];
 
-extern "C" int vkr_window(int win, void *hwnd)
+extern "C" int vkr_window(int win, int kind, void *a, void *b)
 {
+	static const struct
+	{
+		const char *fn;
+		VkStructureType type;
+	} kinds[] = { { "vkCreateWin32SurfaceKHR", VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR },
+		          { "vkCreateXlibSurfaceKHR", VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR },
+		          { "vkCreateWaylandSurfaceKHR", VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR } };
+	if (kind < 0 || kind > 2)
+		return 0;
 	Swap &s = swaps[win];
-	auto create = reinterpret_cast<VkResult(VKAPI_PTR *)(VkInstance, const Win32SurfaceInfo *, const VkAllocationCallbacks *,
-	                                                       VkSurfaceKHR *)>(vkGetInstanceProcAddr(instance, "vkCreateWin32SurfaceKHR"));
-	Win32SurfaceInfo info = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR, nullptr, 0, GetModuleHandleW(nullptr), hwnd };
+	auto create = reinterpret_cast<VkResult(VKAPI_PTR *)(VkInstance, const SurfaceInfo *, const VkAllocationCallbacks *,
+	                                                       VkSurfaceKHR *)>(vkGetInstanceProcAddr(instance, kinds[kind].fn));
+	SurfaceInfo info = { kinds[kind].type, nullptr, 0, a, b };
 	VkBool32 ok = VK_FALSE;
 	if (!create || !vkCreateSwapchainKHR || create(instance, &info, nullptr, &s.surface) != VK_SUCCESS)
 		return 0;
@@ -1294,6 +1319,11 @@ extern "C" int vkr_window(int win, void *hwnd)
 	return 1;
 }
 
+extern "C" void vkr_window_size(int win, int w, int h)
+{
+	swaps[win].size = { uint32_t(w > 0 ? w : 0), uint32_t(h > 0 ? h : 0) };
+}
+
 /* (re)makes the swapchain for the window's size; false: nothing to show into (minimised) */
 static bool make_chain(Swap &s)
 {
@@ -1301,6 +1331,9 @@ static bool make_chain(Swap &s)
 	VkDevice dev = context->get_device();
 	VkSurfaceCapabilitiesKHR caps;
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpu, s.surface, &caps);
+	if (caps.currentExtent.width == 0xFFFFFFFFu)    /* the window takes the size we make (Wayland) */
+		caps.currentExtent = { std::min(std::max(s.size.width, caps.minImageExtent.width), caps.maxImageExtent.width),
+		                       std::min(std::max(s.size.height, caps.minImageExtent.height), caps.maxImageExtent.height) };
 	if (!caps.currentExtent.width || !caps.currentExtent.height)
 		return false;
 	if (s.chain && !s.stale && caps.currentExtent.width == s.extent.width && caps.currentExtent.height == s.extent.height)
