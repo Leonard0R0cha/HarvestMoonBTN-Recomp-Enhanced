@@ -131,6 +131,13 @@ static bool scan_dir_for_disc(const char *dir, char *out, size_t n) {
 }
 
 static bool locate_disc(void) {
+    /* the game built from the translated disc (build.py --lang) needs that disc, which the build
+     * leaves in disc-<lang>/: it comes first */
+    if (GAME_PT) {
+        char dir[1200];
+        snprintf(dir, sizeof dir, "%sdisc-pt/", exe_dir);
+        if (scan_dir_for_disc(dir, g_cfg.disc_path, sizeof g_cfg.disc_path)) return true;
+    }
     if (g_cfg.disc_path[0]) {
         if (file_exists(g_cfg.disc_path)) return true;
         LOGW("configured game data not found: %s - searching the default locations", g_cfg.disc_path);
@@ -236,6 +243,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
     else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
     else if (!strcmp(key, "language")) {}    /* the launcher's own */
+    else if (!strcmp(key, "game_pt")) {}     /* the launcher's: the language its Build page makes */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
 }
 
@@ -391,6 +399,10 @@ static void load_exe(void) {
     int bad = 0;
     for (int i = 0; i < m->nfuncs; i++)
         if (ram_r32(m->funcs[i].addr) != m->funcs[i].w0 || ram_r32(m->funcs[i].addr + 4) != m->funcs[i].w1) bad++;
+    if (bad && GAME_PT)
+        fatal("This game was built from the Portuguese translation and needs its disc image\n"
+              "(the disc-pt folder the build made). %d of %d code checks failed.\n"
+              "Build again in the launcher to play in English or to make that image again.", bad, m->nfuncs);
     if (bad) fatal("This disc image does not match Harvest Moon: Back to Nature (USA, SLUS-01115).\n"
                    "%d of %d code checks failed.", bad, m->nfuncs);
 
@@ -399,7 +411,7 @@ static void load_exe(void) {
     g_cpu.r[29] = sp;
     g_cpu.r[30] = sp;
     g_cpu.r[31] = 0x80000080u;
-    LOGI("entry %08X gp %08X sp %08X", pc, gp, sp);
+    LOGI("entry %08X gp %08X sp %08X (%s)", pc, gp, sp, g_game_lang_tag);
     call_addr(&g_cpu, pc);
     LOGW("game returned from main()");
 }

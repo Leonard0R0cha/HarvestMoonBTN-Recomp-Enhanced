@@ -25,6 +25,7 @@
 #include "psx.h"
 #include "psx_recomp.h"
 #include "gpu.h"
+#include "text_pt.h"
 #include <string.h>
 
 #define SPRITES 0x8007A638u
@@ -239,7 +240,9 @@ static uint32_t put_number(uint32_t at, int v) {
 static uint32_t put_words(uint32_t at, const char *s) {
     for (; *s; s++) {
         char ch = *s;
-        if (ch >= 'A' && ch <= 'Z') at = put(at, (uint16_t)(ch - 'A'));
+        int g = pt_glyph(&s);
+        if (g >= 0) at = put(at, (uint16_t)g);
+        else if (ch >= 'A' && ch <= 'Z') at = put(at, (uint16_t)(ch - 'A'));
         else if (ch >= 'a' && ch <= 'z') at = put(at, (uint16_t)(0x20 + ch - 'a'));
         else if (ch >= '0' && ch <= '9') at = put(at, (uint16_t)(0x40 + ch - '0'));
         else if (ch == ' ') at = put(at, 0x0FFD);
@@ -276,7 +279,39 @@ void sprite_text_loaded(void) {
     int which = want_text;
     want_text = T_NONE;
     uint32_t at = TEXT_HEAD;
-    switch (which) {
+    if (GAME_PT) switch (which) {   /* the Portuguese translation's game: the same texts in Portuguese */
+    case T_COUNT:
+        load_arrows();
+        at = put_words(at, "Quantos de nós devem ir?\nUse esquerda e direita.| Mandar < # > de nós\n Ah, deixa para lá.");
+        break;
+    case T_DAYS:
+        at = put_words(at, "Por quanto tempo vamos\ntrabalhar, budum?| 1 semana, ");
+        at = put_number(at, how_many * WEEK_PRICE);
+        at = put_words(at, "G\n 30 dias, ");
+        at = put_number(at, how_many * MONTH_PRICE);
+        at = put_words(at, "G\n Ah, deixa para lá.");
+        break;
+    case T_DONE:
+        at = put_words(at, "Certo. ");
+        at = put_number(at, how_many);
+        at = put_words(at, how_many == 1 ? " de nós vai ajudar a\npartir de amanhã às 6h, budum."
+                                         : " de nós vão ajudar a\npartir de amanhã às 6h, budum.");
+        break;
+    case T_NO_MONEY:
+        at = put_words(at, "Vai custar ");
+        at = put_number(at, cost);
+        at = put_words(at, "G, budum.\nVolte quando tiver o dinheiro.");
+        phase = NONE;
+        break;
+    case T_JOBS: {
+        uint32_t job = MEM_R16(job_sprite + 184);
+        at = put_words(at, job & 1u ? "Estou colhendo agora, budum." : job & 2u ? "Estou regando agora, budum."
+                                                                         : "Estou com os animais, budum.");
+        at = put_words(at, "\nQuer que eu troque de serviço?| Colher a plantação\n Regar a plantação\n Cuidar dos animais\n Ah, deixa para lá.");
+        job_menu = 2;
+        break;
+    }
+    } else switch (which) {
     case T_COUNT:
         load_arrows();
         at = put_words(at, "How many of us should go?\nPress left or right to pick.| Send < # > of us\n Oh, never mind.");

@@ -10,7 +10,14 @@ import struct, sys, os, json, re
 from collections import defaultdict
 from mips import decode, REG
 
+GAME_LANGS = ['en', 'pt']     # g_game_lang (runtime/psx_recomp.h)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# --extract DIR: the game files (default extract/; build.py --lang gives the translated disc's), and
+# --lang the language of their text
+ARGS = sys.argv[1:]
+EXTRACT = os.path.abspath(ARGS[ARGS.index('--extract') + 1]) if '--extract' in ARGS else os.path.join(ROOT, 'extract')
+LANG = ARGS[ARGS.index('--lang') + 1] if '--lang' in ARGS else 'en'
 
 
 # ----------------------------------------------------------------------------------------
@@ -63,10 +70,10 @@ class FuncInfo:
 
 
 def load_modules():
-    exe = open(os.path.join(ROOT, 'extract', 'SLUS_011.15'), 'rb').read()
+    exe = open(os.path.join(EXTRACT, 'SLUS_011.15'), 'rb').read()
     mods = [Module('main', 0x80010000, exe[0x800:], 0x80011270, 0x80048B0C)]
-    h = struct.unpack('<33I', open(os.path.join(ROOT, 'extract', 'A_FILE.HDT'), 'rb').read())
-    f = open(os.path.join(ROOT, 'extract', 'A_FILE.BIN'), 'rb')
+    h = struct.unpack('<33I', open(os.path.join(EXTRACT, 'A_FILE.HDT'), 'rb').read())
+    f = open(os.path.join(EXTRACT, 'A_FILE.BIN'), 'rb')
     ovl = json.load(open(os.path.join(ROOT, 'tools', 'overlays.json')))
     for o in ovl:
         idx = o['file']
@@ -1053,6 +1060,9 @@ def generate(mods, outdir, per_file=60):
             -1 if m.file_index is None else m.file_index, m.name, len(m.funcs)))
     t.append('};')
     t.append('const int g_num_modules = %d;' % len(mods))
+    # the language of the game's text, and as text for the launcher (which game its Build page made)
+    t.append('const int g_game_lang = %d;' % GAME_LANGS.index(LANG))
+    t.append('const char g_game_lang_tag[] = "HMBTN-LANG %s";' % LANG)
     with open(os.path.join(outdir, 'modules.c'), 'w') as fh:
         fh.write('\n'.join(t) + '\n')
     files.append('modules.c')

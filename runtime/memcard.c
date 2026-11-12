@@ -1,5 +1,6 @@
 /* Memory card storage: raw 128 KiB images (same format as common .mcd/.mcr files). */
 #include "psx.h"
+#include "text_pt.h"
 
 static uint8_t card[2][0x20000];
 static char card_path[2][1024];
@@ -130,10 +131,12 @@ static uint64_t relist_from = UINT64_MAX;
 /* "Memory card N" on a line of its own above the game's text (game encoding: A-Z = 0-25,
  * a-z = 0x20-0x39, digits = 0x40-0x49, space = 0FFD, new line = FFFE, end = FFFF) */
 static size_t put_text(size_t n, const char *s) {
-    for (; *s; s++)
-        g_port_text[n++] = *s == ' ' ? 0x0FFD : *s == '\n' ? 0xFFFE : *s == '.' ? 0x6C :
+    for (; *s; s++) {
+        int g = pt_glyph(&s);
+        g_port_text[n++] = g >= 0 ? (uint16_t)g : *s == ' ' ? 0x0FFD : *s == '\n' ? 0xFFFE : *s == '.' ? 0x6C :
                            *s >= '0' && *s <= '9' ? (uint16_t)(0x40 + *s - '0') :
                            *s >= 'a' ? (uint16_t)(0x20 + *s - 'a') : (uint16_t)(*s - 'A');
+    }
     return n;
 }
 
@@ -142,10 +145,11 @@ static int deleting = -1;   /* diary (0-2) whose deletion is being held for, or 
 static uint32_t with_card_line(uint32_t text) {
     char line[64];
     size_t n;
-    snprintf(line, sizeof line, "Memory card %d\n", memcard_bank());
+    snprintf(line, sizeof line, GAME_PT ? "MEMORY CARD %d\n" : "Memory card %d\n", memcard_bank());
     n = put_text(0, line);
     if (deleting >= 0) {   /* instead of the game's prompt */
-        snprintf(line, sizeof line, "Keep holding TRIANGLE\nto delete Diary %d.", deleting + 1);
+        snprintf(line, sizeof line, GAME_PT ? "Segure TRIÂNGULO para\napagar o Diário %d."
+                                            : "Keep holding TRIANGLE\nto delete Diary %d.", deleting + 1);
         n = put_text(n, line);
         g_port_text[n] = 0xFFFF;
         return 0x80000000u | PORT_TEXT_ADDR;

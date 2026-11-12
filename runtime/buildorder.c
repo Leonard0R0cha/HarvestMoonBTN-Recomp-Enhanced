@@ -33,6 +33,7 @@
  * extension (80117F90) while a work is left. */
 #include "psx.h"
 #include "psx_recomp.h"
+#include "text_pt.h"
 
 #define BUILDINGS 5
 #define WORKS 7                    /* + the sturdy greenhouse (5) and the bigger (6) */
@@ -67,6 +68,8 @@
 
 static const char *const names[WORKS] = { "Hen House", "Kitchen", "Barn", "Bigger house", "Greenhouse",
                                           "Sturdy greenhouse", "Bigger greenhouse" };
+static const char *const names_pt[WORKS] = { "Galinheiro maior", "Cozinha", "Estábulo maior", "Casa maior", "Estufa",
+                                             "Estufa resistente", "Estufa maior" };
 static const uint16_t work_price[WORKS][2] = { [STURDY] = { 10000, 700 }, [BIGGER] = { 30000, 500 } };
 
 enum { NONE, WANT_MENU, MENU };
@@ -174,7 +177,10 @@ static uint32_t put(uint32_t at, uint16_t h) {
 static uint32_t put_words(uint32_t at, const char *s) {
     for (; *s; s++) {
         char ch = *s;
-        if (ch >= 'A' && ch <= 'Z') at = put(at, (uint16_t)(ch - 'A'));
+        int g = pt_glyph(&s);
+        if (g >= 0) at = put(at, (uint16_t)g);
+        else if (ch == '-') at = put(at, 0x69);
+        else if (ch >= 'A' && ch <= 'Z') at = put(at, (uint16_t)(ch - 'A'));
         else if (ch >= 'a' && ch <= 'z') at = put(at, (uint16_t)(0x20 + ch - 'a'));
         else if (ch >= '0' && ch <= '9') at = put(at, (uint16_t)(0x40 + ch - '0'));
         else if (ch == ' ') at = put(at, 0x0FFD);
@@ -226,7 +232,7 @@ static void shop_names(void) {
     }
     put_base = SHOP_NAMES;
     put_max = 18u;
-    put(put_words(0, "Enlarge build"), 0xFFFF);
+    put(put_words(0, GAME_PT ? "Ampliação" : "Enlarge build"), 0xFFFF);
     put_base = TEXT_BUF;
     put_max = TEXT_MAX;
 }
@@ -245,7 +251,10 @@ void build_text_loaded(void) {
     shop_names();
     if (work_text && MEM_R32(TEXT_ID) == OFFER_TEXT + GREENHOUSE) {
         work_text = 0;
-        uint32_t at = put_words(TEXT_HEAD, work == STURDY
+        uint32_t at = put_words(TEXT_HEAD, GAME_PT ? (work == STURDY
+            ? "Estufa resistente? Nenhuma\ntempestade vai derrubá-la.\n10000G e 700 tábuas. Tudo bem?"
+            : "Uma Estufa maior? Ela vai\nganhar mais 12 fileiras.\n30000G e 500 tábuas. Tudo bem?")
+            : work == STURDY
             ? "A sturdy greenhouse? Storms\nwon't break it anymore.\n10000G and 700 lumber. OK?"
             : "A bigger greenhouse? I'll make\nit 12 rows deeper.\n30000G and 500 lumber. OK?");
         put(at, 0xFFFF);
@@ -253,11 +262,11 @@ void build_text_loaded(void) {
     }
     if (phase == MENU) phase = NONE;           /* another text: the menu was left */
     if (phase != WANT_MENU) return;
-    uint32_t at = put_words(TEXT_HEAD, "Which one should I build?|");
+    uint32_t at = put_words(TEXT_HEAD, GAME_PT ? "Qual delas devo construir?|" : "Which one should I build?|");
     for (int k = 0; k < n_lines; k++) {
         if (k) at = put_words(at, "\n");
         at = put_words(at, " ");
-        at = put_words(at, names[lines[k]]);
+        at = put_words(at, (GAME_PT ? names_pt : names)[lines[k]]);
     }
     put(at, 0xFFFF);
     phase = MENU;
