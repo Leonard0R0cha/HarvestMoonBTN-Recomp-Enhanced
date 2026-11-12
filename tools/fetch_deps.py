@@ -8,7 +8,9 @@
   deps/SDL2-src       SDL2 headers
 
 Every download is checked against a pinned SHA-256.
-Linux hosts do not need this: install a C compiler and the SDL2 development package.
+Linux hosts: Zig for Linux and the SDL2 headers (deps/zig, deps/SDL2-src; compile.py then uses Zig),
+for a PC without a C compiler (the launcher's Build page). With a C/C++ compiler and the SDL2
+development package installed this isn't needed.
 
 --min: only the files a Windows build reads (tools/toolchain.txt, each with its SHA-256), about
 65 MB of downloads instead of 205 MB, and 150 MB on disk instead of 830 MB: the launcher's
@@ -34,6 +36,10 @@ DEPS = [
          url='https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz',
          sha256='5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165'),
 ]
+# on a Linux host (with SDL2-src)
+ZIG_LINUX = dict(name='zig', top='zig-x86_64-linux-0.17.0', linux=True,
+                 url='https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz',
+                 sha256='1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026')
 
 
 def download(url, path):
@@ -171,11 +177,13 @@ def main():
     if '--dest' in sys.argv:
         dest = os.path.abspath(sys.argv[sys.argv.index('--dest') + 1])
     os.makedirs(dest, exist_ok=True)
-    if '--min' in sys.argv:
+    if os.name != 'nt':
+        todo = [ZIG_LINUX] + [d for d in DEPS if d['name'] == 'SDL2-src']
+    elif '--min' in sys.argv:
         return fetch_min(dest)
-    for d in DEPS:
-        if d['linux'] and not linux:
-            continue
+    else:
+        todo = [d for d in DEPS if linux or not d['linux']]
+    for d in todo:
         out = os.path.join(dest, d['name'])
         if os.path.isdir(out):
             print('%-14s already present' % d['name'])

@@ -14,7 +14,7 @@ EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMo
 # and the Linux launcher; a launcher finds newer ones there, updates itself and rebuilds the game
 VERSION = '1.5.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
-LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe' if os.name == 'nt' else 'HarvestMoonBTN-Launcher-Linux'
+LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe' if os.name == 'nt' else 'HarvestMoonBTN-Launcher-Linux'   # its asset
 # the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
 # them into textures/portraits the first time the option is on, and again for a newer pack. Which pack is
 # portraits.json in the repository (version, url, sha256), so a new one needs no new launcher; this is
@@ -37,8 +37,8 @@ if not os.path.isfile(os.path.join(SRC, 'build.py')):
 if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py'):
     # "Launcher.exe script.py ...": the Build page runs the build scripts with the Python this exe carries
     import runpy, traceback
-    import collections, concurrent.futures, glob, hashlib, json, platform, shutil, tarfile, urllib.request, \
-        zipfile, zlib  # noqa: F401  (what the scripts import, so that PyInstaller packs it)
+    import collections, concurrent.futures, glob, hashlib, json, lzma, platform, shutil, tarfile, \
+        urllib.request, zipfile, zlib  # noqa: F401  (what the scripts import, so that PyInstaller packs it)
     if sys.stdout:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
         sys.stderr.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
@@ -892,7 +892,7 @@ def self_update(url, sha):
         raise OSError('the download is damaged (checksum)')
     with open(me + '.new', 'wb') as f:
         f.write(data)
-    os.chmod(me + '.new', 0o755)                    # Linux: runnable
+    os.chmod(me + '.new', 0o755)           # Linux: runnable
     if os.path.exists(me + '.old'):
         os.remove(me + '.old')
     os.replace(me, me + '.old')
@@ -1600,7 +1600,9 @@ def main():
             for n in ('build.py', 'tools', 'runtime', 'dist-template'):
                 s, d = os.path.join(SRC, n), os.path.join(WORK, n)
                 shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy2(s, d)
-        cmds = [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']] if os.name == 'nt' else []
+        # the compiler: downloaded (Linux: Zig, unless a launcher.pyw on a PC with its own compiler)
+        own_cc = os.name != 'nt' and not getattr(sys, 'frozen', False) and shutil.which('cc')
+        cmds = [] if own_cc else [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']]
         cmds.append([sys.executable, os.path.join(WORK, 'build.py'), '--into', HERE] +
                     (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []) +
                     (['--lang', 'pt'] if val('game_pt') == '1' else []))

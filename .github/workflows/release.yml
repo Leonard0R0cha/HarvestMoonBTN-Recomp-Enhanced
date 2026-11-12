@@ -87,7 +87,6 @@ jobs:
         env:
           PYINSTALLER_RESET_ENVIRONMENT: '1'
         run: |
-          mv dist-template/HarvestMoonBTN-Launcher dist-template/HarvestMoonBTN-Launcher-Linux
           version=$(sed -n "s/^VERSION = '\([0-9.]*\)'.*/\1/p" dist-template/launcher.pyw)
           built=$(dist-template/HarvestMoonBTN-Launcher-Linux --version)
           if [ "$built" != "$version" ]; then

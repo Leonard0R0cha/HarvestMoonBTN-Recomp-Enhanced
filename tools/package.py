@@ -74,9 +74,10 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     shutil.copy2(os.path.join(TPL, 'LICENSE-SDL2.txt'), os.path.join(out, 'LICENSE-SDL2.txt'))
     shutil.copy2(os.path.join(TPL, 'launcher.pyw'), os.path.join(out, 'launcher.pyw'))
     # the launcher built from it (PyInstaller), for players without Python
-    launcher_exe = os.path.join(TPL, 'HarvestMoonBTN-Launcher.exe')
-    if os.path.isfile(launcher_exe):
-        shutil.copy2(launcher_exe, os.path.join(out, 'HarvestMoonBTN-Launcher.exe'))
+    # (the one for the folder's system: a cross-built Linux folder has none, only launcher.pyw)
+    launcher = 'HarvestMoonBTN-Launcher-Linux' if 'Linux' in name else 'HarvestMoonBTN-Launcher.exe'
+    if os.path.isfile(os.path.join(TPL, launcher)):
+        shutil.copy2(os.path.join(TPL, launcher), os.path.join(out, launcher))
     # the launcher's own pictures (any it also finds there from elsewhere are kept)
     assets = os.path.join(TPL, 'launcher-assets')
     if os.path.isdir(assets):
