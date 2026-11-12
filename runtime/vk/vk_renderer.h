@@ -46,6 +46,11 @@ int  vkr_window(int win, void *hwnd);
 void vkr_want_pixels(int want);
 int  vkr_keep(int slot);
 void vkr_present(int win, int slot, const uint32_t *px, int w, int h, double aspect, int scaling);
+/* HD images (gpu.h HdPiece): pieces of an image (px: as texels, 0 transparent; key: which) shown
+ * over the next vkr_present of window win's picture (x0..y1: in its pixels), at the window's
+ * resolution; only over a picture of the GPU's (slot) */
+typedef struct { uint64_t key; const uint16_t *px; int w, h; float x0, y0, x1, y1, u0, v0, u1, v1; } VkHdPiece;
+void vkr_overlay(int win, const VkHdPiece *p, int n);
 /* 0: the game's renderer, 1: the one in-between pictures are redrawn into (2, 3: their tags; 4 ..
  * 7: the same for the second view's GPU, gpu_view2.c); the calls above go to it */
 void vkr_target(int k);

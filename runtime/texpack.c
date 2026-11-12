@@ -142,6 +142,7 @@ int texpack_load(const char *dir)
         if (!(im.px = png_load(path, &im.w, &im.h)))
             continue;
         im.key = strtoull(s, NULL, 16);
+        im.thin = NULL;
         if (texpack_find(im.key)) {         /* the same key again (e.g. .png and .PNG): keep the first */
             free(im.px);
             continue;
@@ -153,6 +154,53 @@ int texpack_load(const char *dir)
     closedir(d);
     g_texpack = nimgs > 0;
     return nimgs;
+}
+
+int g_hd_images;
+
+/* r's image with its opaque part shrunk by rad pixels (a pixel stays only if every pixel up to rad
+ * away across and down is opaque), made once (the GPU and its in-between redraws on other threads
+ * may ask at once: the first one stored is kept) */
+const uint16_t *texpack_thin(const TexImage *r, int rad)
+{
+    TexImage *m = (TexImage *)r;
+    uint16_t *have = __atomic_load_n(&m->thin, __ATOMIC_ACQUIRE), *out;
+    uint8_t *a, *b;
+    int x, y, k, w = r->w, h = r->h;
+    if (have)
+        return have;
+    out = malloc((size_t)w * h * sizeof *out);
+    a = malloc((size_t)w * h);
+    b = malloc((size_t)w * h);
+    if (!out || !a || !b) {
+        free(out);
+        free(a);
+        free(b);
+        return r->px;
+    }
+    for (y = 0; y < h; y++)         /* across: opaque if rad pixels each side are */
+        for (x = 0; x < w; x++) {
+            int ok = 1;
+            for (k = -rad; k <= rad && ok; k++)
+                ok = x + k >= 0 && x + k < w && r->px[y * w + x + k] != 0;
+            a[y * w + x] = (uint8_t)ok;
+        }
+    for (y = 0; y < h; y++)         /* then down */
+        for (x = 0; x < w; x++) {
+            int ok = 1;
+            for (k = -rad; k <= rad && ok; k++)
+                ok = y + k >= 0 && y + k < h && a[(y + k) * w + x];
+            b[y * w + x] = (uint8_t)ok;
+        }
+    for (k = 0; k < w * h; k++)
+        out[k] = b[k] ? r->px[k] : 0;
+    free(a);
+    free(b);
+    if (!__atomic_compare_exchange_n(&m->thin, &have, out, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        free(out);          /* another thread made it first */
+        return have;
+    }
+    return out;
 }
 
 void texpack_dump_to(const char *dir)

@@ -256,6 +256,7 @@ typedef struct {
     int  texturepack;           /* replacement images from textures/ (needs upscale >= 2) */
     int  portraits;             /* redrawn dialogue portraits from textures/portraits/ (needs upscale >= 2) */
     int  dumptextures;          /* write 2D sprites' textures to textures/dump/ (needs upscale >= 2) */
+    int  hdimages;              /* pack images with more pixels than the picture (portraits) shown at the window's resolution */
     int  ws_w, ws_h;            /* widescreen aspect W:H (e.g. 16:9), 0 = off */
     int  fullscreen;
     int  headless;              /* no window / audio (testing) */

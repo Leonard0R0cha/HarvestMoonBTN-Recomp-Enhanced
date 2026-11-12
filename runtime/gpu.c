@@ -2565,6 +2565,265 @@ static void bg_wide(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t u, uint
 #endif
 }
 
+/* HD images (gpu.h g_hd_images): the scale of the picture shown (the upscaled copy's, or Vulkan's) */
+static inline int32_t hd_scale(void)
+{
+#if VK_MAIN
+    if (g_vk)
+        return TH.n;
+#endif
+    return TH.buf ? TH.n : 1;
+}
+static TexImage hd_thin;            /* the thinner image of the HD rectangle being drawn */
+static const PgxpWord hud_untagged = { 0, 0.0f, 0.0f, -1.0f, 0, 0, 0.0f };
+
+#if !defined(GPU_REPLAY) && !defined(GPU_BAND)
+/* The HD rectangles drawn into VRAM and still there, and the boxes of what was drawn over each
+ * since (native pixels, drawing offset included; x1, y1 excluded). One drawn over whole, or under
+ * more boxes than kept, is dropped: it shows as drawn (its upscaled copy) from then on. */
+#define HD_MAX 8
+#define HD_OCC 48
+typedef struct {
+    const TexImage *img;
+    int32_t x, y, w, h;             /* the rectangle */
+    int32_t x0, y0, x1, y1;         /* the part of it in the drawing area */
+    float c, d, s, dy;              /* upscaled x of native x: (c + d + (x - c) * s) * n; y: (y + dy) * n */
+    int nocc;
+    int32_t occ[HD_OCC][4];
+} HdRect;
+static HdRect hd_rects[HD_MAX];
+static int hd_count;
+
+static void hd_cover(int32_t x0, int32_t y0, int32_t x1, int32_t y1)
+{
+    int i = 0, k;
+    while (i < hd_count) {
+        HdRect *r = &hd_rects[i];
+        int32_t a0 = x0 > r->x0 ? x0 : r->x0, b0 = y0 > r->y0 ? y0 : r->y0;
+        int32_t a1 = x1 < r->x1 ? x1 : r->x1, b1 = y1 < r->y1 ? y1 : r->y1;
+        int drop = 0, inside = 0;
+        if (a0 < a1 && b0 < b1) {
+            if (a0 == r->x0 && b0 == r->y0 && a1 == r->x1 && b1 == r->y1)
+                drop = 1;
+            for (k = 0; k < r->nocc && !inside && !drop; k++)     /* text inside the box it's on */
+                inside = a0 >= r->occ[k][0] && b0 >= r->occ[k][1] && a1 <= r->occ[k][2] && b1 <= r->occ[k][3];
+            if (!drop && !inside) {
+                if (r->nocc == HD_OCC)
+                    drop = 1;
+                else {
+                    r->occ[r->nocc][0] = a0;
+                    r->occ[r->nocc][1] = b0;
+                    r->occ[r->nocc][2] = a1;
+                    r->occ[r->nocc][3] = b1;
+                    r->nocc++;
+                }
+            }
+        }
+        if (drop) {
+            *r = hd_rects[--hd_count];
+            continue;
+        }
+        i++;
+    }
+}
+
+/* what command p (op) draws over, before it runs */
+static void hd_command(const uint32_t *p, uint32_t op)
+{
+    int32_t x0, y0, x1, y1, clip = 1;
+    if (!hd_count)
+        return;
+    switch (op >> 5) {
+    case 0:
+        if (op != 0x02)
+            return;
+        x0 = (int32_t)(p[1] & 0x3F0u);
+        y0 = (int32_t)((p[1] >> 16) & 0x3FFu);
+        x1 = x0 + (int32_t)(((p[2] & 0x3FFu) + 0xFu) & ~0xFu);
+        y1 = y0 + (int32_t)((p[2] >> 16) & 0x1FFu);
+        clip = 0;
+        break;
+    case 1:
+    case 2: {       /* polygon: its corners; line: its first segment */
+        int line = (op >> 5) == 2, nv = line ? 2 : (op & 0x08) ? 4 : 3, i;
+        int st = line ? 1 + ((op >> 4) & 1) : 1 + ((op >> 2) & 1) + ((op >> 4) & 1);
+        x0 = y0 = INT32_MAX;
+        x1 = y1 = INT32_MIN;
+        for (i = 0; i < nv; i++) {
+            uint32_t xy = p[1 + i * st];
+            int32_t x = sext11(xy) + S.offs_x, y = sext11(xy >> 16) + S.offs_y;
+            x0 = x < x0 ? x : x0;
+            y0 = y < y0 ? y : y0;
+            x1 = x + 1 > x1 ? x + 1 : x1;
+            y1 = y + 1 > y1 ? y + 1 : y1;
+        }
+        break;
+    }
+    case 3: {
+        uint32_t size = (op >> 3) & 3u;
+        x0 = sext11((uint32_t)(sext11(p[1]) + S.offs_x));
+        y0 = sext11((uint32_t)(sext11(p[1] >> 16) + S.offs_y));
+        if (size == 0) {
+            uint32_t wh = p[2 + ((op >> 2) & 1)];
+            x1 = x0 + (int32_t)(wh & 0x3FFu);
+            y1 = y0 + (int32_t)((wh >> 16) & 0x1FFu);
+        } else {
+            int32_t s = size == 1 ? 1 : size == 2 ? 8 : 16;
+            x1 = x0 + s;
+            y1 = y0 + s;
+        }
+        break;
+    }
+    case 4:
+        x0 = (int32_t)(p[2] & 0x3FFu);
+        y0 = (int32_t)((p[2] >> 16) & 0x3FFu);
+        x1 = x0 + (int32_t)((p[3] & 0x3FFu) ? (p[3] & 0x3FFu) : 0x400u);
+        y1 = y0 + (int32_t)(((p[3] >> 16) & 0x1FFu) ? ((p[3] >> 16) & 0x1FFu) : 0x200u);
+        clip = 0;
+        break;
+    case 5:
+        x0 = (int32_t)(p[1] & 0x3FFu);
+        y0 = (int32_t)((p[1] >> 16) & 0x3FFu);
+        x1 = x0 + (int32_t)((p[2] & 0x3FFu) ? (p[2] & 0x3FFu) : 0x400u);
+        y1 = y0 + (int32_t)(((p[2] >> 16) & 0x1FFu) ? ((p[2] >> 16) & 0x1FFu) : 0x200u);
+        clip = 0;
+        break;
+    default:
+        return;
+    }
+    if (clip) {
+        x0 = x0 > S.clip_x0 ? x0 : S.clip_x0;
+        y0 = y0 > S.clip_y0 ? y0 : S.clip_y0;
+        x1 = x1 < S.clip_x1 + 1 ? x1 : S.clip_x1 + 1;
+        y1 = y1 < S.clip_y1 + 1 ? y1 : S.clip_y1 + 1;
+    }
+    if (x1 > x0 && y1 > y0)
+        hd_cover(x0, y0, x1, y1);
+}
+
+static void hd_add(const TexImage *img, int32_t x, int32_t y, int32_t w, int32_t h, const PgxpWord *t, float sx)
+{
+    HdRect r;
+    r.img = img;
+    r.x = x;
+    r.y = y;
+    r.w = w;
+    r.h = h;
+    r.x0 = x > S.clip_x0 ? x : S.clip_x0;
+    r.y0 = y > S.clip_y0 ? y : S.clip_y0;
+    r.x1 = x + w < S.clip_x1 + 1 ? x + w : S.clip_x1 + 1;
+    r.y1 = y + h < S.clip_y1 + 1 ? y + h : S.clip_y1 + 1;
+    if (r.x1 <= r.x0 || r.y1 <= r.y0)
+        return;
+    r.c = (float)sprite_cx(t);
+    r.d = t->x;
+    r.s = sx;
+    r.dy = t->y;
+    r.nocc = 0;
+    if (hd_count == HD_MAX)
+        memmove(hd_rects, hd_rects + 1, (HD_MAX - 1) * sizeof *hd_rects);
+    hd_rects[hd_count < HD_MAX ? hd_count++ : HD_MAX - 1] = r;
+}
+
+static int cmp_i32(const void *a, const void *b)
+{
+    int32_t x = *(const int32_t *)a, y = *(const int32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* The HD rectangles in the display area, cut into the pieces nothing was drawn over: the edges of
+ * the rectangle and of its boxes make a grid; each row of cells gives its runs of free cells, and
+ * a row with the same runs as the one above makes those pieces taller. */
+int gpu_hd_pieces(HdPiece *out, int max)
+{
+    GpuDisplay d;
+    int i, cnt = 0;
+    const float n = (float)hd_scale();
+    gpu_get_display(&d);
+    if (!g_hd_images || !d.enabled || d.is_24bit)
+        return 0;
+    for (i = 0; i < hd_count; i++) {
+        const HdRect *r = &hd_rects[i];
+        int32_t xs[2 * HD_OCC + 2], ys[2 * HD_OCC + 2];
+        int nx = 0, ny = 0, a, b, k, first = cnt, prev = -1, prev_n = 0;
+        if (r->x0 < d.vram_x || r->x1 > d.vram_x + d.width || r->y0 < d.vram_y || r->y1 > d.vram_y + d.height)
+            continue;
+        xs[nx++] = r->x0;
+        xs[nx++] = r->x1;
+        ys[ny++] = r->y0;
+        ys[ny++] = r->y1;
+        for (k = 0; k < r->nocc; k++) {
+            xs[nx++] = r->occ[k][0];
+            xs[nx++] = r->occ[k][2];
+            ys[ny++] = r->occ[k][1];
+            ys[ny++] = r->occ[k][3];
+        }
+        qsort(xs, (size_t)nx, sizeof *xs, cmp_i32);
+        qsort(ys, (size_t)ny, sizeof *ys, cmp_i32);
+        for (b = 0; b + 1 < ny; b++) {
+            int32_t cy = ys[b], ey = ys[b + 1];
+            int row = cnt, same;
+            if (ey == cy)
+                continue;
+            for (a = 0; a + 1 < nx; a++) {
+                int32_t cx = xs[a], ex = xs[a + 1], hidden = 0;
+                if (ex == cx)
+                    continue;
+                for (k = 0; k < r->nocc && !hidden; k++)
+                    hidden = cx >= r->occ[k][0] && ex <= r->occ[k][2] && cy >= r->occ[k][1] && ey <= r->occ[k][3];
+                if (hidden)
+                    continue;
+                if (cnt > row && out[cnt - 1].u1 == (float)cx) {     /* goes on from the cell before */
+                    out[cnt - 1].u1 = (float)ex;
+                    continue;
+                }
+                if (cnt == max)
+                    return first;           /* the ones before are done */
+                out[cnt].x0 = (float)cx;    /* native for now: u0..u1 across, y0..y1 down */
+                out[cnt].u0 = (float)cx;
+                out[cnt].u1 = (float)ex;
+                out[cnt].y0 = (float)cy;
+                out[cnt].y1 = (float)ey;
+                cnt++;
+            }
+            same = prev >= 0 && cnt - row == prev_n;
+            for (k = 0; same && k < prev_n; k++)
+                same = out[prev + k].u0 == out[row + k].u0 && out[prev + k].u1 == out[row + k].u1 &&
+                       out[prev + k].y1 == (float)cy;
+            if (same) {
+                for (k = 0; k < prev_n; k++)
+                    out[prev + k].y1 = (float)ey;
+                cnt = row;
+            } else {
+                prev = row;
+                prev_n = cnt - row;
+            }
+        }
+        for (k = first; k < cnt; k++) {     /* native -> the picture's pixels and the image's */
+            HdPiece *q = &out[k];
+            float nx0 = q->u0, nx1 = q->u1, ny0 = q->y0, ny1 = q->y1;
+            q->img = r->img;
+            q->x0 = (r->c + r->d + (nx0 - r->c) * r->s) * n - (float)d.vram_x * n;
+            q->x1 = (r->c + r->d + (nx1 - r->c) * r->s) * n - (float)d.vram_x * n;
+            q->y0 = (ny0 + r->dy) * n - (float)d.vram_y * n;
+            q->y1 = (ny1 + r->dy) * n - (float)d.vram_y * n;
+            q->u0 = (nx0 - (float)r->x) * (float)r->img->w / (float)r->w;
+            q->u1 = (nx1 - (float)r->x) * (float)r->img->w / (float)r->w;
+            q->v0 = (ny0 - (float)r->y) * (float)r->img->h / (float)r->h;
+            q->v1 = (ny1 - (float)r->y) * (float)r->img->h / (float)r->h;
+        }
+    }
+    return cnt;
+}
+#define HD_COMMAND(p, op) hd_command(p, op)
+#define HD_ADD(img, x, y, w, h, t, sx) hd_add(img, x, y, w, h, t, sx)
+#define HD_CLEAR() (hd_count = 0)
+#else
+#define HD_COMMAND(p, op) ((void)0)
+#define HD_ADD(img, x, y, w, h, t, sx) ((void)0)
+#define HD_CLEAR() ((void)0)
+#endif
+
 static void cmd_rect(const uint32_t *p)
 {
     uint32_t op = p[0] >> 24;
@@ -2634,6 +2893,17 @@ static void cmd_rect(const uint32_t *p)
      * flipped ones (the hardware reads those from another box) */
     if ((TH.buf || VK_TAGS) && tex && (g_texpack || g_texdump) && !S.flip_x && !S.flip_y &&
         (rep = texpack_box((int32_t)u, (int32_t)v, w, h)) != NULL) {
+        /* an HD image (the HUD's or an untagged rectangle's, unmodulated, with more pixels than
+         * the copy shows): drawn thinner here, shown whole over the picture (HdRect) */
+        if (g_hd_images && period == 0 && sy == 1.0f && (!t || IS_HUD(t->cx)) && (raw || color == 0x808080u) &&
+            rep->w > w * hd_scale() && rep->h > h * hd_scale()) {
+            int rad = (int)ceilf(0.5f * (float)rep->w / (float)(w * hd_scale())) + 1;
+            HD_ADD(rep, x, y, w, h, t ? t : &hud_untagged, sx);
+            hd_thin = *rep;
+            hd_thin.px = (uint16_t *)texpack_thin(rep, rad);
+            hd_thin.key ^= 0x5448494E00000000ull;   /* Vulkan keeps its images by key */
+            rep = &hd_thin;
+        }
         rep_su = (float)rep->w / (float)w;
         rep_sv = (float)rep->h / (float)h;
 #if VK_MAIN
@@ -2881,6 +3151,7 @@ static void gp0_execute(const uint32_t *p)
 
     if (op == 0x02 || ((op >> 5) >= 2 && (op >> 5) <= 5))   /* fill, line, rect, copy, transfer */
         BAND_SYNC();
+    HD_COMMAND(p, op);
 
     switch (op >> 5) {
     case 0:
@@ -3482,6 +3753,7 @@ static void reset_command_buffer(void)
 static void soft_reset(void)
 {
     reset_command_buffer();
+    HD_CLEAR();
     S.irq = 0;
     S.display_off = 1;
     S.dma_dir = 0;
@@ -3852,6 +4124,7 @@ void gpu_set_upscale(int n)
     th_gen++;
 #endif
     changes++;
+    HD_CLEAR();
     free(TH.buf);
     free(TH.tag);
     free(TH.qpl);
@@ -3913,6 +4186,7 @@ void gpu_load_state(const void *src)
     if (!dither_lut_ready)
         build_dither_lut();
     memcpy(&S, src, sizeof(S));
+    HD_CLEAR();
     if (TH.buf)
         up_refresh();
 }
