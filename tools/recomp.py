@@ -629,6 +629,12 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
     0x80117F90: 'R[3] = R[2] = build_next(R[2]);',   # the shop opens: the first not built
     0x80118040: 'R[3] = build_label(R[20]) << 2;',   # ... and the extension's name
     0x8011205C: 'R[3] = build_night(c, R[3]);'})
+# ... and the farm outside as built (farmmix, runtime/farmmix.c): the area loader (800BCF54) keeps
+# part 0's size (800BCF88: a2, the biggest of the season's farms) and has part 0 in its buffer
+# (800BCFAC, before its first bytes are copied)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x800BCF88: 'R[6] = farm_area_size(R[16], R[6]);',
+    0x800BCFAC: 'farm_area_loaded(R[16]);'})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
