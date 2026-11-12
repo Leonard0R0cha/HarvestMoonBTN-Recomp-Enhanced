@@ -200,6 +200,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
     else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
     else if (!strcmp(key, "portraits")) g_cfg.portraits = atoi(val);
+    else if (!strcmp(key, "hdimages")) g_cfg.hdimages = atoi(val);
     else if (!strcmp(key, "widescreen")) set_widescreen(val);
     else if (!strcmp(key, "fullscreen")) g_cfg.fullscreen = atoi(val);
     else if (!strcmp(key, "fastcd")) g_cfg.fast_cd = atoi(val);
@@ -332,6 +333,7 @@ static void usage(void) {
            "  --interp              in-between pictures: camera and 3D scenery at 60 fps (needs --pgxp)\n"
            "  --texturepack         draw 2D sprites with the images in textures/ (needs --upscale 2+)\n"
            "  --portraits           redrawn dialogue portraits from textures/portraits/ (needs --upscale 2+)\n"
+           "  --no-hdimages         pack images (portraits) at the picture's resolution, not the window's\n"
            "  --dumptextures        write the 2D sprites' textures to textures/dump/ (needs --upscale 2+)\n"
            "  --savedir DIR         memory card directory\n"
            "  --fastcd              faster disc loading (music streaming unaffected)\n"
@@ -417,6 +419,7 @@ int main(int argc, char **argv) {
     g_cfg.precisecull = -1;
     g_cfg.sprite_depth = 1;
     g_cfg.quickui = 1;
+    g_cfg.hdimages = 1;
     g_cfg.fastload = 1;
     g_cfg.skipscenes = 1;
     g_cfg.textspeed = 3;
@@ -454,6 +457,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--no-texturepack")) g_cfg.texturepack = 0;
         else if (!strcmp(a, "--portraits")) g_cfg.portraits = 1;
         else if (!strcmp(a, "--no-portraits")) g_cfg.portraits = 0;
+        else if (!strcmp(a, "--hdimages")) g_cfg.hdimages = 1;
+        else if (!strcmp(a, "--no-hdimages")) g_cfg.hdimages = 0;
         else if (!strcmp(a, "--dumptextures")) g_cfg.dumptextures = 1;
         else if (!strcmp(a, "--widescreen")) { set_widescreen(nx); i++; }
         else if (!strcmp(a, "--savedir")) { snprintf(g_cfg.save_dir, sizeof g_cfg.save_dir, "%s", nx); i++; }
@@ -663,6 +668,7 @@ int main(int argc, char **argv) {
             snprintf(dir, sizeof dir, "%stextures/portraits", exe_dir);
             LOGI("portraits: %d images in %s", texpack_load(dir) - n, dir);
         }
+        g_hd_images = g_cfg.hdimages && g_texpack;
         if (g_cfg.dumptextures) {
             snprintf(dir, sizeof dir, "%stextures/dump", exe_dir);
             texpack_dump_to(dir);

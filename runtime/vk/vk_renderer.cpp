@@ -1251,6 +1251,7 @@ static struct Swap
 	ImageHandle held[2][2];     /* what a frame's commands read, kept until its fence */
 	BufferHandle held_buf[2];
 	ImageHandle pre, upload;    /* sharp-bilinear prescale target; CPU pictures */
+	ImageHandle hd[2], hd_pre[2];   /* with HD images: the picture at the window's size; its prescale */
 	int frame = 0;
 	bool stale = false;
 	double ms = 0;
@@ -1389,6 +1390,165 @@ static ImageHandle scratch_image(ImageHandle &keep, int w, int h)
 	return keep;
 }
 
+/* ---- HD images (vkr_overlay): pieces of pack images drawn over the picture at the window's size ---- */
+/* the scanout's quad shaders (ppsx/glsl quad.vert, quad.frag SCALED): an image's rectangle
+ * (offset, range: normalised) filling the viewport, smoothly sampled, alpha 1. Over the picture
+ * twice per piece, with blending: dst *= (1 - a) from an image of 1 - a, then dst += the
+ * premultiplied colour: the image drawn with its transparency, no shader of its own. */
+static const uint32_t hd_quad_vert[] =
+#include "ppsx/glsl/prebuilt/quad.vert.inc"
+    ;
+static const uint32_t hd_quad_frag[] =
+#include "ppsx/glsl/prebuilt/scaled.quad.frag.inc"
+    ;
+static std::vector<VkHdPiece> hd_pieces[2];
+struct HdImages
+{
+	ImageHandle keep, colour;   /* 1 - alpha; the premultiplied colour */
+};
+static std::map<uint64_t, HdImages> hd_images;
+
+extern "C" void vkr_overlay(int win, const VkHdPiece *p, int n)
+{
+	hd_pieces[win].assign(p, p + n);
+}
+
+static const HdImages &hd_images_of(const VkHdPiece &p)
+{
+	auto it = hd_images.find(p.key);
+	if (it != hd_images.end())
+		return it->second;
+	std::vector<uint32_t> keep(size_t(p.w) * p.h), colour(keep.size());
+	for (size_t i = 0; i < keep.size(); i++)
+	{
+		uint32_t t = p.px[i];
+		if (!t)
+		{
+			keep[i] = 0xFFFFFFFFu;
+			colour[i] = 0xFF000000u;
+			continue;
+		}
+		uint32_t r = t & 31u, g = (t >> 5) & 31u, b = (t >> 10) & 31u;
+		keep[i] = 0xFF000000u;
+		colour[i] = 0xFF000000u | (b << 3 | b >> 2) << 16 | (g << 3 | g >> 2) << 8 | (r << 3 | r >> 2);
+	}
+	HdImages &h = hd_images[p.key];
+	ImageInitialData a = { keep.data(), 0, 0 }, c = { colour.data(), 0, 0 };
+	h.keep = device->create_image(ImageCreateInfo::immutable_2d_image(p.w, p.h, VK_FORMAT_R8G8B8A8_UNORM), &a);
+	h.colour = device->create_image(ImageCreateInfo::immutable_2d_image(p.w, p.h, VK_FORMAT_R8G8B8A8_UNORM), &c);
+	return h;
+}
+
+/* The picture src (w x h, transfer source layout) scaled to dw x dh as vkr_present does, with the
+ * pieces over it, into keep (transfer source layout when the commands have run) */
+static void hd_compose(ImageHandle &keep, ImageHandle &pre_keep, const ImageHandle &src, int w, int h, int dw,
+                       int dh, int scaling, const std::vector<VkHdPiece> &pieces)
+{
+	static BufferHandle quad;
+	static Program *prog;
+	if (!quad)
+	{
+		static const float corners[] = { -1, -1, 1, -1, -1, 1, 1, 1 };
+		BufferCreateInfo bi;
+		bi.domain = BufferDomain::Device;
+		bi.size = sizeof corners;
+		bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		quad = device->create_buffer(bi, corners);
+		prog = device->request_program(hd_quad_vert, sizeof hd_quad_vert, hd_quad_frag, sizeof hd_quad_frag);
+	}
+	if (hd_images.size() > 32)
+		hd_images.clear();     /* ponytail: dropped all at once, like rep_images */
+	std::vector<const HdImages *> ims;
+	for (const VkHdPiece &p : pieces)       /* made (and uploaded) before the commands below */
+		ims.push_back(&hd_images_of(p));
+	if (!keep || int(keep->get_width()) != dw || int(keep->get_height()) != dh)
+	{
+		ImageCreateInfo ii = ImageCreateInfo::render_target(dw, dh, VK_FORMAT_R8G8B8A8_UNORM);
+		ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		keep = device->create_image(ii, nullptr);
+	}
+	CommandBufferHandle cmd = device->request_command_buffer();
+	/* srcStage transfer: the window's last copy from this frame's image read it */
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+	int kx = (dw + w - 1) / w, ky = (dh + h - 1) / h;
+	while (kx > 1 && kx * w > 8192)
+		kx--;
+	while (ky > 1 && ky * h > 8192)
+		ky--;
+	if (scaling == 0 && (kx > 1 || ky > 1))     /* sharp-bilinear */
+	{
+		if (!pre_keep || int(pre_keep->get_width()) != kx * w || int(pre_keep->get_height()) != ky * h)
+		{
+			ImageCreateInfo ii = ImageCreateInfo::render_target(kx * w, ky * h, VK_FORMAT_R8G8B8A8_UNORM);
+			ii.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			pre_keep = device->create_image(ii, nullptr);
+		}
+		cmd->image_barrier(*pre_keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+		cmd->blit_image(*pre_keep, *src, { 0, 0, 0 }, { kx * w, ky * h, 1 }, { 0, 0, 0 }, { w, h, 1 }, 0, 0, 0, 0, 1,
+		                VK_FILTER_NEAREST);
+		cmd->image_barrier(*pre_keep, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		                   VK_ACCESS_TRANSFER_READ_BIT);
+		cmd->blit_image(*keep, *pre_keep, { 0, 0, 0 }, { dw, dh, 1 }, { 0, 0, 0 }, { kx * w, ky * h, 1 }, 0, 0, 0, 0, 1,
+		                VK_FILTER_LINEAR);
+	}
+	else
+		cmd->blit_image(*keep, *src, { 0, 0, 0 }, { dw, dh, 1 }, { 0, 0, 0 }, { w, h, 1 }, 0, 0, 0, 0, 1,
+		                scaling == 1 ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+	                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	                   VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+	RenderPassInfo rp;
+	rp.color_attachments[0] = &keep->get_view();
+	rp.num_color_attachments = 1;
+	rp.load_attachments = 1;
+	rp.store_attachments = 1;
+	cmd->begin_render_pass(rp);
+	cmd->set_quad_state();
+	cmd->set_program(*prog);
+	cmd->set_vertex_binding(0, *quad, 0, 8);
+	cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+	cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	cmd->set_blend_enable(true);
+	cmd->set_blend_op(VK_BLEND_OP_ADD);
+	cmd->set_scissor({ { 0, 0 }, { unsigned(dw), unsigned(dh) } });
+	const float sx = float(dw) / w, sy = float(dh) / h;
+	for (size_t i = 0; i < pieces.size(); i++)
+	{
+		const VkHdPiece &p = pieces[i];
+		float x0 = p.x0 * sx, y0 = p.y0 * sy, x1 = p.x1 * sx, y1 = p.y1 * sy;
+		if (x1 <= x0 || y1 <= y0)
+			continue;
+		cmd->set_viewport({ x0, y0, x1 - x0, y1 - y0, 0.0f, 1.0f });
+		struct
+		{
+			float offset[2], range[2], uv_min[2], uv_max[2], max_bias;
+		} push = { { p.u0 / p.w, p.v0 / p.h },
+			       { (p.u1 - p.u0) / p.w, (p.v1 - p.v0) / p.h },
+			       { 0.5f / p.w, 0.5f / p.h },
+			       { 1.0f - 0.5f / p.w, 1.0f - 0.5f / p.h },
+			       0.0f };
+		cmd->push_constants(&push, 0, sizeof push);
+		cmd->set_blend_factors(VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_SRC_COLOR);    /* dst *= 1 - a */
+		cmd->set_texture(0, 0, ims[i]->keep->get_view(), StockSampler::LinearClamp);
+		cmd->draw(4);
+		cmd->set_blend_factors(VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ONE);           /* dst += colour * a */
+		cmd->set_texture(0, 0, ims[i]->colour->get_view(), StockSampler::LinearClamp);
+		cmd->draw(4);
+	}
+	cmd->end_render_pass();
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+	Fence fence;
+	device->submit(cmd, &fence);    /* now: the window's commands are submitted after these */
+}
+
 /* Shows a picture in window win: slot's (vkr_keep), or px (w x h, 0xAARRGGBB: the CPU's, a video),
  * at aspect (width / height), letterboxed, scaled as the frontend does (scaling: SCALING_*: 0
  * sharp-bilinear: whole-number nearest prescale, then smooth; 1 sharp; 2 smooth) */
@@ -1463,7 +1623,23 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 		dh = wh;
 		dw = int(wh * aspect);
 	}
-	if (src && w > 0 && h > 0 && dw > 0 && dh > 0)
+	bool hd = !px && src && w > 0 && h > 0 && dw > 0 && dh > 0 && !hd_pieces[win].empty();
+	if (hd)     /* the picture with HD images over it, made at the window's size: copied 1:1 */
+	{
+		hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
+		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+		mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+		barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		        VK_PIPELINE_STAGE_TRANSFER_BIT);
+		blit(cb, s.hd[f]->get_image(), dw, dh, out, (ww - dw) / 2, (wh - dh) / 2, dw, dh, VK_FILTER_NEAREST);
+		s.held[f][0] = src;
+		s.held[f][1] = s.hd[f];
+	}
+	else if (src && w > 0 && h > 0 && dw > 0 && dh > 0)
 	{
 		barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,

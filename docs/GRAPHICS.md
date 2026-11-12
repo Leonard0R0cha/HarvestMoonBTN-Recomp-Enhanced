@@ -18,6 +18,7 @@ bit-identical to a plain run (checked at several frames of a recorded play sessi
 | `scaling = sharp-bilinear` | sharp pixels that stay even at any window size | |
 | `texturepack = 1` | 2D sprites drawn with replacement images from `textures/` | upscale 2+ |
 | `portraits = 1` | Dialogue portraits drawn with redrawn images from `textures/portraits/`, on and off apart from `texturepack` | upscale 2+ |
+| `hdimages = 0` | Pack images at the picture's resolution, not the window's (see "HD images" below) | |
 | `dumptextures = 1` | 2D sprites' textures written to `textures/dump/`, to draw a pack from | upscale 2+ |
 
 The launcher (`launcher.pyw` in the build folder, needs Python) edits all of these.
@@ -446,6 +447,18 @@ switched on, the launcher is opened with it on, or the game is started with it o
 downloads the pack named by `portraits.json` (at the repository's root, read from `main`), checks the
 SHA-256 and puts the images there, with `pack.txt` for the version. Offline, or with a bad file, it
 uses the pack written in `launcher.pyw` (`PORTRAITS`).
+
+**HD images** (`hdimages = 1`, the default). A replaced rectangle whose image has more pixels
+than the picture gives it (the 320×320 portraits below upscale 4, the title logo) is shown again
+over the picture at the window's own resolution, so it is as sharp at upscale 2 as at 4. The GPU
+(gpu.c `HdRect`) keeps where each one was drawn and the boxes of what was drawn over it since (the
+text box, a fade): only the parts nothing covered are shown again (`gpu_hd_pieces`); a covered
+part, or one under too many boxes, shows as drawn. In the picture itself it is drawn a little
+thinner (`texpack_thin`), so none of it shows around the sharp copy. The CPU renderer's window
+draws the pieces with SDL; Vulkan composes the picture at the window's size with them over it
+(`hd_compose`, the scanout's quad shaders, twice with blending: no shader of its own), then copies
+it to the window. Display only: nothing the game reads changes (co-op stays in step).
+`HMBTN_HDSHOT=k` (testing) also writes each screenshot k times larger with them over it.
 
 A new pack needs no new launcher:
 1. Zip all the images (the old ones too), named `<key>.png`, flat (no folders): `portraits.zip`.

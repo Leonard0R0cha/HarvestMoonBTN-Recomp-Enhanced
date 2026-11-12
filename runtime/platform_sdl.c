@@ -390,8 +390,64 @@ static void save_screenshot_as(const char *name, const uint32_t *px, int w, int 
     LOGI("screenshot %s (%dx%d)", path, w, h);
 }
 
+/* HD images (gpu.h g_hd_images): the pieces of the HD rectangles in the picture shown, from the
+ * game's GPU (0) or the second view's (1), drawn again at the window's resolution */
+#define HD_PIECES 256
+static HdPiece hd_pc[HD_PIECES];
+static int hd_main_view2;           /* the game's window shows the second view (online guest, two farmers) */
+
+static int hd_get(int view2) {
+    if (!g_hd_images) return 0;
+    return view2 ? view2_gpu_hd_pieces(hd_pc, HD_PIECES) : gpu_hd_pieces(hd_pc, HD_PIECES);
+}
+
+/* testing (HMBTN_HDSHOT=k): the picture k times larger with the HD pieces over it, as Vulkan draws
+ * them (smooth, premultiplied), as hd<pieces>_<frame>.bmp */
+static void save_hd_screenshot(const uint32_t *px, int w, int h, uint64_t frame) {
+    const char *e = getenv("HMBTN_HDSHOT");
+    int k = e ? atoi(e) : 0, n = hd_get(0), W = w * k, H = h * k;
+    char name[64];
+    uint32_t *o;
+    if (k < 1 || k > 8 || !(o = malloc((size_t)W * H * 4))) return;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) o[(size_t)y * W + x] = px[(size_t)(y / k) * w + x / k];
+    for (int i = 0; i < n; i++) {
+        const HdPiece *p = &hd_pc[i];
+        const TexImage *im = p->img;
+        int x0 = (int)lrintf(p->x0 * k), x1 = (int)lrintf(p->x1 * k), y0 = (int)lrintf(p->y0 * k), y1 = (int)lrintf(p->y1 * k);
+        for (int y = y0 < 0 ? 0 : y0; y < y1 && y < H; y++)
+            for (int x = x0 < 0 ? 0 : x0; x < x1 && x < W; x++) {
+                float u = p->u0 + ((float)x + 0.5f - p->x0 * k) / ((p->x1 - p->x0) * k) * (p->u1 - p->u0) - 0.5f;
+                float v = p->v0 + ((float)y + 0.5f - p->y0 * k) / ((p->y1 - p->y0) * k) * (p->v1 - p->v0) - 0.5f;
+                int iu = (int)floorf(u), iv = (int)floorf(v);
+                float fu = u - iu, fv = v - iv, acc[4] = { 0, 0, 0, 0 };
+                for (int t = 0; t < 4; t++) {
+                    int su = iu + (t & 1), sv = iv + (t >> 1);
+                    float wt = ((t & 1) ? fu : 1 - fu) * ((t >> 1) ? fv : 1 - fv);
+                    su = su < 0 ? 0 : su >= im->w ? im->w - 1 : su;
+                    sv = sv < 0 ? 0 : sv >= im->h ? im->h - 1 : sv;
+                    uint32_t c = im->px[sv * im->w + su];
+                    if (!c) continue;
+                    acc[0] += wt * (float)((c & 31u) * 255 / 31);
+                    acc[1] += wt * (float)(((c >> 5) & 31u) * 255 / 31);
+                    acc[2] += wt * (float)(((c >> 10) & 31u) * 255 / 31);
+                    acc[3] += wt;
+                }
+                uint32_t d = o[(size_t)y * W + x];
+                float r = acc[0] + (float)((d >> 16) & 255) * (1 - acc[3]);
+                float g = acc[1] + (float)((d >> 8) & 255) * (1 - acc[3]);
+                float b = acc[2] + (float)(d & 255) * (1 - acc[3]);
+                o[(size_t)y * W + x] = 0xFF000000u | (uint32_t)lrintf(r) << 16 | (uint32_t)lrintf(g) << 8 | (uint32_t)lrintf(b);
+            }
+    }
+    snprintf(name, sizeof name, "hd%d", n);
+    save_screenshot_as(name, o, W, H, frame, 0);
+    free(o);
+}
+
 static void save_screenshot(const uint32_t *px, int w, int h, uint64_t frame, int wide) {
     save_screenshot_as("frame", px, w, h, frame, wide);
+    save_hd_screenshot(px, w, h, frame);
     if (g_view2 > 0) {                  /* and farmer 2's window: frame2_... */
         static uint32_t *px2;
         static int w2, h2;
@@ -729,9 +785,90 @@ static double display_aspect(int w, int h, int wide) {
     return wide ? aspect * (3.0 * g_cfg.ws_w) / (4.0 * g_cfg.ws_h) : aspect;
 }
 
+/* the image as 0xAARRGGBB; transparent pixels take the colour of an opaque one next to them (a few
+ * times over), so smooth scaling blends the outline with its own colour, not black */
+static uint32_t *hd_argb(const TexImage *img) {
+    int w = img->w, h = img->h, x, y, k, pass;
+    uint32_t *o = malloc((size_t)w * h * 4);
+    if (!o) return NULL;
+    for (k = 0; k < w * h; k++) {
+        uint32_t t = img->px[k], r = t & 31u, g = (t >> 5) & 31u, b = (t >> 10) & 31u;
+        o[k] = (t ? 0xFF000000u : 0) | (r << 3 | r >> 2) << 16 | (g << 3 | g >> 2) << 8 | (b << 3 | b >> 2);
+    }
+    for (pass = 0; pass < 3; pass++) {
+        uint8_t *set = calloc((size_t)w * h, 1);
+        if (!set) break;
+        for (y = 0; y < h; y++)
+            for (x = 0; x < w; x++) {
+                static const int dx[4] = { 1, -1, 0, 0 }, dy[4] = { 0, 0, 1, -1 };
+                if (o[y * w + x] >> 24 || (o[y * w + x] & 0xFFFFFFu)) continue;
+                for (k = 0; k < 4; k++) {
+                    int X = x + dx[k], Y = y + dy[k];
+                    if (X < 0 || Y < 0 || X >= w || Y >= h || set[Y * w + X]) continue;
+                    if (o[Y * w + X] & 0xFFFFFFu) { o[y * w + x] = o[Y * w + X] & 0xFFFFFFu; set[y * w + x] = 1; break; }
+                }
+            }
+        free(set);
+    }
+    return o;
+}
+
+static struct { SDL_Renderer *r; const TexImage *img; SDL_Texture *t; uint32_t used; } hd_tex[16];
+
+static SDL_Texture *hd_texture(SDL_Renderer *r, const TexImage *img) {
+    static uint32_t clock;
+    int i, old = 0;
+    for (i = 0; i < 16; i++) {
+        if (hd_tex[i].r == r && hd_tex[i].img == img) { hd_tex[i].used = ++clock; return hd_tex[i].t; }
+        if (hd_tex[i].used < hd_tex[old].used) old = i;
+    }
+    uint32_t *px = hd_argb(img);
+    SDL_Texture *t = px ? SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, img->w, img->h) : NULL;
+    if (!t) { free(px); return NULL; }
+    SDL_UpdateTexture(t, NULL, px, img->w * 4);
+    free(px);
+    SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);
+    if (hd_tex[old].t) SDL_DestroyTexture(hd_tex[old].t);
+    hd_tex[old].r = r;
+    hd_tex[old].img = img;
+    hd_tex[old].t = t;
+    hd_tex[old].used = ++clock;
+    return t;
+}
+
+/* the n pieces over the picture (w x h) shown at dst */
+static void hd_draw(SDL_Renderer *r, int n, int w, int h, SDL_Rect dst) {
+    float kx = (float)dst.w / (float)w, ky = (float)dst.h / (float)h;
+    for (int i = 0; i < n; i++) {
+        const HdPiece *p = &hd_pc[i];
+        SDL_Texture *t = hd_texture(r, p->img);
+        if (!t) continue;
+        SDL_Rect src = { (int)floorf(p->u0 + 0.5f), (int)floorf(p->v0 + 0.5f), 0, 0 };
+        src.w = (int)floorf(p->u1 + 0.5f) - src.x;
+        src.h = (int)floorf(p->v1 + 0.5f) - src.y;
+        SDL_FRect d = { (float)dst.x + p->x0 * kx, (float)dst.y + p->y0 * ky, (p->x1 - p->x0) * kx, (p->y1 - p->y0) * ky };
+        if (src.w > 0 && src.h > 0) SDL_RenderCopyF(r, t, &src, &d);
+    }
+}
+
+#ifdef HMBTN_VULKAN
+/* the first n of hd_pc over window win's next picture */
+static void hd_vk(int win, int n) {
+    static VkHdPiece vp[HD_PIECES];
+    for (int i = 0; i < n; i++) {
+        const HdPiece *p = &hd_pc[i];
+        vp[i] = (VkHdPiece){ p->img->key, p->img->px, p->img->w, p->img->h,
+                             p->x0, p->y0, p->x1, p->y1, p->u0, p->v0, p->u1, p->v1 };
+    }
+    vkr_overlay(win, vp, n);
+}
+#endif
+
 static void present(int w, int h, int wide, bool same) {
 #ifdef HMBTN_VULKAN
     if (vkp) {
+        hd_vk(0, w > 0 && main_gpu ? hd_get(hd_main_view2) : 0);
         vkr_present(0, main_gpu ? 0 : -1, main_gpu ? NULL : frame_px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
         return;
     }
@@ -768,7 +905,10 @@ static void present(int w, int h, int wide, bool same) {
     }
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_RenderClear(ren);
-    if (w > 0 && h > 0) SDL_RenderCopy(ren, show, &src, &dst);
+    if (w > 0 && h > 0) {
+        SDL_RenderCopy(ren, show, &src, &dst);
+        hd_draw(ren, hd_get(hd_main_view2), w, h, dst);
+    }
     uint64_t t1 = SDL_GetPerformanceCounter();
     SDL_RenderPresent(ren);
     uint64_t t2 = SDL_GetPerformanceCounter();
@@ -805,11 +945,15 @@ static void present2(int wide_now) {
     static uint32_t changes;
     static int w, h, valid, wide;
     static int gpu;                     /* the picture is the GPU's (Vulkan): 1 slot 1, 2 slot 2 (in-between) */
+    static HdPiece pc2[HD_PIECES];      /* the HD pieces of the picture, taken when it was made */
+    static int npc2;
     int ww, wh, fresh = win2_due;
     if (!tex2 && !vkp2) return;
     win2_due = 0;
     if (p2view_swapped() || p2view_scene()) {   /* farmer 2 has the game (or a scene): the game's picture */
         gpu_render_display(frame2_px, &w, &h);
+        npc2 = hd_get(0);
+        memcpy(pc2, hd_pc, (size_t)npc2 * sizeof *pc2);
         wide = wide_now;
         valid = 0;
         fresh = 1;
@@ -825,12 +969,16 @@ static void present2(int wide_now) {
         valid = 0;                      /* the next one is the frame's own again */
         fresh = 1;
         gpu = v2i_gpu ? 2 : 0;
+        npc2 = hd_get(1);
+        memcpy(pc2, hd_pc, (size_t)npc2 * sizeof *pc2);
         SDL_Rect src = { 0, 0, w, h };
         if (!vkp2) SDL_UpdateTexture(tex2, &src, v2i_px, w * 4);
     } else if ((!valid && !p2view_held()) || (view2_gpu_changes() != changes && !p2view_held())) {
         /* a picture kept (the player's menu) is the last one shown: drawn again from the second
          * GPU's VRAM after an in-between picture, it was whatever the menu's loads left there */
         view2_gpu_render_display(frame2_px, &w, &h);
+        npc2 = hd_get(1);
+        memcpy(pc2, hd_pc, (size_t)npc2 * sizeof *pc2);
         changes = view2_gpu_changes();
         wide = wide_now;
         valid = 1;
@@ -845,6 +993,8 @@ static void present2(int wide_now) {
 #ifdef HMBTN_VULKAN
     if (vkp2) {     /* in-between pictures of the CPU stay in v2i_px */
         const uint32_t *px = gpu ? NULL : (v2i_shown && w == v2i_w && h == v2i_h && !valid) ? v2i_px : frame2_px;
+        memcpy(hd_pc, pc2, (size_t)npc2 * sizeof *pc2);
+        hd_vk(1, gpu && w > 0 ? npc2 : 0);
         vkr_present(1, gpu == 2 ? 2 : gpu ? 1 : -1, px, w, h, display_aspect(w, h, wide), g_cfg.scaling);
         return;
     }
@@ -864,6 +1014,8 @@ static void present2(int wide_now) {
         SDL_Rect dst = { (ww - dw) / 2, (wh - dh) / 2, dw, dh };
         SDL_SetTextureScaleMode(tex2, g_cfg.scaling == SCALING_SHARP ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
         SDL_RenderCopy(ren2, tex2, &src, &dst);
+        memcpy(hd_pc, pc2, (size_t)npc2 * sizeof *pc2);
+        hd_draw(ren2, npc2, w, h, dst);
     }
     SDL_RenderPresent(ren2);
 }
@@ -1142,6 +1294,7 @@ void platform_frame(void) {
         static int v2_valid;
         static uint32_t v2_changes;
         int v2main = g_view2 == 2 && !p2view_swapped() && !p2view_scene();
+        hd_main_view2 = v2main;
         if (!v2main) v2_valid = 0;
         if (v2main) {
             /* online guest with two farmers: its window shows farmer 2's view (farmer 1's talk or

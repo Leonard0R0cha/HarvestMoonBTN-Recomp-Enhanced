@@ -14,7 +14,7 @@
     X(SDL_GetQueuedAudioSize) X(SDL_GetRendererInfo) X(SDL_GetRendererOutputSize) \
     X(SDL_GetScancodeFromName) X(SDL_Init) X(SDL_IsGameController) X(SDL_JoystickInstanceID) \
     X(SDL_NumJoysticks) X(SDL_OpenAudioDevice) X(SDL_PauseAudioDevice) X(SDL_PollEvent) \
-    X(SDL_QueueAudio) X(SDL_Quit) X(SDL_RenderClear) X(SDL_RenderCopy) X(SDL_RenderPresent) \
+    X(SDL_QueueAudio) X(SDL_Quit) X(SDL_RenderClear) X(SDL_RenderCopy) X(SDL_RenderCopyF) X(SDL_SetTextureBlendMode) X(SDL_RenderPresent) \
     X(SDL_SetHint) X(SDL_SetRenderDrawColor) X(SDL_SetWindowFullscreen) X(SDL_SetWindowTitle) \
     X(SDL_ShowSimpleMessageBox) X(SDL_UpdateTexture) X(SDL_memset) \
     X(SDL_CreateSemaphore) X(SDL_CreateThread) X(SDL_SemPost) X(SDL_SemTryWait) X(SDL_SemWait)
@@ -77,6 +77,8 @@ static const char *sdl_dyn_load(void) {
 #define SDL_Quit dyn_SDL_Quit
 #define SDL_RenderClear dyn_SDL_RenderClear
 #define SDL_RenderCopy dyn_SDL_RenderCopy
+#define SDL_RenderCopyF dyn_SDL_RenderCopyF
+#define SDL_SetTextureBlendMode dyn_SDL_SetTextureBlendMode
 #define SDL_RenderPresent dyn_SDL_RenderPresent
 #define SDL_SetHint dyn_SDL_SetHint
 #define SDL_SetRenderDrawColor dyn_SDL_SetRenderDrawColor

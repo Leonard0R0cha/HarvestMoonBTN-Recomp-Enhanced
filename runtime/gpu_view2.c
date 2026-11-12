@@ -47,6 +47,7 @@ static char guard_data_head[64] __attribute__((aligned(64), used)) = { 1 };
 #define gpu_set_line_parity view2_gpu_set_line_parity
 #define gpu_get_display view2_gpu_get_display
 #define gpu_render_display view2_gpu_render_display
+#define gpu_hd_pieces view2_gpu_hd_pieces
 #define gpu_vram view2_gpu_vram
 #define gpu_changes view2_gpu_changes
 #define gpu_init view2_gpu_init

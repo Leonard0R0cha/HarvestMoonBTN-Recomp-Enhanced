@@ -112,8 +112,21 @@ extern int g_hud_call;            /* the HUD icon routine is calling the sprite 
  * texpack_load reads every <key>.png in a folder (g_texpack:
  * any there); texpack_find is safe on any thread once loaded. With g_texdump (texpack_dump_to), the
  * GPU writes each texture it could replace to <folder>/<key>.png (texpack_dump). */
-typedef struct { uint64_t key; int w, h; uint16_t *px; } TexImage;   /* px: as texels, 0 = transparent */
+typedef struct { uint64_t key; int w, h; uint16_t *px; uint16_t *thin; } TexImage;   /* px: as texels, 0 = transparent */
 extern int g_texpack, g_texdump;
+/* HD images (g_hd_images): a replaced rectangle whose image has more pixels than the upscaled copy
+ * shows (the redrawn portraits below upscale 4) is drawn there with texpack_thin's image (its
+ * opaque part shrunk by rad pixels, so none of it shows around the HD copy), and the GPU keeps
+ * where it is (gpu_hd_pieces): the frontend shows it again over the picture at the window's own
+ * resolution, the parts of it nothing was drawn over since (the text box, a fade). */
+extern int g_hd_images;
+const uint16_t *texpack_thin(const TexImage *r, int rad);   /* safe on any thread; rad: the same each time */
+typedef struct {
+    const TexImage *img;
+    float x0, y0, x1, y1;   /* a piece of it, in the pixels of the picture gpu_render_display made */
+    float u0, v0, u1, v1;   /* the same piece in the image's pixels */
+} HdPiece;
+int      gpu_hd_pieces(HdPiece *out, int max);   /* for the picture shown now; returns how many */
 int      texpack_load(const char *dir);
 void     texpack_dump_to(const char *dir);
 uint64_t texpack_key(int w, int h, const uint16_t *px);
@@ -150,6 +163,7 @@ uint32_t view2_gpu_read_status(void);
 void     view2_gpu_vblank(void);
 void     view2_gpu_set_line_parity(int odd);
 void     view2_gpu_get_display(GpuDisplay *d);
+int      view2_gpu_hd_pieces(HdPiece *out, int max);
 void     view2_gpu_render_display(uint32_t *out, int *w, int *h);
 uint32_t view2_gpu_changes(void);
 int      view2_gpu_display_menu(void);
