@@ -10,11 +10,11 @@ import os, re, struct, subprocess, sys
 HERE = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__))  # also as Launcher.exe
 INI = os.path.join(HERE, 'hmbtn.ini')
 EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMoonBTN')
-# the launcher's release: .github/workflows/release.yml publishes it on GitHub as v<VERSION>, with Launcher.exe;
-# a Launcher.exe finds newer ones there, updates itself and rebuilds the game
+# the launcher's release: .github/workflows/release.yml publishes it on GitHub as v<VERSION>, with the Windows
+# and the Linux launcher; a launcher finds newer ones there, updates itself and rebuilds the game
 VERSION = '1.5.0'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
-LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe'
+LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe' if os.name == 'nt' else 'HarvestMoonBTN-Launcher-Linux'
 # the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
 # them into textures/portraits the first time the option is on, and again for a newer pack. Which pack is
 # portraits.json in the repository (version, url, sha256), so a new one needs no new launcher; this is
@@ -882,7 +882,7 @@ def latest_release():
 
 
 def self_update(url, sha):
-    """put the new Launcher.exe in place of this one (Windows lets a running exe be renamed, not overwritten)"""
+    """put the new launcher in place of this one (Windows lets a running exe be renamed, not overwritten)"""
     import hashlib, urllib.request
     me = sys.executable
     with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'HarvestMoonBTN-Launcher'}),
@@ -892,6 +892,7 @@ def self_update(url, sha):
         raise OSError('the download is damaged (checksum)')
     with open(me + '.new', 'wb') as f:
         f.write(data)
+    os.chmod(me + '.new', 0o755)                    # Linux: runnable
     if os.path.exists(me + '.old'):
         os.remove(me + '.old')
     os.replace(me, me + '.old')

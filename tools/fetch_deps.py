@@ -69,13 +69,16 @@ def safe_extract(archive, dest):
             z.extractall(dest)
     else:
         with tarfile.open(archive) as t:
+            members = []
             for m in t.getmembers():
-                if not os.path.realpath(os.path.join(dest, m.name)).startswith(base + os.sep) or m.issym() or m.islnk():
+                if not os.path.realpath(os.path.join(dest, m.name)).startswith(base + os.sep):
                     raise SystemExit('unsafe entry in archive: ' + m.name)
+                if not (m.issym() or m.islnk()):    # links are left out (SDL2's source has one, unused here)
+                    members.append(m)
             if hasattr(tarfile, 'data_filter'):
-                t.extractall(dest, filter='data')
+                t.extractall(dest, members, filter='data')
             else:
-                t.extractall(dest)
+                t.extractall(dest, members)
 
 
 def get_range(url, start, end):

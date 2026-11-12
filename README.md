@@ -138,7 +138,13 @@ python build.py
 
 ### Linux
 
-Requirements: Python 3.8+, a C compiler and the SDL2 development package.
+**With the launcher:** download `HarvestMoonBTN-Launcher-Linux` from
+[Releases](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest), put it in an empty folder,
+make it executable (`chmod +x HarvestMoonBTN-Launcher-Linux`) and open it; **Build from my disc**
+works as on Windows and it updates itself the same way. Its build uses your system's C compiler and
+SDL2 development package (below); on Bazzite and other immutable systems, run it in a toolbox.
+
+**From the source:** Python 3.8+, a C compiler and the SDL2 development package.
 
 ```sh
 sudo apt install build-essential python3 libsdl2-dev      # Debian / Ubuntu
