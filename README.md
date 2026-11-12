@@ -294,6 +294,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 | `[keyboard]` | `key_up` … `key_select` |  | comma-separated SDL key names, e.g. `key_cross = X,Space,K` |
 | `[controller]` | `pad_up` … `pad_select` |  | SDL controller button names: `a b x y back start guide leftshoulder rightshoulder leftstick rightstick dpup dpdown dpleft dpright lefttrigger righttrigger` |
 |  | `stick_as_dpad` | `1` | the left analog stick also works as the D-pad |
+|  | `rumble` | `1` | the controller vibrates where the game shakes a DualShock (the port answers as one, as the original did); `0` = never |
 | `[launcher]` | `language` |  | the launcher's language, `en`, `pt` or `es` (its flags set it); not set: the system's |
 
 Command line options: `--fullscreen`, `--scale N`, `--scaling MODE`, `--renderer cpu|vulkan`, `--upscale N`,
