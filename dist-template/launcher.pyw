@@ -69,7 +69,8 @@ if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py
 BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle',
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
-# text, choice:a|b|c, edit:a|b|c (a choice that can also be typed)
+# text, key (keyboard keys: typed, or caught with the Set/Add buttons), pad (controller buttons: typed or
+# picked from PAD_BUTTONS), choice:a|b|c, edit:a|b|c (a choice that can also be typed)
 OPTIONS = [
     ('video', 'video', 'renderer', 'choice:cpu|vulkan'),
     ('video', 'video', 'upscale', 'choice:1|2|3|4|5|6|8'),
@@ -110,8 +111,8 @@ OPTIONS = [
     ('mods', 'behaviour', 'biggreenhouse', 'bool'),
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
-] + [('keyboard', 'keyboard', 'key_' + b, 'text') for b in BUTTONS] \
-  + [('controller', 'controller', 'pad_' + b, 'text') for b in BUTTONS] \
+] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS] \
+  + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool'), ('controller', 'controller', 'rumble', 'bool:1')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
      ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
@@ -133,6 +134,54 @@ PRESET_ALL = {'pgxp': '1', 'perspective': '1', 'interp': '1'}
 # widescreen), e.g. "4x  ·  1280x960"; the ini keeps the number. Above 4 only with Vulkan.
 RES_KEYS = ('upscale', 'p2view_upscale')
 KIND = {key: kind for page, section, key, kind in OPTIONS}
+
+# the controller buttons the game knows (SDL_GameControllerGetButtonFromString, plus the two triggers)
+PAD_BUTTONS = ['a', 'b', 'x', 'y', 'back', 'start', 'guide', 'leftshoulder', 'rightshoulder', 'lefttrigger',
+               'righttrigger', 'dpup', 'dpdown', 'dpleft', 'dpright', 'leftstick', 'rightstick']
+# Tk key names -> SDL key names (SDL_GetScancodeFromName), for the keys whose names differ
+TK_TO_SDL = {
+    'space': 'Space', 'BackSpace': 'Backspace', 'Return': 'Return', 'Escape': 'Escape', 'Tab': 'Tab',
+    'minus': '-', 'equal': '=', 'bracketleft': '[', 'bracketright': ']', 'backslash': '\\',
+    'semicolon': ';', 'apostrophe': "'", 'quoteright': "'", 'grave': '`', 'quoteleft': '`',
+    'comma': ',', 'period': '.', 'slash': '/', 'Caps_Lock': 'CapsLock', 'Print': 'PrintScreen',
+    'Scroll_Lock': 'ScrollLock', 'Pause': 'Pause', 'Insert': 'Insert', 'Delete': 'Delete',
+    'Home': 'Home', 'End': 'End', 'Prior': 'PageUp', 'Next': 'PageDown',
+    'Up': 'Up', 'Down': 'Down', 'Left': 'Left', 'Right': 'Right', 'Num_Lock': 'Numlock',
+    'Shift_L': 'Left Shift', 'Shift_R': 'Right Shift', 'Control_L': 'Left Ctrl', 'Control_R': 'Right Ctrl',
+    'Alt_L': 'Left Alt', 'Alt_R': 'Right Alt', 'Meta_L': 'Left Alt', 'Meta_R': 'Right Alt',
+    'Win_L': 'Left GUI', 'Win_R': 'Right GUI', 'Super_L': 'Left GUI', 'Super_R': 'Right GUI',
+    'KP_Divide': 'Keypad /', 'KP_Multiply': 'Keypad *', 'KP_Subtract': 'Keypad -', 'KP_Add': 'Keypad +',
+    'KP_Enter': 'Keypad Enter', 'KP_Decimal': 'Keypad .', 'KP_Delete': 'Keypad .', 'KP_Separator': 'Keypad .',
+    'KP_Insert': 'Keypad 0', 'KP_End': 'Keypad 1', 'KP_Down': 'Keypad 2', 'KP_Next': 'Keypad 3',
+    'KP_Left': 'Keypad 4', 'KP_Begin': 'Keypad 5', 'KP_Right': 'Keypad 6', 'KP_Home': 'Keypad 7',
+    'KP_Up': 'Keypad 8', 'KP_Prior': 'Keypad 9',
+}
+# Windows virtual-key codes of the numeric keypad: Tk on Windows may name them like the main keys
+WIN_KEYPAD = dict([(0x60 + n, 'Keypad %d' % n) for n in range(10)] +
+                  [(0x6A, 'Keypad *'), (0x6B, 'Keypad +'), (0x6D, 'Keypad -'), (0x6E, 'Keypad .'), (0x6F, 'Keypad /')])
+
+
+def sdl_key_name(keysym, keycode=0):
+    """the name hmbtn.ini wants for a key pressed in Tk, or None for one the game cannot bind"""
+    if os.name == 'nt' and keycode in WIN_KEYPAD:
+        return WIN_KEYPAD[keycode]
+    if keysym in TK_TO_SDL:
+        return TK_TO_SDL[keysym]
+    if len(keysym) == 1 and keysym.isascii() and keysym.isalnum():
+        return keysym.upper()
+    if keysym.startswith('KP_') and keysym[3:].isdigit():
+        return 'Keypad ' + keysym[3:]
+    if re.fullmatch(r'F([1-9]|1[0-9]|2[0-4])', keysym):
+        return keysym
+    return None
+
+
+def add_key(value, name, replace):
+    """the bindings after Set (replace) or Add: comma-separated, each key once"""
+    keys = [] if replace else [k.strip() for k in value.split(',') if k.strip()]
+    if name.lower() not in (k.lower() for k in keys):
+        keys.append(name)
+    return ','.join(keys)
 
 
 def res_label(n, ws):
@@ -485,9 +534,12 @@ UI = {
         'game_sub': 'Game files, memory cards and shortcuts that save time.',
         'mods': 'Mods', 'mods_sub': 'Changes to how the original game plays. All off unless you switch them '
                                     "on; in online co-op the host's choice counts.",
-        'keyboard_sub': 'Key names, comma-separated (e.g. X,Space,K). Empty: the default.',
-        'controller_sub': 'Controller buttons: a b x y back start leftshoulder rightshoulder lefttrigger '
-        'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Empty: the default.',
+        'keyboard_sub': 'Set, then press the key; Add puts one more key on the same button. The names can '
+        'also be typed, comma-separated (e.g. X,Space,K). Empty: the default.',
+        'controller_sub': 'Pick a button from the list, or type several, comma-separated '
+        '(e.g. a,dpdown). Empty: the default.',
+        'key_set': 'Set', 'key_add': 'Add', 'key_wait': 'Press a key... (Esc: cancel)',
+        'key_bad': 'That key cannot be used',
         'need_up2': 'Needs resolution 2 or more', 'need_pgxp': 'Needs Precise 3D (PGXP)',
         'on': 'On', 'off': 'Off', 'browse': 'Browse...', 'default': 'default: %s',
         'close': 'Close', 'save': 'Save', 'play': 'Save and play',
@@ -576,9 +628,12 @@ UI = {
         'game_sub': 'Arquivos do jogo, memory cards e atalhos que poupam tempo.',
         'mods': 'Mods', 'mods_sub': 'Mudanças em como o jogo original funciona. Todas desligadas até você '
                                     'ligá-las; no coop online vale a escolha do anfitrião.',
-        'keyboard_sub': 'Nomes das teclas separados por vírgula (ex.: X,Space,K). Vazio: o padrão.',
-        'controller_sub': 'Botões do controle: a b x y back start leftshoulder rightshoulder lefttrigger '
-        'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Vazio: o padrão.',
+        'keyboard_sub': 'Clique em Definir e aperte a tecla; Adicionar põe mais uma tecla no mesmo botão. '
+        'Os nomes também podem ser digitados, separados por vírgula (ex.: X,Space,K). Vazio: o padrão.',
+        'controller_sub': 'Escolha um botão na lista, ou digite vários separados por vírgula '
+        '(ex.: a,dpdown). Vazio: o padrão.',
+        'key_set': 'Definir', 'key_add': 'Adicionar', 'key_wait': 'Aperte uma tecla... (Esc: cancela)',
+        'key_bad': 'Essa tecla não pode ser usada',
         'need_up2': 'Precisa de resolução 2 ou mais', 'need_pgxp': 'Precisa do 3D preciso (PGXP)',
         'on': 'Ligado', 'off': 'Desligado', 'browse': 'Procurar...', 'default': 'padrão: %s',
         'close': 'Fechar', 'save': 'Salvar', 'play': 'Salvar e jogar',
@@ -668,9 +723,12 @@ UI = {
         'game_sub': 'Archivos del juego, memory cards y atajos que ahorran tiempo.',
         'mods': 'Mods', 'mods_sub': 'Cambios en cómo se juega el juego original. Todos apagados hasta que '
                                     'los actives; en el coop en línea cuenta la elección del anfitrión.',
-        'keyboard_sub': 'Nombres de teclas separados por comas (p. ej. X,Space,K). Vacío: el predeterminado.',
-        'controller_sub': 'Botones del mando: a b x y back start leftshoulder rightshoulder lefttrigger '
-        'righttrigger dpup dpdown dpleft dpright leftstick rightstick. Vacío: el predeterminado.',
+        'keyboard_sub': 'Haz clic en Asignar y pulsa la tecla; Añadir pone una tecla más en el mismo botón. '
+        'Los nombres también se pueden escribir, separados por comas (p. ej. X,Space,K). Vacío: el predeterminado.',
+        'controller_sub': 'Elige un botón de la lista, o escribe varios separados por comas '
+        '(p. ej. a,dpdown). Vacío: el predeterminado.',
+        'key_set': 'Asignar', 'key_add': 'Añadir', 'key_wait': 'Pulsa una tecla... (Esc: cancelar)',
+        'key_bad': 'Esa tecla no se puede usar',
         'need_up2': 'Necesita resolución 2 o más', 'need_pgxp': 'Necesita el 3D preciso (PGXP)',
         'on': 'Activado', 'off': 'Desactivado', 'browse': 'Buscar...', 'default': 'predeterminado: %s',
         'close': 'Cerrar', 'save': 'Guardar', 'play': 'Guardar y jugar',
@@ -788,6 +846,10 @@ def selftest():
     assert cpu_cores()[0] >= 1 and language() in UI and preset_for(2) == 0 and preset_for(8) == 2
     assert all(set(TEXT[l]) == set(TEXT['en']) and set(UI[l]) == set(UI['en']) for l in UI)
     assert mix('#000000', '#ffffff', 0.5) == '#808080'
+    assert sdl_key_name('a') == 'A' and sdl_key_name('KP_8') == 'Keypad 8' and sdl_key_name('KP_Up') == 'Keypad 8'
+    assert sdl_key_name('Shift_R') == 'Right Shift' and sdl_key_name('F12') == 'F12' and sdl_key_name('exclam') is None
+    assert add_key('X, Space', 'K', False) == 'X,Space,K' and add_key('X,Space', 'x', False) == 'X,Space'
+    assert add_key('X,Space', 'Up', True) == 'Up'
     assert vtuple('v1.10.0') > vtuple('1.9.3') > vtuple('1.9') and vtuple('v2') == (2,)
     import tempfile
     cur = os.path.join(tempfile.gettempdir(), 'hmbtn_selftest.cur')
@@ -1374,6 +1436,34 @@ def main():
         tk.Label(parent, text=sub, font=F['n'], bg=BG, fg=BLUE, justify='center',
                  wraplength=px(640)).pack(fill='x', padx=24, pady=(10, 14))
 
+    catching = {}                               # the note of the row a Set/Add button is waiting for
+
+    def catch_key(var, note, replace):
+        """the next key pressed goes into var (Set: instead of what is there; Add: after it)"""
+        stop_catch()
+        note.configure(text=T('key_wait'))
+        root.focus_set()                         # not typed into a box as well
+
+        def got(e):
+            stop_catch()
+            if e.keysym == 'Escape':
+                return 'break'
+            name = sdl_key_name(e.keysym, e.keycode)
+            if name:
+                var.set(add_key(var.get(), name, replace))
+            else:
+                note.configure(text=T('key_bad'))
+            return 'break'
+        root.bind_all('<KeyPress>', got)
+        catching['note'] = note
+
+    def stop_catch():
+        if catching:
+            root.unbind_all('<KeyPress>')
+            if catching['note'].winfo_exists():
+                catching['note'].configure(text='')
+            catching.clear()
+
     def option_row(parent, key, kind, title, desc, first):
         if not first:
             tk.Frame(parent, bg=LINE_C, height=1).pack(fill='x', pady=8)
@@ -1398,8 +1488,16 @@ def main():
         if kind.startswith('bool'):
             w, enable = toggle(ctl, var)
             w.pack()
-        elif kind.startswith(('choice:', 'edit:')):
-            w = ttk.Combobox(ctl, values=kind.split(':', 1)[1].split('|'), width=16, font=F['n'],
+        elif kind == 'key':
+            w = ttk.Entry(ctl, textvariable=var, width=18, font=F['n'])
+            w.pack(side='left')
+            for label, replace in ((T('key_set'), True), (T('key_add'), False)):
+                button(ctl, label, lambda var=var, note=note, replace=replace: catch_key(var, note, replace),
+                       small=True).pack(side='left', padx=(6, 0))
+            enable = lambda ok, w=w: w.configure(state='normal' if ok else 'disabled')
+        elif kind.startswith(('choice:', 'edit:')) or kind == 'pad':
+            w = ttk.Combobox(ctl, values=PAD_BUTTONS if kind == 'pad' else kind.split(':', 1)[1].split('|'),
+                             width=16, font=F['n'],
                              textvariable=var, state='readonly' if kind.startswith('choice:') else 'normal')
             w.pack()
             if key in RES_KEYS:
@@ -1955,6 +2053,7 @@ def main():
         refresh()
 
     def show(name):
+        stop_catch()                               # a Set/Add left waiting does not take keys on another page
         if name == 'start' and 'pages' in state:   # the presets show what is in use now
             old = state['pages'].pop('start')
             outer, inner = scroll_page(old.master)
