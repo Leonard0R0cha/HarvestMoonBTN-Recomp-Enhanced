@@ -487,6 +487,10 @@ ENTRY_HOOKS[0x8002194C] = 'if (g_view2_run) return;'
 # farmer's menu sounds are not heard here (runtime/p2.c, spu.c)
 ENTRY_HOOKS[0x8001FABC] = 'g_sfx_quiet = p2_sfx_quiet();'
 SITE_HOOKS[0x8001FAD8] = 'g_sfx_quiet = 0;'
+# the 2D drawing's small rooms, just set up by 8001231C / 80012598: 24000 bytes instead of 12000
+# (runtime/fixes.c)
+SITE_HOOKS[0x8001254C] = 'small_draw_room();'
+SITE_HOOKS[0x800127C8] = 'small_draw_room();'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
