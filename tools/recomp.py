@@ -512,6 +512,10 @@ MODULE_SITE_HOOKS = {
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
                 0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18], R[16]);',
                 0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
+                # a Harvest Sprite at work heads straight for its bed: the walk of the characters
+                # (800D12B8) has just picked a way (800D196C, back at 800D1744: v0 the way, s2 the
+                # walker, s3 the ways free, s5 the speed; runtime/sprites.c)
+                0x800D1744: 'R[2] = sprite_walk_way(c, R[2]);',
                 # the Harvest Sprites' spots at home (80110E34 copies one to the sprite in a0): the
                 # spot's z, loaded at 80110E78, for the yellow one moves it off the chair (runtime/fixes.c)
                 0x80110E78: 'R[6] = sprite_spot_z(R[6], R[4]);',
@@ -624,6 +628,10 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010E6E8] = 'sprite_menu(c);'
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CB6C] = 'sprite_night(c);'   # each sprite's night
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CD80] = 'sprite_update(c);'  # each sprite's frame
+MODULE_ENTRY_HOOKS['GF_FARM'][0x801105C8] = 'sprite_pick_from(c);'  # a sprite picks its next bed ...
+MODULE_ENTRY_HOOKS['GF_FARM'][0x80110658] = 'if (sprite_pick_bed(c)) return;'  # ... the nearest
+MODULE_ENTRY_HOOKS['GF_FARM'][0x801103E8] = 'sprite_face_bed(c);'  # a sprite waters the bed ahead ...
+MODULE_ENTRY_HOOKS['GF_FARM'][0x8011031C] = 'sprite_face_bed(c);'  # ... or harvests it: facing it
 SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded();'
 ENTRY_HOOKS[0x80022B98] = 'sprite_text_tick(c);'
 SITE_HOOKS[0x80022CDC] = 'sprite_menu_answered(c, R[4]); build_menu_answered(R[4]);'   # a menu's answer, just stored at gp+836
