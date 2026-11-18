@@ -70,8 +70,6 @@ BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
 # the languages of the game's text (build.py --lang); each built one is kept in languages/
 GAME_LANGS = ['en', 'pt', 'id']
-# a translation that comes as a whole disc the player puts into the game folder (build.py TRANSLATIONS)
-LANG_DISC = {'id': 'HM_BTN_IDN_v0.1.1-patch1.zip'}
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
 # text, key (keyboard keys: typed, or caught with the Set/Add buttons), pad (controller buttons: typed or
 # picked from PAD_BUTTONS), choice:a|b|c, edit:a|b|c (a choice that can also be typed)
@@ -590,10 +588,9 @@ UI = {
         'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Fan translation by GabriPires. The first time it is downloaded '
         'and applied to a copy of your disc (disc-pt folder).',
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Fan translation (Indonesian edition of the Kucing NPC mod). '
-        'Not downloaded: put %s, as it comes, into the game folder; only its text is taken onto a copy of '
-        'your disc (disc-id folder).',
+        'The first time its text is downloaded and put onto a copy of your disc (disc-id folder).',
         'gl_ready': 'Built: switches at once.', 'gl_first': 'The first time, Play builds the game in it '
-        '(about a minute).', 'gl_need': 'Missing: %s is not in the game folder.',
+        '(about a minute).',
         'gl_now': 'In use now.', 'gl_coop': 'Online co-op: both players need the same language. The texts '
         'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian.',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
@@ -697,11 +694,10 @@ UI = {
         'gl_en': 'English', 'gl_en_d': 'O texto original do disco americano.',
         'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Tradução de fã do GabriPires. Na primeira vez é baixada e '
         'aplicada numa cópia do seu disco (pasta disc-pt).',
-        'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Tradução de fã (edição indonésia do mod do Kucing NPC). Não '
-        'é baixada: coloque o %s, do jeito que vem, na pasta do jogo; só o texto dele vai para uma cópia do '
-        'seu disco (pasta disc-id).',
+        'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Tradução de fã (edição indonésia do mod do Kucing NPC). Na '
+        'primeira vez o texto dela é baixado e posto numa cópia do seu disco (pasta disc-id).',
         'gl_ready': 'Montado: troca na hora.', 'gl_first': 'Na primeira vez, o Jogar monta o jogo nela '
-        '(cerca de um minuto).', 'gl_need': 'Falta: o %s não está na pasta do jogo.',
+        '(cerca de um minuto).',
         'gl_now': 'Em uso agora.', 'gl_coop': 'Coop online: os dois precisam da mesma língua. Os textos dos '
         'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio.',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
@@ -808,10 +804,9 @@ UI = {
         'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Traducción de fans de GabriPires. La primera vez se descarga '
         'y se aplica a una copia de tu disco (carpeta disc-pt).',
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Traducción de fans (edición indonesia del mod de Kucing NPC). '
-        'No se descarga: pon %s, tal como viene, en la carpeta del juego; solo su texto pasa a una copia de '
-        'tu disco (carpeta disc-id).',
+        'La primera vez su texto se descarga y se pone en una copia de tu disco (carpeta disc-id).',
         'gl_ready': 'Construido: cambia al instante.', 'gl_first': 'La primera vez, Jugar construye el juego '
-        'en él (cerca de un minuto).', 'gl_need': 'Falta: %s no está en la carpeta del juego.',
+        'en él (cerca de un minuto).',
         'gl_now': 'En uso ahora.', 'gl_coop': 'Coop online: los dos necesitan el mismo idioma. Los textos de '
         'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio.',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
@@ -1718,20 +1713,6 @@ def main():
         v = val('game_lang')
         return v if v in GAME_LANGS else 'en'
 
-    def lang_disc_present(lang):
-        """the translated disc a language needs (LANG_DISC) is somewhere in the game folder; the build
-        checks it is the right one"""
-        want = LANG_DISC[lang].lower().replace(' ', '_')
-        for d, dirs, names in os.walk(HERE):
-            if os.path.relpath(d, HERE).count(os.sep) >= 3:
-                dirs[:] = []
-            dirs[:] = [n for n in dirs if n not in ('saves', 'languages', 'textures') and not n.startswith('disc')]
-            for n in names:
-                low = n.lower().replace(' ', '_')
-                if low == want or (low.endswith(('.zip', '.iso', '.bin')) and want.split('_v')[0] in low):
-                    return True
-        return False
-
     def lang_built(lang):
         built = game_lang() or 'en'
         return lang == built or (os.path.isfile(lang_exe(lang)) and
@@ -1748,8 +1729,6 @@ def main():
                 text, col = T('gl_now'), OK
             elif lang_built(lang):
                 text, col = T('gl_ready'), OK
-            elif lang in LANG_DISC and not lang_disc_present(lang):
-                text, col = T('gl_need') % LANG_DISC[lang], WARN
             else:
                 text, col = T('gl_first'), MUTED
             lab.configure(text=text, fg=col)
@@ -1766,7 +1745,7 @@ def main():
                                anchor='w', cursor=cursor, highlightthickness=0, bd=0)
             r.pack(fill='x')
             desc = T('gl_%s_d' % lang)
-            tk.Label(c, text=desc % LANG_DISC[lang] if lang in LANG_DISC else desc, font=F['s'], bg=CARD,
+            tk.Label(c, text=desc, font=F['s'], bg=CARD,
                      fg=MUTED, anchor='w', justify='left', wraplength=px(600)).pack(fill='x', padx=(px(24), 0))
             lab = tk.Label(c, text='', font=F['s'], bg=CARD, anchor='w')
             lab.pack(fill='x', padx=(px(24), 0))
@@ -1991,11 +1970,6 @@ def main():
     def play(args=()):
         save()
         if not os.path.exists(EXE) or not switch_lang():
-            want = want_lang()
-            if want in LANG_DISC and not lang_disc_present(want):
-                messagebox.showwarning('Harvest Moon', T('gl_need') % LANG_DISC[want])
-                show('gamelang')
-                return
             if SRC:
                 state['play_after_build'] = list(args)
                 show('build')
