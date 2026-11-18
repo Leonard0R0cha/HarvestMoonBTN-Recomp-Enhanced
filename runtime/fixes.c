@@ -567,3 +567,24 @@ uint32_t bulk_feed_most(CPU *c, uint32_t most) {
     int room = 999 - (int)MEM_R16(kept);
     return (uint32_t)(room > 1 ? room : 1);
 }
+
+/* The 2D drawing room: each of the two frame sets (8005E5E8 and 8005E71C, 308 bytes) has a big
+ * room (+304, the 3D) and a small one (+300 its start, +296 12000 bytes: people, animals, shadows,
+ * menus, the text), set up by 8001231C / 80012598: set A's small room at 801F1240, set B's after it
+ * up to 801F7000. The small room fills up on a busy farm in widescreen (more people drawn at the
+ * sides, the seven sprites at work): 92% full, and the bag's menu (Triangle) over it ran past the
+ * end, where 80011FD8 waits for ever (break 0x400 at 800129E8). A list is drawn here as soon as the
+ * game sends it (dma.c), before the other set is built, so the two sets can share both old rooms:
+ * 24000 bytes each. (The end of the big rooms is no place for it: the loading screens keep files
+ * there.) */
+#define FRAME_SET_A 0x8005E5E8u
+#define FRAME_SET_B 0x8005E71Cu
+#define SMALL_START 0x801F1240u
+#define SMALL_ROOM 24000u
+
+void small_draw_room(void) {
+    MEM_W32(FRAME_SET_A + 300, SMALL_START);
+    MEM_W32(FRAME_SET_A + 296, SMALL_ROOM);
+    MEM_W32(FRAME_SET_B + 300, SMALL_START);
+    MEM_W32(FRAME_SET_B + 296, SMALL_ROOM);
+}
