@@ -1,5 +1,7 @@
 # HMBTN ReFarmed — Harvest Moon: Back to Nature, native PC port
 
+[![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/DANpsThsZn)
+
 An unofficial, native **Windows and Linux** version of *Harvest Moon: Back to Nature*
 (PlayStation, USA, SLUS-01115), made by **static recompilation**: the game's original
 PlayStation program is translated ahead of time into C and compiled into a normal x86-64
