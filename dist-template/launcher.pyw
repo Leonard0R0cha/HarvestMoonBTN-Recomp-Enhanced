@@ -68,6 +68,10 @@ if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py
 
 BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle',
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
+# the languages of the game's text (build.py --lang); each built one is kept in languages/
+GAME_LANGS = ['en', 'pt', 'id']
+# a translation that comes as a whole disc the player puts into the game folder (build.py TRANSLATIONS)
+LANG_DISC = {'id': 'HM_BTN_IDN_v0.1.1-patch1.zip'}
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
 # text, choice:a|b|c, edit:a|b|c (a choice that can also be typed)
 OPTIONS = [
@@ -86,7 +90,8 @@ OPTIONS = [
     ('video', 'video', 'fullscreen', 'bool'),
     ('video', 'video', 'scaling', 'choice:sharp-bilinear|sharp|smooth'),
     ('video', 'video', 'aspect43', 'bool'),
-    ('game', 'launcher', 'game_pt', 'bool'),        # the game's language: the launcher switches the exe (see play)
+    # the game's language, on its own page: the launcher switches the exe (see play)
+    ('gamelang', 'launcher', 'game_lang', 'choice:' + '|'.join(GAME_LANGS)),
     ('game', 'general', 'disc', 'file'),
     ('game', 'general', 'savedir', 'dir'),
     ('game', 'behaviour', 'autoslot', 'bool'),
@@ -198,7 +203,6 @@ TEXT = {
         'vsync': ('Vsync', "Waits for the screen's refresh: no tearing. On a 60 or 120 Hz screen the game keeps "
                   'time with it, so the camera moves evenly (about 1% faster than the console). At 144 Hz and '
                   'other rates, G-Sync or FreeSync makes it even.'),
-        'game_pt': ('Game text in Portuguese', 'The Brazilian Portuguese fan translation by GabriPires. A language built before is switched at once; the first time, Play builds the game in it from your disc (about a minute: it downloads the translation and applies it to a copy of your disc image, in disc-pt). For online co-op both need the same language.'),
         'disc': ('Game disc', 'Your copy of the game: a .cue/.bin image or a .pak data pack. Empty: the disc '
                  'folder or HarvestMoonBTN.pak next to the game.'),
         'savedir': ('Memory card folder', 'Where the memory cards (card1.mcd ... card1_4.mcd) are kept. Empty: '
@@ -289,7 +293,6 @@ TEXT = {
         'vsync': ('Vsync', 'Espera a atualização da tela: sem cortes na imagem. Numa tela de 60 ou 120 Hz o jogo '
                   'acompanha o ritmo dela, e a câmera se move por igual (cerca de 1% mais rápido que o console). '
                   'Em 144 Hz e outras taxas, o G-Sync ou FreeSync deixa por igual.'),
-        'game_pt': ('Texto do jogo em português', 'A tradução de fã para português do Brasil, feita por GabriPires. Uma língua já montada troca na hora; na primeira vez, o Jogar monta o jogo nela a partir do seu disco (cerca de um minuto: baixa a tradução e aplica numa cópia da sua imagem do disco, na pasta disc-pt). No coop online os dois precisam da mesma língua.'),
         'disc': ('Disco do jogo', 'Sua cópia do jogo: imagem .cue/.bin ou pacote .pak. Vazio: a pasta disc ou '
                  'o HarvestMoonBTN.pak ao lado do jogo.'),
         'savedir': ('Pasta dos memory cards', 'Onde ficam os memory cards (card1.mcd ... card1_4.mcd). Vazio: a '
@@ -380,7 +383,6 @@ TEXT = {
         'vsync': ('Vsync', 'Espera el refresco de la pantalla: sin cortes en la imagen. En una pantalla de 60 o '
                   '120 Hz el juego sigue su ritmo, y la cámara se mueve de forma pareja (cerca de 1% más rápido '
                   'que la consola). A 144 Hz y otras tasas, G-Sync o FreeSync la hace pareja.'),
-        'game_pt': ('Texto del juego en portugués', 'La traducción de fans al portugués de Brasil, de GabriPires. Un idioma ya construido cambia al instante; la primera vez, Jugar construye el juego en él desde tu disco (cerca de un minuto: descarga la traducción y la aplica a una copia de tu imagen del disco, en disc-pt). En el coop online los dos necesitan el mismo idioma.'),
         'disc': ('Disco del juego', 'Tu copia del juego: imagen .cue/.bin o paquete .pak. Vacío: la carpeta disc '
                  'o el HarvestMoonBTN.pak junto al juego.'),
         'savedir': ('Carpeta de memory cards', 'Donde se guardan las memory cards (card1.mcd ... card1_4.mcd). '
@@ -529,6 +531,19 @@ UI = {
         'built': 'Done: the game is ready.', 'build_failed': 'The build stopped: the last lines above say why.',
         'need_cue': 'Choose your disc image (.cue or .bin) first.',
         'built_lang': 'The game built here is in %s.', 'lang_en': 'English', 'lang_pt': 'Portuguese',
+        'lang_id': 'Indonesian',
+        'gamelang': 'Game language', 'gamelang_sub': 'The language of the game\'s own text: dialogue, menus and '
+        'items. This launcher\'s language is the flags at the top.',
+        'gl_en': 'English', 'gl_en_d': 'The original text of the USA disc.',
+        'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Fan translation by GabriPires. The first time it is downloaded '
+        'and applied to a copy of your disc (disc-pt folder).',
+        'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Fan translation (Indonesian edition of the Kucing NPC mod). '
+        'Not downloaded: put %s, as it comes, into the game folder; only its text is taken onto a copy of '
+        'your disc (disc-id folder).',
+        'gl_ready': 'Built: switches at once.', 'gl_first': 'The first time, Play builds the game in it '
+        '(about a minute).', 'gl_need': 'Missing: %s is not in the game folder.',
+        'gl_now': 'In use now.', 'gl_coop': 'Online co-op: both players need the same language. The texts '
+        'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian.',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
         'updating': 'Downloading the new launcher...', 'update_failed': 'The update failed: %s',
         'portraits_get': 'Downloading the redrawn portraits... %d%%',
@@ -621,6 +636,19 @@ UI = {
         'built': 'Pronto: o jogo está montado.', 'build_failed': 'A montagem parou: as últimas linhas acima dizem por quê.',
         'need_cue': 'Escolha primeiro a imagem do disco (.cue ou .bin).',
         'built_lang': 'O jogo montado aqui está em %s.', 'lang_en': 'inglês', 'lang_pt': 'português',
+        'lang_id': 'indonésio',
+        'gamelang': 'Idioma do jogo', 'gamelang_sub': 'A língua do texto do próprio jogo: falas, menus e itens. '
+        'A língua deste launcher são as bandeiras lá em cima.',
+        'gl_en': 'English', 'gl_en_d': 'O texto original do disco americano.',
+        'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Tradução de fã do GabriPires. Na primeira vez é baixada e '
+        'aplicada numa cópia do seu disco (pasta disc-pt).',
+        'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Tradução de fã (edição indonésia do mod do Kucing NPC). Não '
+        'é baixada: coloque o %s, do jeito que vem, na pasta do jogo; só o texto dele vai para uma cópia do '
+        'seu disco (pasta disc-id).',
+        'gl_ready': 'Montado: troca na hora.', 'gl_first': 'Na primeira vez, o Jogar monta o jogo nela '
+        '(cerca de um minuto).', 'gl_need': 'Falta: o %s não está na pasta do jogo.',
+        'gl_now': 'Em uso agora.', 'gl_coop': 'Coop online: os dois precisam da mesma língua. Os textos dos '
+        'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio.',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
         'updating': 'Baixando o novo launcher...', 'update_failed': 'A atualização falhou: %s',
         'portraits_get': 'Baixando os retratos redesenhados... %d%%',
@@ -715,6 +743,19 @@ UI = {
         'arriba dicen por qué.',
         'need_cue': 'Elige primero la imagen del disco (.cue o .bin).',
         'built_lang': 'El juego construido aquí está en %s.', 'lang_en': 'inglés', 'lang_pt': 'portugués',
+        'lang_id': 'indonesio',
+        'gamelang': 'Idioma del juego', 'gamelang_sub': 'El idioma del texto del propio juego: diálogos, menús '
+        'y objetos. El idioma de este launcher son las banderas de arriba.',
+        'gl_en': 'English', 'gl_en_d': 'El texto original del disco de EE. UU.',
+        'gl_pt': 'Português (Brasil)', 'gl_pt_d': 'Traducción de fans de GabriPires. La primera vez se descarga '
+        'y se aplica a una copia de tu disco (carpeta disc-pt).',
+        'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Traducción de fans (edición indonesia del mod de Kucing NPC). '
+        'No se descarga: pon %s, tal como viene, en la carpeta del juego; solo su texto pasa a una copia de '
+        'tu disco (carpeta disc-id).',
+        'gl_ready': 'Construido: cambia al instante.', 'gl_first': 'La primera vez, Jugar construye el juego '
+        'en él (cerca de un minuto).', 'gl_need': 'Falta: %s no está en la carpeta del juego.',
+        'gl_now': 'En uso ahora.', 'gl_coop': 'Coop online: los dos necesitan el mismo idioma. Los textos de '
+        'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio.',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
         'updating': 'Descargando el nuevo launcher...', 'update_failed': 'La actualización falló: %s',
         'portraits_get': 'Descargando los retratos redibujados... %d%%',
@@ -1144,6 +1185,8 @@ def main():
         vars_[key] = tk.StringVar(value=start)
     for key in RES_KEYS:
         vars_[key].set(res_label(vars_[key].get().strip(), vars_['widescreen'].get().strip()))
+    if 'game_lang' not in loaded and loaded.get('game_pt') == '1':
+        vars_['game_lang'].set('pt')            # the switch older launchers had for Portuguese
 
     def val(k):
         v = vars_[k].get().strip()
@@ -1573,6 +1616,67 @@ def main():
 
     job = {'proc': None, 'log': [], 'ok': None, 'view': None}    # the build, kept across rebuilt pages
 
+    def want_lang():
+        v = val('game_lang')
+        return v if v in GAME_LANGS else 'en'
+
+    def lang_disc_present(lang):
+        """the translated disc a language needs (LANG_DISC) is somewhere in the game folder; the build
+        checks it is the right one"""
+        want = LANG_DISC[lang].lower().replace(' ', '_')
+        for d, dirs, names in os.walk(HERE):
+            if os.path.relpath(d, HERE).count(os.sep) >= 3:
+                dirs[:] = []
+            dirs[:] = [n for n in dirs if n not in ('saves', 'languages', 'textures') and not n.startswith('disc')]
+            for n in names:
+                low = n.lower().replace(' ', '_')
+                if low == want or (low.endswith(('.zip', '.iso', '.bin')) and want.split('_v')[0] in low):
+                    return True
+        return False
+
+    def lang_built(lang):
+        built = game_lang() or 'en'
+        return lang == built or (os.path.isfile(lang_exe(lang)) and
+                                 (lang == 'en' or os.path.isdir(os.path.join(HERE, 'disc-' + lang))))
+
+    lang_rows = {}
+
+    def lang_marks():
+        """the status line under each language"""
+        for lang, lab in lang_rows.items():
+            if not lab.winfo_exists():
+                continue
+            if lang == (game_lang() or 'en'):
+                text, col = T('gl_now'), OK
+            elif lang_built(lang):
+                text, col = T('gl_ready'), OK
+            elif lang in LANG_DISC and not lang_disc_present(lang):
+                text, col = T('gl_need') % LANG_DISC[lang], WARN
+            else:
+                text, col = T('gl_first'), MUTED
+            lab.configure(text=text, fg=col)
+
+    def gamelang_page(parent):
+        page_head(parent, T('gamelang'), T('gamelang_sub'))
+        c = card(parent)
+        lang_rows.clear()
+        for i, lang in enumerate(GAME_LANGS):
+            if i:
+                tk.Frame(c, bg=LINE_C, height=1).pack(fill='x', pady=8)
+            r = tk.Radiobutton(c, text=T('gl_' + lang), value=lang, variable=vars_['game_lang'], font=F['b'],
+                               bg=CARD, fg=BLUE, activebackground=CARD, activeforeground=RED, selectcolor=CARD,
+                               anchor='w', cursor=cursor, highlightthickness=0, bd=0)
+            r.pack(fill='x')
+            desc = T('gl_%s_d' % lang)
+            tk.Label(c, text=desc % LANG_DISC[lang] if lang in LANG_DISC else desc, font=F['s'], bg=CARD,
+                     fg=MUTED, anchor='w', justify='left', wraplength=px(600)).pack(fill='x', padx=(px(24), 0))
+            lab = tk.Label(c, text='', font=F['s'], bg=CARD, anchor='w')
+            lab.pack(fill='x', padx=(px(24), 0))
+            lang_rows[lang] = lab
+        tk.Label(parent, text=T('gl_coop'), font=F['s'], bg=BG, fg=MUTED, anchor='w', justify='left',
+                 wraplength=px(640)).pack(fill='x', padx=24)
+        lang_marks()
+
     def build_page(parent):
         page_head(parent, T('build'), T('build_sub'))
         c = card(parent)
@@ -1631,7 +1735,7 @@ def main():
         cmds = [] if own_cc else [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']]
         cmds.append([sys.executable, os.path.join(WORK, 'build.py'), '--into', HERE] +
                     (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []) +
-                    (['--lang', 'pt'] if val('game_pt') == '1' else []))
+                    (['--lang', want_lang()] if want_lang() != 'en' else []))
         env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1', PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
         lines = queue.Queue()
         job.update(log=[], ok=None, proc=True)
@@ -1745,7 +1849,7 @@ def main():
         poll()
 
     # another language: the copy built before comes at once (the Build page shows which one is there)
-    vars_['game_pt'].trace_add('write', lambda *_: switch_lang())
+    vars_['game_lang'].trace_add('write', lambda *_: (switch_lang(), lang_marks()))
     # switched on: the portraits come at once (and before the game starts, if that comes first)
     vars_['portraits'].trace_add('write', lambda *_: val('portraits') == '1' and fetch_portraits())
 
@@ -1773,7 +1877,7 @@ def main():
 
     def switch_lang():
         """the game in the language picked, from the copy built before; False when it must be built"""
-        want = 'pt' if val('game_pt') == '1' else 'en'
+        want = want_lang()
         if (game_lang() or 'en') == want:
             return True
         copy = lang_exe(want)
@@ -1789,6 +1893,11 @@ def main():
     def play(args=()):
         save()
         if not os.path.exists(EXE) or not switch_lang():
+            want = want_lang()
+            if want in LANG_DISC and not lang_disc_present(want):
+                messagebox.showwarning('Harvest Moon', T('gl_need') % LANG_DISC[want])
+                show('gamelang')
+                return
             if SRC:
                 state['play_after_build'] = list(args)
                 show('build')
@@ -1919,7 +2028,7 @@ def main():
         holder.place(x=2 * m + sw, y=m + px(8), relwidth=1, width=-(3 * m + sw), relheight=1,
                      height=-(2 * m + px(8)))
         pages, navs = {}, {}
-        names = ('start', 'video', 'game', 'mods', 'keyboard', 'controller', 'p2', 'coop', 'cheats')
+        names = ('start', 'video', 'game', 'gamelang', 'mods', 'keyboard', 'controller', 'p2', 'coop', 'cheats')
         for name in names + (('build',) if SRC else ()):
             # a nav-link; the mouse pointer is already the game's glove
             n = tk.Label(side, text=T(name), font=F['nav'], bg=WOOD, fg=NAV_C, anchor='w', padx=px(10),
@@ -1937,6 +2046,8 @@ def main():
                 p2_page(inner)
             elif name == 'build':
                 build_page(inner)
+            elif name == 'gamelang':
+                gamelang_page(inner)
             else:
                 page_head(inner, T(name), T(name + '_sub'))
                 options_page(inner, name)

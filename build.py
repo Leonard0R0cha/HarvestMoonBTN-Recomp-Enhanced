@@ -6,11 +6,13 @@
   3. compiles the runtime + the generated code into a native program      -> build/
   4. puts a ready-to-play folder together                                  -> dist/
 
-usage: python build.py [--disc PATH] [--lang pt] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
+usage: python build.py [--disc PATH] [--lang pt|id] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
 
   --disc PATH  your disc image (.cue or .bin); default: the first .cue (or .bin) in disc/
   --lang pt    the game's text in Brazilian Portuguese: downloads a fan translation's patch, applies it to
                your disc image (the result goes into disc-pt/ beside the game) and builds from that
+  --lang id    in Indonesian: takes the text of a translated disc you put into the game folder (not
+               downloaded; see TRANSLATIONS) onto a copy of your disc image, in disc-id/
   --pak        also turn your disc image into the compact data pack HarvestMoonBTN.pak and put it
                in the dist folder, so the game runs without the disc image
   --zip        also create a .zip of the dist folder
@@ -57,6 +59,24 @@ TRANSLATIONS = {
             'SLUS_011.15': 'b75abdb32cb5699d8c4cae100a3078d11b6e9b15219a82f8606b12f9e86b8a24',
             'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
             'A_FILE.BIN': '968ba9d3849529c035563c654ffa613a7f6febeb8948fbbcbf7553cee06e00d1',
+        },
+    },
+    # a translation that comes as a whole disc image (made for a mod with its own code): the build takes
+    # only its text onto a copy of your USA disc (tools/transplant.py). That disc is not downloaded: put
+    # it (the .zip as it comes, or the image in it) anywhere in the game folder or in build/translations/
+    'id': {
+        'name': 'Indonesian, fan translation (the Indonesian edition of the Kucing NPC Back to Nature mod, '
+                'v0.1.1-patch1, kucingnpc.xyz)',
+        'source': 'HM_BTN_IDN_v0.1.1-patch1.zip',
+        'source_files': {
+            'SLUS_011.15': 'fc2457df9fb2c33fc4b10f58aa11e954fb10b220029cebae5028d4bb965b7aea',
+            'A_FILE.BIN': '783510b274be1e04fdfa98eaaea599cc18690ed22d7498c89698351cbaa82f14',
+        },
+        'image': 'HarvestMoon-BTN-ID',
+        'files': {
+            'SLUS_011.15': '510236bf538c36315e3ff90bf3d94a8243b4bbb74607c0763d01e45a7980a592',
+            'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
+            'A_FILE.BIN': '6c065d52ca0d5775c2bfee3399aca412a0aa1238ee8a2a0cfcf89288e21582ad',
         },
     },
 }
@@ -121,13 +141,63 @@ def translated_image(lang, out):
     """the translated disc image in out/disc-<lang>/ (.bin), or None when it is not there yet"""
     t = TRANSLATIONS[lang]
     img = os.path.join(out, 'disc-' + lang, t['image'] + '.bin')
-    return img if os.path.isfile(img) and sha256_file(img) == t['image_sha256'] else None
+    if not os.path.isfile(img):
+        return None
+    if 'image_sha256' in t:
+        return img if sha256_file(img) == t['image_sha256'] else None
+    disc = Disc(img)                    # made from your own dump: its game files are what is known
+    for name, want in t['files'].items():
+        e = find_file(disc, name)
+        if not e or hashlib.sha256(disc.read_extent(e['lba'], e['size'])).hexdigest() != want:
+            return None
+    return img
+
+
+def find_translation_disc(lang, out):
+    """the translated disc image (or the .zip it came in) somewhere in the game folder or build/translations/"""
+    import transplant
+    t = TRANSLATIONS[lang]
+    seen, found = set(), []
+    for top in (out, os.path.join(ROOT, 'build', 'translations')):
+        for d, dirs, names in os.walk(top):
+            if os.path.relpath(d, top).count(os.sep) >= 3:
+                dirs[:] = []
+            dirs[:] = [n for n in dirs if n != 'disc' and not n.startswith(('disc-', 'saves', 'languages'))]
+            for n in names:
+                p = os.path.join(d, n)
+                if n.lower().endswith(('.zip', '.iso', '.bin')) and os.path.getsize(p) > 50 << 20 \
+                        and os.path.realpath(p) not in seen:
+                    seen.add(os.path.realpath(p))
+                    # the .zip with the name it has on its page first, then the rest
+                    found.insert(0, p) if n.replace(' ', '_') == t['source'] else found.append(p)
+    for p in found:
+        try:
+            if transplant.source_hashes(p) == t['source_files']:
+                return p
+        except (SystemExit, Exception):
+            continue
+    sys.exit('The %s text comes from another disc, which the build does not download:\n'
+             '  %s\nPut %s (as it comes, or the disc image in it) into the game folder\n'
+             '(%s) and build again.' % (lang, t['name'], t['source'], out))
 
 
 def make_translated_image(lang, disc_path, out):
-    """download the translation's patch (kept in build/) and apply it to the disc image -> out/disc-<lang>/"""
+    """download the translation's patch (kept in build/) and apply it to the disc image -> out/disc-<lang>/;
+    or, for a translation that comes as a whole disc, take its text onto a copy of the disc image"""
     import io, urllib.request, zipfile, vcdiff
     t = TRANSLATIONS[lang]
+    if 'source_files' in t:
+        import transplant
+        src = find_translation_disc(lang, out)
+        print('taking the text of', src)
+        d = os.path.join(out, 'disc-' + lang)
+        img = os.path.join(d, t['image'] + '.bin')
+        if transplant.transplant(disc_path, src, img) != t['files']:
+            os.remove(img)
+            sys.exit('the text taken from the translated disc is not what it should be')
+        with open(os.path.join(d, t['image'] + '.cue'), 'w') as f:
+            f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % t['image'])
+        return img
     cache = os.path.join(ROOT, 'build', 'translations', os.path.basename(t['url']))
     if not (os.path.isfile(cache) and sha256_file(cache) == t['sha256']):
         print('downloading the translation:', t['url'])

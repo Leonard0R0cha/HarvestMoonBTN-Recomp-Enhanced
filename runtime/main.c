@@ -133,10 +133,16 @@ static bool scan_dir_for_disc(const char *dir, char *out, size_t n) {
 static bool locate_disc(void) {
     /* the game built from the translated disc (build.py --lang) needs that disc, which the build
      * leaves in disc-<lang>/: it comes first */
-    if (GAME_PT) {
+    if (g_game_lang) {
         char dir[1200];
-        snprintf(dir, sizeof dir, "%sdisc-pt/", exe_dir);
+        snprintf(dir, sizeof dir, "%sdisc-%s/", exe_dir, GAME_LANG_CODE);
         if (scan_dir_for_disc(dir, g_cfg.disc_path, sizeof g_cfg.disc_path)) return true;
+        /* a translation that changes text only (build.py --lang id) has the USA code: without its
+         * disc the game would run in English without a word, so say it like a missing disc */
+        if (g_game_lang != 1)
+            fatal("This game was built with its text in another language and needs that disc image\n"
+                  "(the disc-%s folder the build made), which is missing.\n"
+                  "Build again in the launcher to make it again, or to play in English.", GAME_LANG_CODE);
     }
     if (g_cfg.disc_path[0]) {
         if (file_exists(g_cfg.disc_path)) return true;
