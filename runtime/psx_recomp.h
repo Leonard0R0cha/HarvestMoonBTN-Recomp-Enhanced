@@ -283,6 +283,10 @@ void sprite_talk_text(CPU *c);
 void sprite_menu_answered(CPU *c, uint32_t answer);
 void sprite_night(CPU *c);
 void sprite_update(CPU *c);
+void sprite_pick_from(CPU *c);
+int sprite_pick_bed(CPU *c);
+uint32_t sprite_walk_way(CPU *c, uint32_t way);
+void sprite_face_bed(CPU *c);
 uint32_t bulk_food_pay(CPU *c, uint32_t minus_price);
 uint32_t greenhouse_storm(uint32_t breaks);
 uint32_t gh_addr(uint32_t a);                    /* greenhouse.c: the bigger greenhouse */

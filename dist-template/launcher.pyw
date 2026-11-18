@@ -225,7 +225,7 @@ TEXT = {
         'bulkfood': ('Buy food in bulk', 'At a shop shelf you choose how many to buy: one stays in your '
                      'hands, the rest go to the rucksack and then to the fridge.'),
         'spritehire': ('Hire the sprites through the Chef', 'The Chef asks how many of the free sprites go '
-                       'and for how long: 1 week (50G each) or 30 days (200G each). Talk to a hired sprite to change its '
+                       'and for how long: 1 week (200G each) or 30 days (450G each). Talk to a hired sprite to change its '
                        'job. Sprites also work in spring, 3 times as fast, with their skills at the highest.'),
         'sturdygreenhouse': ('Storm-proof greenhouse', 'Typhoons and blizzards no longer break the greenhouse. With the building order on, Gotz builds it: 10000G and 700 lumber.'),
         'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
@@ -315,7 +315,7 @@ TEXT = {
         'bulkfood': ('Comprar comida em lote', 'Na prateleira da loja você escolhe quantas comprar: uma '
                      'fica na mão, o resto vai para a mochila e depois para a geladeira.'),
         'spritehire': ('Contratar os duendes pelo Chef', 'O Chef pergunta quantos dos duendes livres vão e por '
-                       'quanto tempo: 1 semana (50G cada) ou 30 dias (200G cada). Fale com um duende contratado para '
+                       'quanto tempo: 1 semana (200G cada) ou 30 dias (450G cada). Fale com um duende contratado para '
                        'trocar o trabalho dele. Eles também trabalham na primavera, 3 vezes mais rápido e com as habilidades no máximo.'),
         'sturdygreenhouse': ('Estufa resistente', 'Tufões e nevascas não quebram mais a estufa. Com a ordem das ampliações ligada, o Gotz constrói: 10000G e 700 de madeira.'),
         'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
@@ -407,7 +407,7 @@ TEXT = {
         'bulkfood': ('Comprar comida por lotes', 'En el estante de la tienda eliges cuántas comprar: una '
                      'queda en tus manos, el resto va a la mochila y luego a la nevera.'),
         'spritehire': ('Contratar a los duendes con el Chef', 'El Chef pregunta cuántos de los duendes libres van y '
-                       'por cuánto tiempo: 1 semana (50G cada uno) o 30 días (200G cada uno). Habla con un duende contratado '
+                       'por cuánto tiempo: 1 semana (200G cada uno) o 30 días (450G cada uno). Habla con un duende contratado '
                        'para cambiar su trabajo. También trabajan en primavera, 3 veces más rápido y con las habilidades al máximo.'),
         'sturdygreenhouse': ('Invernadero resistente', 'Los tifones y las ventiscas ya no rompen el invernadero. Con el orden de ampliaciones activo, Gotz lo construye: 10000G y 700 de madera.'),
         'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),

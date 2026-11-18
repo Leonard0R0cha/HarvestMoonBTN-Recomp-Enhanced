@@ -13,8 +13,8 @@
  *
  * With the option, sprites work in spring too, their skills are kept at the highest (255), they
  * work WORK_SPEED times as fast, and the Chef always asks: after the job he asks how
- * many of the sprites still free (left / right in his menu) and for how long, 1 week (50G a sprite)
- * or 30 days (200G a sprite), takes the money and sends that many to the same job (the others
+ * many of the sprites still free (left / right in his menu) and for how long, 1 week (200G a sprite)
+ * or 30 days (450G a sprite), takes the money and sends that many to the same job (the others
  * first, the Chef himself last, so he stays home for the rest while any are left). The questions
  * are the game's own texts with new words: a text is written over where it is loaded (80022A94).
  * The rest of the hiring stays the game's own.
@@ -53,13 +53,14 @@
 #define SPRITE_UPDATE 0x8010CD80u  /* a sprite's frame: its action (a0 the sprite) ... */
 #define SPRITE_MOVE 0x8010CAA8u    /* ... then its move (position +56 += speed +72) */
 #define WORK_SPEED 3                /* frames a sprite at work runs in one */
+#define FRAME_LIST_COUNT 0x80128810u /* things put on the frame's list (800BE208, up to 50) */
 #define SOUND 0x8001FABCu           /* a sound effect (5: the number window's) */
 #define SPRITE_TEXTS 0x80127CF4u   /* each sprite's hire question (bank 2); +1 its "working" one */
 #define FONT_X 896                  /* the font: 4-bit, 8x12 cells, 16 a row, at VRAM 896,0 */
 #define ARROW_LEFT 0x9E             /* empty cells of the font: our arrows are drawn there */
 #define ARROW_RIGHT 0x9F
-#define WEEK_PRICE 50
-#define MONTH_PRICE 200
+#define WEEK_PRICE 200
+#define MONTH_PRICE 450
 
 enum { NONE, COUNT, DAYS, HIRE, NO_MONEY };
 enum { T_NONE, T_COUNT, T_DAYS, T_DONE, T_NO_MONEY, T_JOBS };
@@ -135,11 +136,177 @@ void sprite_update(CPU *c) {
     uint16_t action = MEM_R16(rec + 38);
     if (busy || !g_cfg.spritehire || g_view2_run || action < 8 || action > 11) return;
     busy = 1;
+    /* each frame puts the sprite on the frame's list of things (count at 80128810, up to 50,
+     * cleared each frame by 800BE2B8): the extra frames' entries are dropped, or the list is
+     * full early and the cows and sheep out on the farm walk a few steps, stop and turn, again
+     * and again. The real frame, run next, puts the sprite on it as the game does. */
+    uint32_t listed = MEM_R32(FRAME_LIST_COUNT);
     for (int k = 1; k < WORK_SPEED; k++) {
         game_call(c, SPRITE_UPDATE, rec, 0);
         game_call(c, SPRITE_MOVE, rec, 0);
     }
+    MEM_W32(FRAME_LIST_COUNT, listed);
     busy = 0;
+}
+
+/* the bed a sprite at work goes to next: 801105C8 (a0 the sprite) picks it with 80110658 (a0/a1 ->
+ * the bed's column/row, a2 1 the farm / 0 the greenhouse, a3 and the 5th argument which test:
+ * 80110790 ready to harvest, 80110838 / 80110890 to water), which starts at a bed drawn by lot and
+ * takes the first one that wants the job: the sprite crosses the whole farm to it, then draws
+ * another far away, and walks about more than it works. With the option the nearest bed that
+ * wants the job is taken (steps of the 4 ways: x + z), not one another sprite is going to or
+ * working. Farm beds: x = 400 col - 4200, z = 1400 - 400 row (45 a row); the greenhouse's:
+ * x = 400 col - 1420, z = 1020 - 400 row (7 a row; 800D812C). */
+#define PICK_FROM 0x801105C8u
+#define FARM_FIELD 0x80071DFCu
+#define GH_FIELD (0x8006C838u + 30956u)
+#define GH_FLAG (0x8006C838u + 17620u)  /* halfword: the greenhouse built */
+uint32_t gh_addr(uint32_t a);
+uint32_t gh_fields(uint32_t n);
+
+static uint32_t pick_sprite;
+
+void sprite_pick_from(CPU *c) {
+    pick_sprite = g_cfg.spritehire && !g_view2_run ? c->r[4] : 0;
+}
+
+static int taken(uint32_t rec, int32_t x, int32_t z) {
+    for (int i = 0; i < SPRITE_COUNT; i++) {
+        uint32_t o = sprite(i);
+        uint16_t a = MEM_R16(o + 38);
+        int16_t st = (int16_t)MEM_R16(o + 40);
+        if (o == rec || a < 8 || a > 10 || (st != 1 && st != 2) || MEM_R16(o + 48) != MEM_R16(rec + 48)) continue;
+        if ((int32_t)MEM_R32(o + 88) == x && (int32_t)MEM_R32(o + 96) == z) return 1;
+    }
+    return 0;
+}
+
+int sprite_pick_bed(CPU *c) {
+    uint32_t rec = pick_sprite;
+    pick_sprite = 0;
+    if (!rec) return 0;
+    int farm = c->r[6] != 0;
+    uint32_t test = c->r[7] ? 0x80110790u : MEM_R32(c->r[29] + 16) ? 0x80110838u : 0x80110890u;
+    uint32_t base = farm ? FARM_FIELD : GH_FIELD;
+    int cols = farm ? 45 : 7;
+    int n = farm ? 1125 : (int)gh_fields(49);
+    if (!farm && MEM_R16(GH_FLAG) == 0) { c->r[2] = 1; return 1; }
+    int32_t sx = (int32_t)MEM_R32(rec + 56), sz = (int32_t)MEM_R32(rec + 64);
+    int best = -1, best_free = -1;
+    int64_t bd = 0, bfd = 0;
+    for (int i = 0; i < n; i++) {
+        if (!game_call(c, test, gh_addr(base + (uint32_t)i * 8u), 0)) continue;
+        int col = i % cols, row = i / cols;
+        int32_t x = farm ? 400 * col - 4200 : 400 * col - 1420;
+        int32_t z = farm ? 1400 - 400 * row : 1020 - 400 * row;
+        int64_t d = (int64_t)(x > sx ? x - sx : sx - x) + (z > sz ? z - sz : sz - z);
+        if (best < 0 || d < bd) { best = i; bd = d; }
+        if (!taken(rec, x, z) && (best_free < 0 || d < bfd)) { best_free = i; bfd = d; }
+    }
+    if (best_free >= 0) best = best_free;
+    if (best < 0) { c->r[2] = 1; return 1; }       /* none: as the game's (v0 1) */
+    MEM_W16(c->r[4], (uint16_t)(best % cols));
+    MEM_W16(c->r[5], (uint16_t)(best / cols));
+    MEM_W16(rec + 46, 1000);        /* the walk picks its way at once (sprite_walk_way): past the
+                                     * count (1080 / speed at most), not 7FFF, which the +1 turns
+                                     * negative and the way is never picked again */
+    c->r[2] = 0;
+    return 1;
+}
+
+/* The walk of the characters (800D12B8, a1 the speed) picks a way every 720 / speed calls (1080 every
+ * other frame; the toggle at 80128D58) and keeps it until then: it tests the way ahead, to the left
+ * (way - 1) and to the right (way + 1), 400 on (bits 1, 4, 2 of s3 when free), and 800D196C draws
+ * one of them by lot, the lot leaning to the target's side when the walker has one (+52 0x2000,
+ * x / z at +88 / +96; 800D1CFC, which also ends the walk when both are within 230 and one within
+ * 50). A sprite at work goes far past its bed and round about. With the option a sprite at work
+ * with a target takes the way that brings it nearest instead (the one of the axis still farther
+ * off first, then the other; one blocked: a free one across, else back), and walks it only as far
+ * as the target is on that axis (the count at +46 set so the next pick comes then). Ways: 0 z down,
+ * 1 x down, 2 z up, 3 x up. The hook comes after the sll by 16 at 800D1744: the way is in the
+ * upper half. */
+#define WALK_TOGGLE 0x80128D58u
+
+static int way_free(int way, int now, uint32_t free_bits) {
+    if (way == now) return (free_bits & 1u) != 0;
+    if (way == ((now + 3) & 3)) return (free_bits & 4u) != 0;
+    if (way == ((now + 1) & 3)) return (free_bits & 2u) != 0;
+    return 1;                       /* back: where it came from (tested as "ahead" next time) */
+}
+
+uint32_t sprite_walk_way(CPU *c, uint32_t way) {
+    uint32_t rec = c->r[18];
+    if (!g_cfg.spritehire || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
+        || (rec - SPRITES) % SPRITE_SIZE || !(MEM_R32(rec + 52) & 0x2000u)) return way;
+    uint16_t action = MEM_R16(rec + 38);
+    int32_t speed = (int32_t)c->r[21];
+    if (action < 8 || action > 11 || speed <= 0) return way;
+    int now = MEM_R16(rec + 34) & 3;
+    uint32_t free_bits = c->r[19];
+    int32_t dx = (int32_t)MEM_R32(rec + 88) - (int32_t)MEM_R32(rec + 56);
+    int32_t dz = (int32_t)MEM_R32(rec + 96) - (int32_t)MEM_R32(rec + 64);
+    int32_t ax = dx < 0 ? -dx : dx, az = dz < 0 ? -dz : dz;
+    /* no nearer after a few picks (an animal or a wall across the way, gone round to and fro):
+     * the game's own picks for a while, which go round it, then ours again */
+    {
+        int i = (int)((rec - SPRITES) / SPRITE_SIZE);
+        static int32_t tx[SPRITE_COUNT], tz[SPRITE_COUNT], best[SPRITE_COUNT];
+        static uint8_t stall[SPRITE_COUNT], game[SPRITE_COUNT];
+        int32_t x = (int32_t)MEM_R32(rec + 88), z = (int32_t)MEM_R32(rec + 96);
+        if (x != tx[i] || z != tz[i]) { tx[i] = x; tz[i] = z; best[i] = ax + az; stall[i] = game[i] = 0; }
+        if (game[i]) { game[i]--; best[i] = ax + az; return way; }
+        if (ax + az < best[i] - 100) { best[i] = ax + az; stall[i] = 0; }
+        else if (++stall[i] >= 4) { stall[i] = 0; game[i] = 6; return way; }
+    }
+    int wx = dx < 0 ? 1 : 3, wz = dz < 0 ? 0 : 2;
+    int want[4], n = 0;
+    int x_first = ax >= az;
+    if (ax >= 50 && az >= 50) { want[n++] = x_first ? wx : wz; want[n++] = x_first ? wz : wx; }
+    else if (ax >= 50 || az < 50) want[n++] = wx;
+    else want[n++] = wz;
+    if (az < 50 && ax < 50) want[n++] = wz;
+    /* then the ways across (to go round), then back */
+    int across[2] = { (want[0] + 1) & 3, (want[0] + 3) & 3 };
+    int pick = -1;
+    for (int k = 0; k < n && pick < 0; k++) if (way_free(want[k], now, free_bits)) pick = want[k];
+    for (int k = 0; k < 2 && pick < 0; k++)
+        if (across[k] != ((now + 2) & 3) && way_free(across[k], now, free_bits)) pick = across[k];
+    /* the way to the target blocked, the target near on that axis and the other lined up: the
+     * test 400 on hits what the target is at (the trough in the barn, the greenhouse's wall by its
+     * door), and the sprite went to and fro across it for good. It goes on that way: the move
+     * itself is not stopped, and the walk ends 230 short of the target. */
+    if (pick < 0 || (pick != want[0] && n == 1)) {
+        int32_t on = want[0] == 1 || want[0] == 3 ? ax : az, other = want[0] == 1 || want[0] == 3 ? az : ax;
+        if (on < 800 && other < 50) pick = want[0];
+    }
+    if (pick < 0) return way;       /* only back, or nothing: the game's own pick */
+    int32_t left = pick == 1 || pick == 3 ? ax : az;
+    if (pick == want[0] || (n > 1 && pick == want[1])) {
+        int32_t every = (MEM_R32(WALK_TOGGLE) == 1 ? 1080 : 720) / speed;
+        int32_t calls = left / speed;
+        if (calls < 1) calls = 1;
+        if (calls < every) MEM_W16(rec + 46, (uint16_t)(every - calls));
+    }
+    return (uint32_t)pick << 16;
+}
+
+/* a sprite at work waters (801103E8) or harvests (8011031C) the bed 100 ahead of it (a0 the
+ * sprite): the walk ends within 230 of the bed, and come in from the side the sprite faced the
+ * next bed, already done, and went back to the same one again and again. With the option it
+ * faces its bed first, along the axis it is farther off on (then 100 on is inside the bed). */
+void sprite_face_bed(CPU *c) {
+    uint32_t rec = c->r[4];
+    if (!g_cfg.spritehire || g_view2_run || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
+        || (rec - SPRITES) % SPRITE_SIZE) return;
+    uint16_t action = MEM_R16(rec + 38);
+    if (action != 8 && action != 9) return;
+    int32_t dx = (int32_t)MEM_R32(rec + 88) - (int32_t)MEM_R32(rec + 56);
+    int32_t dz = (int32_t)MEM_R32(rec + 96) - (int32_t)MEM_R32(rec + 64);
+    int32_t ax = dx < 0 ? -dx : dx, az = dz < 0 ? -dz : dz;
+    if (ax < 50 && az < 50) return;
+    if (ax > 400 || az > 400) return;      /* not at its bed */
+    int way = ax >= az ? (dx < 0 ? 1 : 3) : (dz < 0 ? 0 : 2);
+    MEM_W16(rec + 34, (uint16_t)((MEM_R16(rec + 34) & ~3u) | (uint16_t)way));
 }
 
 /* the talk's checks, each hook after the instruction: v0 = +184 & 8 (talked to once), v0 =
