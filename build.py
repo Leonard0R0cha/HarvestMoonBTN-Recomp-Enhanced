@@ -11,8 +11,8 @@ usage: python build.py [--disc PATH] [--lang pt|id] [--pak] [--zip] [--into DIR]
   --disc PATH  your disc image (.cue or .bin); default: the first .cue (or .bin) in disc/
   --lang pt    the game's text in Brazilian Portuguese: downloads a fan translation's patch, applies it to
                your disc image (the result goes into disc-pt/ beside the game) and builds from that
-  --lang id    in Indonesian: takes the text of a translated disc you put into the game folder (not
-               downloaded; see TRANSLATIONS) onto a copy of your disc image, in disc-id/
+  --lang id    in Indonesian: downloads the text of a fan translation that comes as a whole disc and puts
+               it onto a copy of your disc image, in disc-id/ (see TRANSLATIONS)
   --pak        also turn your disc image into the compact data pack HarvestMoonBTN.pak and put it
                in the dist folder, so the game runs without the disc image
   --zip        also create a .zip of the dist folder
@@ -61,12 +61,16 @@ TRANSLATIONS = {
             'A_FILE.BIN': '968ba9d3849529c035563c654ffa613a7f6febeb8948fbbcbf7553cee06e00d1',
         },
     },
-    # a translation that comes as a whole disc image (made for a mod with its own code): the build takes
-    # only its text onto a copy of your USA disc (tools/transplant.py). That disc is not downloaded: put
-    # it (the .zip as it comes, or the image in it) anywhere in the game folder or in build/translations/
+    # a translation that comes as a whole disc image (made for a mod with its own code): only its text goes
+    # onto a copy of your USA disc (tools/transplant.py). The build downloads that text alone (text_url,
+    # made with "tools/transplant.py --patch"); the translated disc itself (the .zip as it comes, or the
+    # image in it) in the game folder or in build/translations/ also does, offline
     'id': {
         'name': 'Indonesian, fan translation (the Indonesian edition of the Kucing NPC Back to Nature mod, '
                 'v0.1.1-patch1, kucingnpc.xyz)',
+        'text_url': 'https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/translation-id-v1/'
+                    'HarvestMoon-BTN-ID-text-v1.hmtxt',
+        'text_sha256': '7f8f2d5d60d4351a0c71f24f980ef320cd24367082633064d25a4097bb127e84',
         'source': 'HM_BTN_IDN_v0.1.1-patch1.zip',
         'source_files': {
             'SLUS_011.15': 'fc2457df9fb2c33fc4b10f58aa11e954fb10b220029cebae5028d4bb965b7aea',
@@ -153,6 +157,24 @@ def translated_image(lang, out):
     return img
 
 
+def download(url, sha, what):
+    """url, kept in build/translations/ and checked by its SHA-256 -> its path"""
+    import urllib.request
+    cache = os.path.join(ROOT, 'build', 'translations', os.path.basename(url))
+    if os.path.isfile(cache) and sha256_file(cache) == sha:
+        return cache
+    print('downloading %s: %s' % (what, url))
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    req = urllib.request.Request(url, headers={'User-Agent': 'HarvestMoonBTN-build'})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = r.read()
+    if hashlib.sha256(data).hexdigest() != sha:
+        sys.exit('the %s download is damaged or was changed (checksum); try again later' % what)
+    with open(cache, 'wb') as f:
+        f.write(data)
+    return cache
+
+
 def find_translation_disc(lang, out):
     """the translated disc image (or the .zip it came in) somewhere in the game folder or build/translations/"""
     import transplant
@@ -176,39 +198,39 @@ def find_translation_disc(lang, out):
                 return p
         except (SystemExit, Exception):
             continue
-    sys.exit('The %s text comes from another disc, which the build does not download:\n'
-             '  %s\nPut %s (as it comes, or the disc image in it) into the game folder\n'
-             '(%s) and build again.' % (lang, t['name'], t['source'], out))
+    return None
 
 
 def make_translated_image(lang, disc_path, out):
     """download the translation's patch (kept in build/) and apply it to the disc image -> out/disc-<lang>/;
     or, for a translation that comes as a whole disc, take its text onto a copy of the disc image"""
-    import io, urllib.request, zipfile, vcdiff
+    import zipfile, vcdiff
     t = TRANSLATIONS[lang]
     if 'source_files' in t:
         import transplant
-        src = find_translation_disc(lang, out)
-        print('taking the text of', src)
         d = os.path.join(out, 'disc-' + lang)
         img = os.path.join(d, t['image'] + '.bin')
-        if transplant.transplant(disc_path, src, img) != t['files']:
+        try:
+            text = download(t['text_url'], t['text_sha256'], 'the translation\'s text')
+        except OSError as e:                # offline: the translated disc, if it is in the game folder
+            src = find_translation_disc(lang, out)
+            if not src:
+                sys.exit('Could not download the %s text (%s).\nConnect to the internet, or put %s (as it '
+                         'comes, or the disc image in it)\ninto the game folder (%s) and build again.'
+                         % (lang, e, t['source'], out))
+            print('taking the text of', src)
+            files = transplant.transplant(disc_path, src, img)
+        else:
+            print('applying the translation\'s text to a copy of', resolve_bin(disc_path))
+            with open(text, 'rb') as f:
+                files = transplant.patch_image(disc_path, f.read(), img)
+        if files != t['files']:
             os.remove(img)
-            sys.exit('the text taken from the translated disc is not what it should be')
+            sys.exit('the translated game files are not what they should be')
         with open(os.path.join(d, t['image'] + '.cue'), 'w') as f:
             f.write('FILE "%s.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n' % t['image'])
         return img
-    cache = os.path.join(ROOT, 'build', 'translations', os.path.basename(t['url']))
-    if not (os.path.isfile(cache) and sha256_file(cache) == t['sha256']):
-        print('downloading the translation:', t['url'])
-        os.makedirs(os.path.dirname(cache), exist_ok=True)
-        req = urllib.request.Request(t['url'], headers={'User-Agent': 'HarvestMoonBTN-build'})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = r.read()
-        if hashlib.sha256(data).hexdigest() != t['sha256']:
-            sys.exit('the translation download is damaged or was changed (checksum); try again later')
-        with open(cache, 'wb') as f:
-            f.write(data)
+    cache = download(t['url'], t['sha256'], 'the translation')
     with zipfile.ZipFile(cache) as z:
         patch = z.read(t['patch'])
     src = resolve_bin(disc_path)
