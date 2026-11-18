@@ -236,7 +236,9 @@ static int way_free(int way, int now, uint32_t free_bits) {
 
 uint32_t sprite_walk_way(CPU *c, uint32_t way) {
     uint32_t rec = c->r[18];
-    if (!g_cfg.spritehire || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
+    /* not in the second view's extra run of the frame (p2view.c): it puts the RAM back, but not the
+     * counters below, and the co-op player with that window would walk the sprites another way */
+    if (!g_cfg.spritehire || g_view2_run || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
         || (rec - SPRITES) % SPRITE_SIZE || !(MEM_R32(rec + 52) & 0x2000u)) return way;
     uint16_t action = MEM_R16(rec + 38);
     int32_t speed = (int32_t)c->r[21];
