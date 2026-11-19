@@ -79,6 +79,8 @@ void fatal(const char *fmt, ...) {
 /* ------------------------------------------------------------------ paths */
 static char exe_dir[1024];
 
+const char *exe_dir_path(void) { return exe_dir; }
+
 static void find_exe_dir(const char *argv0) {
 #ifdef _WIN32
     GetModuleFileNameA(NULL, exe_dir, sizeof exe_dir);
@@ -237,6 +239,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "biggreenhouse")) g_cfg.biggreenhouse = atoi(val);
     else if (!strcmp(key, "buildorder")) g_cfg.buildorder = atoi(val);
     else if (!strcmp(key, "runthrough")) g_cfg.runthrough = atoi(val);
+    else if (!strcmp(key, "randomnames")) g_cfg.randomnames = atoi(val);
     else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
     else if (!strcmp(key, "cheat_stamina")) g_cfg.cheat_stamina = atoi(val);

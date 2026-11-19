@@ -232,6 +232,7 @@ void netplay_join(const char *address);
 void netplay_set_delay(int frames);
 int netplay_role(void);           /* 0 off, 1 host, 2 guest */
 int netplay_active(void);
+const char *exe_dir_path(void);   /* main.c: the exe's folder, with the slash */
 int netplay_start(int *bank, const char *guest_dir);
 uint16_t netplay_frame(int frame, uint16_t local);
 const char *netplay_status(int *changed);
@@ -286,6 +287,7 @@ typedef struct {
     int  staminabar;            /* the stamina and tiredness in a window under the clock (fixes.c) */
     int  biggreenhouse;         /* a built greenhouse is 7 x 19 fields */
     int  runthrough;            /* running goes through the cows, sheep and horse (fixes.c) */
+    int  randomnames;           /* Select on the naming screen fills in a random name (names.c) */
     int  buildorder;            /* the carpenter lets the player pick the next building (buildorder.c) */
     int  sturdygreenhouse;      /* typhoons and blizzards do not break the greenhouse */
     int  spritehire;            /* the Chef hires the sprites: how many, 1 week / 30 days, paid; spring too */

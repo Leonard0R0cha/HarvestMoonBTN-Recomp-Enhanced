@@ -442,6 +442,10 @@ ENTRY_HOOKS[0x800D7144] = 'HELD_BEGIN();'
 # (x, y, width in a1-a3, height and colours on the stack); the clock is the one at 230,18, 74x28.
 # The glyph routine (80019070) is watched for the arguments it is given.
 ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
+# Random names (randomnames, runtime/names.c): the naming screen is opened by 80023130, 80023170
+# and 800231AC (who called tells what is named) and reads its buttons in 80023DBC.
+ENTRY_HOOKS.update({a: 'names_open(c);' for a in (0x80023130, 0x80023170, 0x800231AC)})
+ENTRY_HOOKS[0x80023DBC] = 'names_buttons(c);'
 ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
 # The clock (and the stamina) see-through while the farmer is behind them (runtime/fixes.c): the
 # window builders' semi-transparency flag on the stack (background +40, border lines +28, corner
