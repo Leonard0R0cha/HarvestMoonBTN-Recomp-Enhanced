@@ -1595,7 +1595,7 @@ def main():
             th = tk.Label(f, image=shots[2], bg=WOOD, bd=0, cursor=cursor)
             th.pack()
             th.bind('<Button-1>', lambda e: show_pictures(key, title, desc))
-            hint = tk.Label(txt, text='🔍 ' + T('pic_tip'), font=F['s'], bg=CARD, fg=RED, anchor='w',
+            hint = tk.Label(txt, text='▸ ' + T('pic_tip'), font=F['s'], bg=CARD, fg=RED, anchor='w',
                             cursor=cursor)
             hint.pack(fill='x', before=note)
             hint.bind('<Button-1>', lambda e: show_pictures(key, title, desc))
