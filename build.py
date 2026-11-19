@@ -13,8 +13,9 @@ usage: python build.py [--disc PATH] [--lang pt|id|de] [--pak] [--zip] [--into D
                your disc image (the result goes into disc-pt/ beside the game) and builds from that
   --lang id    in Indonesian: downloads the text of a fan translation that comes as a whole disc and puts
                it onto a copy of your disc image, in disc-id/ (see TRANSLATIONS)
-  --lang de    the dialogue in German, from your own European disc (SLES-02781, Rev 1) in the game
-               folder: put onto a copy of your USA disc image, in disc-de/ (menus stay in English)
+  --lang de    the dialogue in German, from your own European disc in the game folder: SLES-02781,
+               Rev 1 (En,De), .bin + .cue; put onto a copy of your USA disc image, in disc-de/ (menus
+               stay in English). Rev 0 and the French disc do not work
   --pak        also turn your disc image into the compact data pack HarvestMoonBTN.pak and put it
                in the dist folder, so the game runs without the disc image
   --zip        also create a .zip of the dist folder
@@ -91,6 +92,12 @@ TRANSLATIONS = {
     'de': {
         'name': 'German, the dialogue of the European release (SLES-02781 Rev 1; menus stay in English)',
         'source': 'Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)',
+        # which disc, said in full when it is missing or the wrong one
+        'need': 'the European PlayStation disc of Harvest Moon: Back to Nature, serial SLES-02781, second\n'
+                'edition (Rev 1), English/German, as a .bin + .cue dump (Redump name "Harvest Moon - Back to\n'
+                'Nature (Europe) (En,De) (Rev 1)"). The first edition (Rev 0), the USA disc and the French\n'
+                'disc do not have this German text.',
+        'wrong': {'SLES_027.81': 'a European disc (SLES-02781), but not the Rev 1 edition: this needs Rev 1'},
         'source_files': {
             'SLES_027.81': '19dd5459897ff68bc3fe01c8af5b24dc18ce345c7f67d5aee865c4f542943afb',
             'A_FILE.BIN': 'b2cf278285b9769470991b0abb870239e1bf872a2aa03fd45d7381426da0dde6',
@@ -212,12 +219,18 @@ def find_translation_disc(lang, out):
                     # the .zip with the name it has on its page first, then the rest
                     found.insert(0, p) if n.replace(' ', '_').startswith(t['source'].replace(' ', '_')) \
                         else found.append(p)
+    near = None
     for p in found:
         try:
-            if transplant.source_hashes(p, tuple(t['source_files'])) == t['source_files']:
-                return p
+            h = transplant.source_hashes(p, tuple(t['source_files']))
         except (SystemExit, Exception):
             continue
+        if h == t['source_files']:
+            return p
+        for name, why in t.get('wrong', {}).items():   # the right game, the wrong edition of it
+            if name in h and not near:
+                near = '%s is %s.' % (os.path.basename(p), why)
+    find_translation_disc.near = near
     return None
 
 
@@ -237,8 +250,10 @@ def make_translated_image(lang, disc_path, out):
         except OSError as e:                # offline: the translated disc, if it is in the game folder
             src = find_translation_disc(lang, out)
             if not src and 'text_url' not in t:
-                sys.exit('%s needs your own disc of it: put %s (.bin + .cue, or a .zip with it)\ninto the '
-                         'game folder (%s) and build again.' % (lang, t['source'], out))
+                near = getattr(find_translation_disc, 'near', None)
+                sys.exit('%s%s needs your own disc of it: %s\nPut it (.bin + .cue, or a .zip with them) into '
+                         'the game folder\n(%s) and build again.'
+                         % (near + '\n' if near else '', lang, t.get('need', t['source']), out))
             if not src:
                 sys.exit('Could not download the %s text (%s).\nConnect to the internet, or put %s (as it '
                          'comes, or the disc image in it)\ninto the game folder (%s) and build again.'
