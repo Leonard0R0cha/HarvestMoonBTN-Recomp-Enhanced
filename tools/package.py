@@ -11,6 +11,7 @@ Two flavours:
 These folders contain the game's program code (and with --pak its data) translated from your
 copy - they are for your own use, not for sharing.
 """
+import filecmp
 import os, shutil, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -38,6 +39,23 @@ needed. "HarvestMoonBTN --verify-data" checks that file for damage.
 
 DISC_NOTE = ("Put your own disc image of Harvest Moon: Back to Nature (USA) here:\n"
              "the .cue file and its .bin file (any file names).\n")
+
+
+def copy_in_use(src, dst):
+    """copy2 that also works when dst is the program running right now (the launcher building into its
+    own folder): Windows will not overwrite a running exe but lets it be renamed, so it moves aside"""
+    if os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False):   # the same launcher: nothing to do
+        return
+    try:
+        shutil.copy2(src, dst)
+    except PermissionError:
+        old = dst + '.old'
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+        os.replace(dst, old)    # still running under this name until it closes; removed on the next build
+        shutil.copy2(src, dst)
 
 
 def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, into=None):
@@ -80,7 +98,7 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     # (the one for the folder's system: a cross-built Linux folder has none, only launcher.pyw)
     launcher = 'HarvestMoonBTN-Launcher-Linux' if 'Linux' in name else 'HarvestMoonBTN-Launcher.exe'
     if os.path.isfile(os.path.join(TPL, launcher)):
-        shutil.copy2(os.path.join(TPL, launcher), os.path.join(out, launcher))
+        copy_in_use(os.path.join(TPL, launcher), os.path.join(out, launcher))
     # the launcher's own pictures (any it also finds there from elsewhere are kept)
     assets = os.path.join(TPL, 'launcher-assets')
     if os.path.isdir(assets):
