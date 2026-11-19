@@ -20,7 +20,7 @@ typedef struct { float cx, cy, dx, dy, sx, sy; int32_t x, y, clip0, clip1; float
  * for texel (u, v) is ((u - u0) * su, (v - v0) * sv); key: the image's key in the pack */
 typedef struct { uint64_t key; const uint16_t *px; int w, h; float u0, v0, su, sv; } VkRep;
 
-int  vkr_init(int scale);                   /* 0: no Vulkan */
+int  vkr_init(int scale);                   /* 0: no Vulkan; scale 0: only the windows (vkr_window) */
 /* a GP0 command (all of its words) after gpu.c ran it (prec: a polygon's PGXP corners, x, y, depth
  * each, depth 0: none): drawn once per move in xf (0: as it is,
  * -1: not at all: a menu tile none of whose copies is shown);
@@ -54,6 +54,8 @@ void vkr_present(int win, int slot, const uint32_t *px, int w, int h, double asp
  * resolution; only over a picture of the GPU's (slot) */
 typedef struct { uint64_t key; const uint16_t *px; int w, h; float x0, y0, x1, y1, u0, v0, u1, v1; } VkHdPiece;
 void vkr_overlay(int win, const VkHdPiece *p, int n);
+/* the windows' pictures through a CRT filter: 0 off, 1 scanlines (crt-hyllian), 2 CRT (crt-lottes) */
+void vkr_crt(int mode);
 /* 0: the game's renderer, 1: the one in-between pictures are redrawn into (2, 3: their tags; 4 ..
  * 7: the same for the second view's GPU, gpu_view2.c); the calls above go to it */
 void vkr_target(int k);

@@ -46,6 +46,7 @@ static FILE *log_file;
 
 int platform_init(void);
 void platform_vulkan(void);
+void platform_crt(int mode);
 int platform_3d_scene(void);
 void platform_shutdown(void);
 void platform_error_box(const char *title, const char *msg);
@@ -213,6 +214,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "precisecull")) g_cfg.precisecull = atoi(val);
     else if (!strcmp(key, "interp")) g_cfg.interp = atoi(val);
     else if (!strcmp(key, "vsync")) g_cfg.vsync = atoi(val);
+    else if (!strcmp(key, "crt")) g_cfg.crt = !strcmp(val, "crt") ? 2 : !strcmp(val, "scanlines") ? 1 : atoi(val) == 1 || atoi(val) == 2 ? atoi(val) : 0;
     else if (!strcmp(key, "texturepack")) g_cfg.texturepack = atoi(val);
     else if (!strcmp(key, "dumptextures")) g_cfg.dumptextures = atoi(val);
     else if (!strcmp(key, "portraits")) g_cfg.portraits = atoi(val);
@@ -656,6 +658,7 @@ int main(int argc, char **argv) {
     if (vk)
         platform_vulkan();          /* the windows show its pictures from the GPU */
 #endif
+    platform_crt(g_cfg.crt);
     g_pgxp_cracks = g_cfg.pgxp && g_cfg.crackfix;   /* before: the upscaled copy gets what it needs */
     {   /* the depth test: 0.2% (HMBTN_DEPTHTEST: another margin, for testing) */
         const char *e = getenv("HMBTN_DEPTHTEST");

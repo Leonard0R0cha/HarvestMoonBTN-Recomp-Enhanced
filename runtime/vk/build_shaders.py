@@ -29,6 +29,10 @@ SHADERS = {
     'ppsx/glsl/prebuilt/textured.inv.vert.inc': ('ppsx/glsl/primitive.vert', ['TEXTURED', 'INVARIANT']),
     'ppsx/glsl/prebuilt/depth2.vert.inc': ('ppsx/glsl/depth2.vert', []),
     'ppsx/glsl/prebuilt/depth2.frag.inc': ('ppsx/glsl/depth2.frag', []),
+    # the CRT filters (F6), from libretro's slang-shaders
+    'crt/crt.vert.inc': ('crt/crt.vert', []),
+    'crt/crt-hyllian.frag.inc': ('crt/crt-hyllian.frag', []),
+    'crt/crt-lottes.frag.inc': ('crt/crt-lottes.frag', []),
 }
 
 

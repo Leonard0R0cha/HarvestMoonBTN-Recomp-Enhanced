@@ -654,7 +654,8 @@ void platform_vulkan(void) {
         tex = NULL;
         ren = NULL;
         vkp = 1;
-        vkr_vsync(0, g_cfg.vsync);
+        /* the CPU renderer (the CRT filters): waits only while keeping time with the screen, as SDL's */
+        vkr_vsync(0, g_cfg.vsync && (g_vk || vsync_k));
     }
     if (vkp && vk_window(1, win2)) {
         if (tex2) SDL_DestroyTexture(tex2);
@@ -664,6 +665,27 @@ void platform_vulkan(void) {
         vkp2 = 1;
     }
 #endif
+}
+
+/* The CRT filter (0 off, 1 scanlines, 2 CRT; F6 goes round): a Vulkan shader where the windows are
+ * shown, so with the CPU renderer Vulkan shows them from the first filter on (when it can). */
+void platform_crt(int mode) {
+    if (g_cfg.headless) return;
+#ifdef HMBTN_VULKAN
+    static int tried;
+    if (mode && !vkp && !tried && !g_cfg.renderer_vk) {
+        tried = 1;
+        if (vkr_init(0)) platform_vulkan();
+    }
+    if (vkp) {
+        g_cfg.crt = mode;
+        vkr_crt(mode);
+        if (mode) LOGI("CRT filter: %s", mode == 2 ? "crt-lottes" : "crt-hyllian (scanlines)");
+        return;
+    }
+#endif
+    if (mode) LOGW("CRT filter: needs Vulkan, which isn't available here");
+    g_cfg.crt = 0;
 }
 
 void platform_shutdown(void) {
@@ -1352,6 +1374,8 @@ void platform_frame(void) {
                     g_interp = !g_interp;       /* compare: in-between pictures on/off */
                     view2_g_interp = g_interp;
                     LOGI("interp %s", g_interp ? "on" : "off");
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F6) {
+                    platform_crt((g_cfg.crt + 1) % 3);      /* off, scanlines, CRT */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
                     SDL_SetWindowFullscreen(win, 0);

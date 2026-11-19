@@ -188,6 +188,11 @@ extern "C" int vkr_init(int s)
 		return 0;
 	device = new Device;
 	device->set_context(*context);
+	if (!s)     /* only the windows (the CPU renderer's pictures through the CRT filters) */
+	{
+		log_msg(2, "vk: windows shown by %s", device->get_gpu_properties().deviceName);
+		return 1;
+	}
 	scale = s;
 	renderer = renderers[0] = new Renderer(*device, scale, 1, nullptr);
 	if (!renderer->is_valid())
@@ -1268,6 +1273,7 @@ static struct Swap
 	BufferHandle held_buf[2];
 	ImageHandle pre, upload;    /* sharp-bilinear prescale target; CPU pictures */
 	ImageHandle hd[2], hd_pre[2];   /* with HD images: the picture at the window's size; its prescale */
+	ImageHandle crt[2], crt_in[2];  /* with a CRT filter: the picture at the window's size; its sampled copy */
 	int frame = 0;
 	bool stale = false;
 	bool vsync = false;         /* wait for the screen's refresh (FIFO; vkr_vsync) */
@@ -1599,6 +1605,111 @@ static void hd_compose(ImageHandle &keep, ImageHandle &pre_keep, const ImageHand
 	device->submit(cmd, &fence);    /* now: the window's commands are submitted after these */
 }
 
+/* ---- CRT filters (vkr_crt): the picture drawn at the window's size through a shader of
+ * libretro's slang-shaders (crt/: crt-hyllian, scanlines and a dot mask; crt-lottes, curved, with
+ * bloom and a shadow mask) ---- */
+static const uint32_t crt_vert[] =
+#include "crt/crt.vert.inc"
+    ;
+static const uint32_t crt_hyllian_frag[] =
+#include "crt/crt-hyllian.frag.inc"
+    ;
+static const uint32_t crt_lottes_frag[] =
+#include "crt/crt-lottes.frag.inc"
+    ;
+static int crt_mode;
+
+extern "C" void vkr_crt(int mode)
+{
+	crt_mode = mode;
+}
+
+/* in (iw x ih: transfer source layout; sampled: shader read-only, ready) through the CRT shader
+ * into keep (dw x dh, transfer source layout when the commands have run). The shader sees the
+ * console's picture: w x h over its upscale (about 240 lines), so a scanline per line. */
+static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, const ImageHandle &in, bool sampled, int iw, int ih,
+                        int dw, int dh, int w, int h)
+{
+	static BufferHandle quad;
+	static Program *prog[2];
+	if (!quad)
+	{
+		static const float corners[] = { -1, -1, 1, -1, -1, 1, 1, 1 };
+		BufferCreateInfo bi;
+		bi.domain = BufferDomain::Device;
+		bi.size = sizeof corners;
+		bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		quad = device->create_buffer(bi, corners);
+		prog[0] = device->request_program(crt_vert, sizeof crt_vert, crt_hyllian_frag, sizeof crt_hyllian_frag);
+		prog[1] = device->request_program(crt_vert, sizeof crt_vert, crt_lottes_frag, sizeof crt_lottes_frag);
+	}
+	CommandBufferHandle cmd = device->request_command_buffer();
+	const ImageView *view = &in->get_view();
+	if (!sampled)
+	{
+		if (!in_keep || int(in_keep->get_width()) != iw || int(in_keep->get_height()) != ih)
+		{
+			ImageCreateInfo ii = ImageCreateInfo::render_target(iw, ih, VK_FORMAT_R8G8B8A8_UNORM);
+			ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			in_keep = device->create_image(ii, nullptr);
+		}
+		/* in was written by commands submitted before these */
+		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+		                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		             VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+		cmd->image_barrier(*in_keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+		cmd->blit_image(*in_keep, *in, { 0, 0, 0 }, { iw, ih, 1 }, { 0, 0, 0 }, { iw, ih, 1 }, 0, 0, 0, 0, 1,
+		                VK_FILTER_NEAREST);
+		cmd->image_barrier(*in_keep, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		view = &in_keep->get_view();
+	}
+	if (!keep || int(keep->get_width()) != dw || int(keep->get_height()) != dh)
+	{
+		ImageCreateInfo ii = ImageCreateInfo::render_target(dw, dh, VK_FORMAT_R8G8B8A8_UNORM);
+		ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		keep = device->create_image(ii, nullptr);
+	}
+	/* srcStage transfer: the window's last copy from this frame's image read it */
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+	RenderPassInfo rp;
+	rp.color_attachments[0] = &keep->get_view();
+	rp.num_color_attachments = 1;
+	rp.store_attachments = 1;
+	cmd->begin_render_pass(rp);
+	cmd->set_quad_state();
+	cmd->set_program(*prog[crt_mode == 2]);
+	cmd->set_vertex_binding(0, *quad, 0, 8);
+	cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+	cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	cmd->set_viewport({ 0.0f, 0.0f, float(dw), float(dh), 0.0f, 1.0f });
+	cmd->set_scissor({ { 0, 0 }, { unsigned(dw), unsigned(dh) } });
+	/* smooth: the shaders sample at the console pixels' centres, which at an even upscale fall on
+	 * the edge between two pixels of the picture; nearest took one or the other by rounding,
+	 * column by column (thin vertical lines where an edge crosses a console pixel) */
+	cmd->set_texture(0, 0, *view, StockSampler::LinearClamp);
+	int n = (h + 120) / 240;    /* the upscale: 240 lines (480: interlaced, a scanline per field's line) */
+	float sw = float(w / (n > 1 ? n : 1)), sh = float(h / (n > 1 ? n : 1));
+	struct
+	{
+		float source[4], output[4];
+	} push = { { sw, sh, 1.0f / sw, 1.0f / sh }, { float(dw), float(dh), 1.0f / dw, 1.0f / dh } };
+	cmd->push_constants(&push, 0, sizeof push);
+	cmd->draw(4);
+	cmd->end_render_pass();
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+	device->submit(cmd);    /* now: the window's commands are submitted after these */
+}
+
 /* Shows a picture in window win: slot's (vkr_keep), or px (w x h, 0xAARRGGBB: the CPU's, a video),
  * at aspect (width / height), letterboxed, scaled as the frontend does (scaling: SCALING_*: 0
  * sharp-bilinear: whole-number nearest prescale, then smooth; 1 sharp; 2 smooth) */
@@ -1629,7 +1740,12 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 	vkBeginCommandBuffer(cb, &bi);
 
 	ImageHandle src;
-	if (px && w > 0 && h > 0)     /* the CPU's picture: through a buffer */
+	if (px && w > 0 && h > 0 && crt_mode)   /* the CPU's picture for the CRT pass: sampled, uploaded now */
+	{
+		ImageInitialData init = { px, 0, 0 };
+		src = device->create_image(ImageCreateInfo::immutable_2d_image(w, h, VK_FORMAT_B8G8R8A8_UNORM), &init);
+	}
+	else if (px && w > 0 && h > 0)     /* the CPU's picture: through a buffer */
 	{
 		BufferCreateInfo info;
 		info.domain = BufferDomain::Host;
@@ -1674,7 +1790,24 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 		dw = int(wh * aspect);
 	}
 	bool hd = !px && src && w > 0 && h > 0 && dw > 0 && dh > 0 && !hd_pieces[win].empty();
-	if (hd)     /* the picture with HD images over it, made at the window's size: copied 1:1 */
+	if (crt_mode && src && w > 0 && h > 0 && dw > 0 && dh > 0)
+	{   /* through the CRT shader at the window's size (HD images first, under the scanlines): copied 1:1 */
+		if (hd)
+			hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
+		crt_compose(s.crt[f], s.crt_in[f], hd ? s.hd[f] : src, px != nullptr, hd ? dw : w, hd ? dh : h, dw, dh, w, h);
+		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+		mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+		barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		        VK_PIPELINE_STAGE_TRANSFER_BIT);
+		blit(cb, s.crt[f]->get_image(), dw, dh, out, (ww - dw) / 2, (wh - dh) / 2, dw, dh, VK_FILTER_NEAREST);
+		s.held[f][0] = src;
+		s.held[f][1] = s.crt[f];
+	}
+	else if (hd)     /* the picture with HD images over it, made at the window's size: copied 1:1 */
 	{
 		hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
 		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };

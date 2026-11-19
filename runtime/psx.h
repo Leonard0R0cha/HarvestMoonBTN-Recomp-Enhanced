@@ -256,6 +256,7 @@ typedef struct {
     int  precisecull;           /* NCLIP from the precise positions: -1 = with pgxp (recorded, co-op host's) */
     int  interp;                /* frame interpolation prototype: in-between pictures (needs pgxp) */
     int  vsync;                 /* the game's window waits for the screen's refresh (and keeps time with a 60/120 Hz one) */
+    int  crt;                   /* the windows' pictures through a CRT filter (Vulkan): 0 off, 1 scanlines, 2 CRT; F6 */
     int  renderer_vk;           /* experiment: parallel-psx (Vulkan) draws the picture (renderer = vulkan) */
     int  texturepack;           /* replacement images from textures/ (needs upscale >= 2) */
     int  portraits;             /* redrawn dialogue portraits from textures/portraits/ (needs upscale >= 2) */
