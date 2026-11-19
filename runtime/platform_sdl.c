@@ -201,6 +201,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "biggreenhouse=", 14)) { g_cfg.biggreenhouse = atoi(tok + 14); continue; }
         if (!strncmp(tok, "buildorder=", 11)) { g_cfg.buildorder = atoi(tok + 11); continue; }
         if (!strncmp(tok, "runthrough=", 11)) { g_cfg.runthrough = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "randomnames=", 12)) { g_cfg.randomnames = atoi(tok + 12); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
             int *v = cheat_ev[n_cheat_ev].v;
@@ -543,6 +544,7 @@ int platform_init(void) {
             if (g_cfg.biggreenhouse) fprintf(rec_file, "biggreenhouse=%d\n", g_cfg.biggreenhouse);
             if (g_cfg.buildorder) fprintf(rec_file, "buildorder=%d\n", g_cfg.buildorder);
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
+            if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
                     g_cfg.cheat_bag, g_cfg.cheat_items, g_cfg.cheat_tools);

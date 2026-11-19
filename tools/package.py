@@ -72,6 +72,7 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
         game_data = GAME_DATA_PAK if pak else GAME_DATA_DISC.format(remembered=REMEMBERED if disc_path else '')
         f.write(readme.replace('{{GAME_DATA}}\n', game_data))
     shutil.copy2(os.path.join(TPL, 'LICENSE-SDL2.txt'), os.path.join(out, 'LICENSE-SDL2.txt'))
+    shutil.copy2(os.path.join(TPL, 'names-example.txt'), os.path.join(out, 'names-example.txt'))
     shutil.copy2(os.path.join(TPL, 'launcher.pyw'), os.path.join(out, 'launcher.pyw'))
     # the launcher built from it (PyInstaller), for players without Python
     # (the one for the folder's system: a cross-built Linux folder has none, only launcher.pyw)

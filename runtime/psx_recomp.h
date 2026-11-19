@@ -260,6 +260,8 @@ void cheats_tick(void);
 uint32_t farm_score_berries(uint32_t score);    /* fixes.c: the summary page's farm score */
 void first_house_cabinet(void);                 /* ... the first house's boxes open the cabinet */
 void small_draw_room(void);                     /* ... more room for the 2D drawing */
+void names_open(CPU *c);                      /* names.c: the naming screen opened ... */
+void names_buttons(CPU *c);                   /* ... and its buttons read: Select picks a random name */
 void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
 void stamina_glyph_seen(CPU *c);
 void hud_fade_anchor(int x, int y, int kind);     /* fixes.c: the clock see-through over the farmer */

@@ -1,0 +1,24 @@
+# Your own lists for "Random names" (randomnames = 1): copy this file to names.txt, next to
+# HarvestMoonBTN.exe, and change the names. One name a line, 8 letters at most, under its list:
+# [farmer] [farm] [dog] [horse] [baby] [animal] (cows, sheep, chickens and the ones born).
+# A list left out keeps the built-in one. Letters, digits and spaces; the accents work only in the
+# Portuguese game. Online names.txt is not read (both sides use the built-in lists).
+
+[farmer]
+Jack
+Pete
+
+[farm]
+Sunrise
+
+[dog]
+Pochi
+
+[horse]
+Spirit
+
+[baby]
+Chris
+
+[animal]
+Daisy
