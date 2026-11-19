@@ -1,5 +1,5 @@
-/* The in-game overlay (F7, overlay.cpp, Dear ImGui): settings changed while the game is paused,
- * drawn over the picture by either way of showing it (platform_sdl.c's SDL renderer, Vulkan's
+/* The in-game overlay (F7, overlay.cpp, Dear ImGui): settings changed while the game is paused
+ * (or runs behind it, with the player's controls on the overlay), drawn over the picture by either way of showing it (platform_sdl.c's SDL renderer, Vulkan's
  * vkr_present). For now: the CRT filters and their settings. */
 #pragma once
 #ifdef __cplusplus
@@ -8,6 +8,7 @@ extern "C" {
 
 void overlay_init(int font_px);     /* the font's size in pixels */
 int  overlay_open(void);
+int  overlay_pauses(void);          /* open, with "Pause the game" on (else the game runs behind it) */
 void overlay_show(int on);
 /* an SDL_Event for the overlay (while open); mx, my: the window's pixels per mouse unit */
 void overlay_event(const void *sdl_event, float mx, float my);
@@ -25,8 +26,10 @@ void overlay_draw(void *ctx, OverlayList list, OverlayCmd cmd);    /* each list,
 int    platform_crt_mode(void);
 void   platform_crt(int mode);              /* the filter (0 off, 1 scanlines, 2 CRT), with its settings */
 float *platform_crt_params(int shader);     /* 0 scanlines, 1 CRT: their settings (crt_params.h) */
+int   *platform_crt_smooth(void);           /* 1: smooth 3D edges under them (the picture averaged) */
 int    config_save(const char *section, const char *key, const char *value);   /* in hmbtn.ini */
 const char *config_language(void);          /* the launcher's: en, pt, es */
+int    platform_can_pause(void);            /* 0 in online co-op */
 
 #ifdef __cplusplus
 }

@@ -258,6 +258,7 @@ typedef struct {
     int  vsync;                 /* the game's window waits for the screen's refresh (and keeps time with a 60/120 Hz one) */
     int  crt;                   /* the windows' pictures through a CRT filter (Vulkan): 0 off, 1 scanlines, 2 CRT; F6 */
     float crt_param[2][16];     /* their settings (crt_params.h: [crt] hyllian_..., lottes_...) */
+    int  crt_smooth;            /* they see the upscaled picture averaged to the console's size: smooth 3D edges */
     int  renderer_vk;           /* experiment: parallel-psx (Vulkan) draws the picture (renderer = vulkan) */
     int  texturepack;           /* replacement images from textures/ (needs upscale >= 2) */
     int  portraits;             /* redrawn dialogue portraits from textures/portraits/ (needs upscale >= 2) */

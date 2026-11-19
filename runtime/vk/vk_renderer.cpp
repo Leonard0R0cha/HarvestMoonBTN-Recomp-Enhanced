@@ -1275,6 +1275,7 @@ static struct Swap
 	ImageHandle pre, upload;    /* sharp-bilinear prescale target; CPU pictures */
 	ImageHandle hd[2], hd_pre[2];   /* with HD images: the picture at the window's size; its prescale */
 	ImageHandle crt[2], crt_in[2];  /* with a CRT filter: the picture at the window's size; its sampled copy */
+	ImageHandle crt_nat[2];         /* and the copy averaged to the console's size (smooth edges) */
 	VkFormat format = VK_FORMAT_UNDEFINED;
 	std::vector<VkImageView> views;     /* the overlay's (F7): the images as drawn into, ui_draw */
 	std::vector<VkFramebuffer> fbs;
@@ -1629,24 +1630,30 @@ static const uint32_t crt_hyllian_frag[] =
 static const uint32_t crt_lottes_frag[] =
 #include "crt/crt-lottes.frag.inc"
     ;
-static int crt_mode, crt_n;
+static const uint32_t crt_box_frag[] =
+#include "crt/box.frag.inc"
+    ;
+static int crt_mode, crt_n, crt_smooth = 1;
 static float crt_p[16];     /* the shader's parameters (crt_params.h), after SourceSize and OutputSize */
 
-extern "C" void vkr_crt(int mode, const float *params, int n)
+extern "C" void vkr_crt(int mode, const float *params, int n, int smooth)
 {
 	crt_mode = mode;
+	crt_smooth = smooth;
 	crt_n = n < 16 ? n : 16;
-	memcpy(crt_p, params, sizeof *crt_p * crt_n);
+	if (params)
+		memcpy(crt_p, params, sizeof *crt_p * crt_n);
 }
 
 /* in (iw x ih: transfer source layout; sampled: shader read-only, ready) through the CRT shader
  * into keep (dw x dh, transfer source layout when the commands have run). The shader sees the
- * console's picture: w x h over its upscale (about 240 lines), so a scanline per line. */
-static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, const ImageHandle &in, bool sampled, int iw, int ih,
-                        int dw, int dh, int w, int h)
+ * console's picture: w x h over its upscale (about 240 lines), so a scanline per line; smooth
+ * (crt_smooth): each of its pixels the average of the upscaled ones it covers (nat_keep) */
+static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, ImageHandle &nat_keep, const ImageHandle &in,
+                        bool sampled, int iw, int ih, int dw, int dh, int w, int h)
 {
 	static BufferHandle quad;
-	static Program *prog[2];
+	static Program *prog[2], *box;
 	if (!quad)
 	{
 		static const float corners[] = { -1, -1, 1, -1, -1, 1, 1, 1 };
@@ -1657,7 +1664,10 @@ static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, const ImageHand
 		quad = device->create_buffer(bi, corners);
 		prog[0] = device->request_program(crt_vert, sizeof crt_vert, crt_hyllian_frag, sizeof crt_hyllian_frag);
 		prog[1] = device->request_program(crt_vert, sizeof crt_vert, crt_lottes_frag, sizeof crt_lottes_frag);
+		box = device->request_program(crt_vert, sizeof crt_vert, crt_box_frag, sizeof crt_box_frag);
 	}
+	int n = (h + 120) / 240;    /* the upscale: 240 lines (480: interlaced, a scanline per field's line) */
+	int sw = w / (n > 1 ? n : 1), sh = h / (n > 1 ? n : 1);
 	CommandBufferHandle cmd = device->request_command_buffer();
 	const ImageView *view = &in->get_view();
 	if (!sampled)
@@ -1682,6 +1692,41 @@ static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, const ImageHand
 		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
 		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
 		view = &in_keep->get_view();
+	}
+	if (crt_smooth && (iw > sw || ih > sh))
+	{
+		if (!nat_keep || int(nat_keep->get_width()) != sw || int(nat_keep->get_height()) != sh)
+		{
+			ImageCreateInfo ii = ImageCreateInfo::render_target(sw, sh, VK_FORMAT_R8G8B8A8_UNORM);
+			ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			nat_keep = device->create_image(ii, nullptr);
+		}
+		/* srcStage fragment: this frame's CRT pass read it last time */
+		cmd->image_barrier(*nat_keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+		RenderPassInfo rp;
+		rp.color_attachments[0] = &nat_keep->get_view();
+		rp.num_color_attachments = 1;
+		rp.store_attachments = 1;
+		cmd->begin_render_pass(rp);
+		cmd->set_quad_state();
+		cmd->set_program(*box);
+		cmd->set_vertex_binding(0, *quad, 0, 8);
+		cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+		cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+		cmd->set_viewport({ 0.0f, 0.0f, float(sw), float(sh), 0.0f, 1.0f });
+		cmd->set_scissor({ { 0, 0 }, { unsigned(sw), unsigned(sh) } });
+		cmd->set_texture(0, 0, *view, StockSampler::NearestClamp);
+		const float ratio[2] = { float(iw) / sw, float(ih) / sh };
+		cmd->push_constants(ratio, 0, sizeof ratio);
+		cmd->draw(4);
+		cmd->end_render_pass();
+		cmd->image_barrier(*nat_keep, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		view = &nat_keep->get_view();
 	}
 	if (!keep || int(keep->get_width()) != dw || int(keep->get_height()) != dh)
 	{
@@ -1710,12 +1755,10 @@ static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, const ImageHand
 	 * the edge between two pixels of the picture; nearest took one or the other by rounding,
 	 * column by column (thin vertical lines where an edge crosses a console pixel) */
 	cmd->set_texture(0, 0, *view, StockSampler::LinearClamp);
-	int n = (h + 120) / 240;    /* the upscale: 240 lines (480: interlaced, a scanline per field's line) */
-	float sw = float(w / (n > 1 ? n : 1)), sh = float(h / (n > 1 ? n : 1));
 	struct
 	{
 		float source[4], output[4], p[16];
-	} push = { { sw, sh, 1.0f / sw, 1.0f / sh }, { float(dw), float(dh), 1.0f / dw, 1.0f / dh }, {} };
+	} push = { { float(sw), float(sh), 1.0f / sw, 1.0f / sh }, { float(dw), float(dh), 1.0f / dw, 1.0f / dh }, {} };
 	memcpy(push.p, crt_p, sizeof *crt_p * crt_n);
 	cmd->push_constants(&push, 0, 32 + 4 * crt_n);     /* the shader's block: its parameters only */
 	cmd->draw(4);
@@ -2092,7 +2135,7 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 	{   /* through the CRT shader at the window's size (HD images first, under the scanlines): copied 1:1 */
 		if (hd)
 			hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
-		crt_compose(s.crt[f], s.crt_in[f], hd ? s.hd[f] : src, px != nullptr, hd ? dw : w, hd ? dh : h, dw, dh, w, h);
+		crt_compose(s.crt[f], s.crt_in[f], s.crt_nat[f], hd ? s.hd[f] : src, px != nullptr, hd ? dw : w, hd ? dh : h, dw, dh, w, h);
 		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
 		mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 		mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;

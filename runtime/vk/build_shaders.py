@@ -33,6 +33,7 @@ SHADERS = {
     'crt/crt.vert.inc': ('crt/crt.vert', []),
     'crt/crt-hyllian.frag.inc': ('crt/crt-hyllian.frag', []),
     'crt/crt-lottes.frag.inc': ('crt/crt-lottes.frag', []),
+    'crt/box.frag.inc': ('crt/box.frag', []),
     # the overlay (F7, overlay.cpp)
     'ui/ui.vert.inc': ('ui/ui.vert', []),
     'ui/ui.frag.inc': ('ui/ui.frag', []),

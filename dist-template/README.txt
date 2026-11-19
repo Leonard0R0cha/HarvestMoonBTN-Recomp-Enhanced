@@ -64,8 +64,9 @@ CONTROLS
   F12                screenshot (screenshots folder)
   F5                 cheats window, changes apply at once
   F6                 CRT filter: off, scanlines, CRT
-  F7                 overlay (the game pauses): the CRT filter's settings, with sliders; Save keeps
-                     them. Mouse, arrows + Space, or a controller (A to change a slider). Esc closes
+  F7                 overlay: the CRT filter's settings, with sliders (seen at once); Save keeps
+                     them. The game pauses, or runs behind it with "Pause the game" off. Hold Tab
+                     or L2 to hide it. Mouse, arrows + Space, or a controller (A). Esc closes
   F9                 60 fps camera on / off, to compare
   Tab (hold)         fast-forward (can be disabled)
   F1 - F4            memory card 1 - 4 in slot 1 (shown in the window title)

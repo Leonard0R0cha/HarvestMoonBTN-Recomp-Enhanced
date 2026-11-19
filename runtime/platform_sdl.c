@@ -689,7 +689,7 @@ void platform_crt(int mode) {
         if (mode && mode != logged) LOGI("CRT filter: %s", mode == 2 ? "crt-lottes" : "crt-hyllian (scanlines)");
         logged = mode;
         g_cfg.crt = mode;
-        vkr_crt(mode, mode ? g_cfg.crt_param[mode - 1] : NULL, mode ? crt_param_count(mode - 1) : 0);
+        vkr_crt(mode, mode ? g_cfg.crt_param[mode - 1] : NULL, mode ? crt_param_count(mode - 1) : 0, g_cfg.crt_smooth);
         return;
     }
 #endif
@@ -699,6 +699,7 @@ void platform_crt(int mode) {
 
 int platform_crt_mode(void) { return g_cfg.crt; }
 float *platform_crt_params(int shader) { return g_cfg.crt_param[shader & 1]; }
+int *platform_crt_smooth(void) { return &g_cfg.crt_smooth; }
 
 void platform_shutdown(void) {
     if (g_cfg.headless) return;
@@ -1388,11 +1389,30 @@ static void window_pixels(int *w, int *h, float *mx, float *my) {
     *my = lh > 0 ? (float)*h / lh : 1.0f;
 }
 
-/* F7: the overlay over the last picture, the game paused (its sound too) until it closes */
+int platform_can_pause(void) { return !netplay_active(); }
+
+/* while the overlay is open: the player's keys, mouse and controller go to it (F6, F11, F12 and
+ * Alt+Enter still to the game's window) */
+static int overlay_takes(const SDL_Event *e) {
+    switch (e->type) {
+    case SDL_KEYDOWN: case SDL_KEYUP: {
+        SDL_Scancode s = e->key.keysym.scancode;
+        return !(s == SDL_SCANCODE_F6 || s == SDL_SCANCODE_F11 || s == SDL_SCANCODE_F12 ||
+                 (s == SDL_SCANCODE_RETURN && (e->key.keysym.mod & KMOD_ALT)));
+    }
+    case SDL_TEXTINPUT: case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL:
+    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: case SDL_CONTROLLERAXISMOTION:
+        return 1;
+    }
+    return 0;
+}
+
+/* F7 with "Pause the game": the overlay over the last picture, the game paused (its sound too)
+ * until it closes or the box is unticked */
 static void overlay_pause(int w, int h, int wide) {
     uint64_t f = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
     if (audio_ok) SDL_PauseAudioDevice(audio, 1);
-    while (overlay_open() && !g_quit) {
+    while (overlay_pauses() && !g_quit) {
         int ww, wh;
         float mx, my;
         window_pixels(&ww, &wh, &mx, &my);
@@ -1433,7 +1453,14 @@ void platform_frame(void) {
     bool shown = !g_cfg.headless && (!turbo() || (frame & (g_cfg.vsync ? 15 : 3)) == 0);   /* vsync: each waits */
     if (!g_cfg.headless) {
         SDL_Event ev;
+        int ov = overlay_open(), ovw, ovh;
+        float ovx = 1.0f, ovy = 1.0f;
+        if (ov) window_pixels(&ovw, &ovh, &ovx, &ovy);
         while (SDL_PollEvent(&ev)) {
+            if (ov && overlay_takes(&ev)) {     /* the game running behind the overlay: not its input */
+                overlay_event(&ev, ovx, ovy);
+                continue;
+            }
             switch (ev.type) {
             case SDL_QUIT: g_quit = 1; break;
             case SDL_WINDOWEVENT:
@@ -1478,8 +1505,8 @@ void platform_frame(void) {
                     LOGI("interp %s", g_interp ? "on" : "off");
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F6) {
                     platform_crt((g_cfg.crt + 1) % 3);      /* off, scanlines, CRT */
-                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F7 && !netplay_active()) {
-                    overlay_show(1);            /* co-op: can't pause the other player's game */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F7) {
+                    overlay_show(1);            /* (co-op: not paused, overlay_pauses) */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
                     SDL_SetWindowFullscreen(win, 0);
@@ -1489,9 +1516,10 @@ void platform_frame(void) {
         }
         {
             const Uint8 *ks = SDL_GetKeyboardState(NULL);
-            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
+            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward && !overlay_open();
         }
         uint16_t b = read_controllers();
+        if (overlay_open()) b = 0;          /* the overlay has the player's controls */
         update_rumble();
         static uint16_t mine;           /* Alt held: keeps the buttons as they were */
         if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
@@ -1611,6 +1639,12 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
+    if (overlay_open() && shown) {      /* the overlay over this picture (the game runs behind it) */
+        int ow, oh;
+        float a, c;
+        window_pixels(&ow, &oh, &a, &c);
+        overlay_frame(ow, oh, 1.0f / 59.29f);
+    }
     if (shown && !keep) present(w, h, wide, same && shown_last);
     /* keeping time with a 120 Hz (or faster) screen: the picture again, a VBlank every vsync_k refreshes */
     for (int i = 1; i < vsync_k && shown && !keep && !turbo(); i++) present(w, h, wide, true);
@@ -1624,6 +1658,6 @@ void platform_frame(void) {
     }
     if (shown && win2) present2(wide);
     shown_last = shown;
-    if (overlay_open()) overlay_pause(w ? w : px_w, h ? h : px_h, wide);
+    if (overlay_pauses()) overlay_pause(w ? w : px_w, h ? h : px_h, wide);
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

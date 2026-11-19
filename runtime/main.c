@@ -276,6 +276,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
     else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
     else if (crt_option(key, val)) {}
+    else if (!strcmp(key, "crt_smooth")) g_cfg.crt_smooth = atoi(val) != 0;
     else if (!strcmp(key, "language")) snprintf(ui_language, sizeof ui_language, "%s", val);   /* the launcher's (and the overlay's) */
     else if (!strcmp(key, "game_pt")) {}     /* the launcher's: the language its Build page makes */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
@@ -519,6 +520,7 @@ int main(int argc, char **argv) {
     g_cfg.depthtest = 1;
     for (int s = 0; s < 2; s++)
         for (int i = 0; i < CRT_PARAMS; i++) g_cfg.crt_param[s][i] = crt_params[s][i].def;
+    g_cfg.crt_smooth = 1;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);

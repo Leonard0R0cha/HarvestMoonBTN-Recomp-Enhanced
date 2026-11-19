@@ -9,23 +9,26 @@
 #include <string.h>
 #include <math.h>
 
-static bool open_, ready;
+static bool open_, ready, pause_ = true, peek_key, peek_pad;     /* peek: Tab or L2 held, the overlay hidden */
+static bool opened;     /* just opened: its keyboard/controller cursor shown at once (else the first press only shows it) */
 static char status[96];
 
 /* the few words of the overlay, as the launcher's language (en, pt, es) */
-enum { T_FILTER, T_OFF, T_SCAN, T_CRT, T_NEEDS_VK, T_RESET, T_SAVE, T_SAVED, T_NOT_SAVED, T_BACK, T_TYPE, T_N };
+enum { T_FILTER, T_OFF, T_SCAN, T_CRT, T_NEEDS_VK, T_RESET, T_SAVE, T_SAVED, T_NOT_SAVED, T_BACK, T_TYPE, T_SMOOTH,
+       T_PAUSE, T_PEEK, T_N };
 static const char *const texts[3][T_N] = {
     { "CRT filter", "Off", "Scanlines", "CRT", "Needs Vulkan, which isn't available here.", "Reset", "Save",
-      "Saved in hmbtn.ini", "Could not save hmbtn.ini", "F7 or Esc: back to the game (paused while this is open)",
-      "Ctrl+click a slider to type a value." },
+      "Saved in hmbtn.ini", "Could not save hmbtn.ini", "F7 or Esc: back to the game",
+      "Ctrl+click a slider to type a value.", "Smooth 3D edges", "Pause the game",
+      "Hold Tab or L2: the whole picture" },
     { "Filtro CRT", "Desligado", "Scanlines", "CRT", "Precisa de Vulkan, que n\xc3\xa3o est\xc3\xa1 dispon\xc3\xadvel aqui.",
       "Restaurar", "Salvar", "Salvo em hmbtn.ini", "N\xc3\xa3o foi poss\xc3\xadvel salvar o hmbtn.ini",
-      "F7 ou Esc: voltar ao jogo (pausado enquanto isto estiver aberto)",
-      "Ctrl+clique num controle para digitar um valor." },
+      "F7 ou Esc: voltar ao jogo", "Ctrl+clique num controle para digitar um valor.", "Bordas 3D suaves",
+      "Pausar o jogo", "Segure Tab ou L2: a imagem inteira" },
     { "Filtro CRT", "Apagado", "Scanlines", "CRT", "Necesita Vulkan, que no est\xc3\xa1 disponible aqu\xc3\xad.",
       "Restablecer", "Guardar", "Guardado en hmbtn.ini", "No se pudo guardar hmbtn.ini",
-      "F7 o Esc: volver al juego (en pausa mientras esto est\xc3\xa1 abierto)",
-      "Ctrl+clic en un control para escribir un valor." },
+      "F7 o Esc: volver al juego", "Ctrl+clic en un control para escribir un valor.", "Bordes 3D suaves",
+      "Pausar el juego", "Mant\xc3\xa9n Tab o L2: la imagen entera" },
 };
 
 static const char *T(int i)
@@ -65,7 +68,14 @@ extern "C" int overlay_open(void)
 extern "C" void overlay_show(int on)
 {
     open_ = on && ready;
+    peek_key = peek_pad = false;
+    opened = open_;
     status[0] = 0;
+}
+
+extern "C" int overlay_pauses(void)
+{
+    return open_ && pause_ && platform_can_pause();
 }
 
 static ImGuiKey key_of(SDL_Scancode s)
@@ -158,6 +168,11 @@ extern "C" void overlay_event(const void *e, float mx, float my)
             overlay_show(0);
             return;
         }
+        if (s == SDL_SCANCODE_TAB)      /* held: the overlay hidden, to see the whole picture */
+        {
+            peek_key = down;
+            return;
+        }
         io.AddKeyEvent(ImGuiMod_Ctrl, (ev.key.keysym.mod & KMOD_CTRL) != 0);
         io.AddKeyEvent(ImGuiMod_Shift, (ev.key.keysym.mod & KMOD_SHIFT) != 0);
         io.AddKeyEvent(ImGuiMod_Alt, (ev.key.keysym.mod & KMOD_ALT) != 0);
@@ -175,6 +190,8 @@ extern "C" void overlay_event(const void *e, float mx, float my)
         break;
     }
     case SDL_CONTROLLERAXISMOTION:
+        if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)   /* L2 held: as Tab */
+            peek_pad = ev.caxis.value > 16000;
         if (ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX || ev.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
         {
             float v = ev.caxis.value / 32767.0f, a = fabsf(v) < 0.25f ? 0.0f : fabsf(v);
@@ -232,6 +249,12 @@ static void crt_page()
             }
         }
         ImGui::PopItemWidth();
+        bool smooth = *platform_crt_smooth() != 0;
+        if (ImGui::Checkbox(T(T_SMOOTH), &smooth))
+        {
+            *platform_crt_smooth() = smooth;
+            changed = true;
+        }
         if (ImGui::Button(T(T_RESET)))
         {
             for (int i = 0; i < n; i++)
@@ -250,6 +273,7 @@ static void crt_page()
         static const char *const modes[3] = { "off", "scanlines", "crt" };
         bool ok = config_save("video", "crt", modes[mode]) != 0;
         char key[64], val[32];
+        ok = ok && config_save("crt", "crt_smooth", *platform_crt_smooth() ? "1" : "0");
         for (int s = 1; s >= 0 && ok; s--)     /* (new lines go to the top of [crt]: from the last) */
             for (int i = crt_param_count(s) - 1; i >= 0 && ok; i--)
             {
@@ -269,15 +293,29 @@ extern "C" void overlay_frame(int w, int h, float seconds)
     io.DisplaySize = ImVec2((float)w, (float)h);
     io.DeltaTime = seconds > 0.0f && seconds < 1.0f ? seconds : 1.0f / 60.0f;
     ImGui::NewFrame();
-    ImGui::SetNextWindowPos(ImVec2(w * 0.5f, h * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    /* at the left, see-through: most of the picture stays in sight */
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetFontSize(), h * 0.5f), ImGuiCond_Appearing, ImVec2(0.0f, 0.5f));
+    ImGui::SetNextWindowBgAlpha(0.75f);
     bool keep = true;
     if (ImGui::Begin("HMBTN ReFarmed", &keep, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
     {
+        if (opened)
+        {
+            ImGui::SetNavCursorVisible(true);
+            opened = false;
+        }
+        bool can = platform_can_pause() != 0, p = pause_ && can;
+        ImGui::BeginDisabled(!can);     /* online co-op: the game goes on */
+        if (ImGui::Checkbox(T(T_PAUSE), &p))
+            pause_ = p;
+        ImGui::SetItemDefaultFocus();   /* keyboard and controller start here */
+        ImGui::EndDisabled();
         crt_page();
         if (status[0])
             ImGui::TextUnformatted(status);
         ImGui::Separator();
         ImGui::TextDisabled("%s", T(T_BACK));
+        ImGui::TextDisabled("%s", T(T_PEEK));
         ImGui::TextDisabled("%s", T(T_TYPE));
     }
     ImGui::End();
@@ -295,7 +333,7 @@ extern "C" void overlay_font(const unsigned char **rgba, int *w, int *h)
 
 extern "C" int overlay_sizes(int *nvtx, int *nidx)
 {
-    ImDrawData *d = open_ ? ImGui::GetDrawData() : nullptr;
+    ImDrawData *d = open_ && !peek_key && !peek_pad ? ImGui::GetDrawData() : nullptr;
     *nvtx = d ? d->TotalVtxCount : 0;
     *nidx = d ? d->TotalIdxCount : 0;
     return *nidx > 0;
