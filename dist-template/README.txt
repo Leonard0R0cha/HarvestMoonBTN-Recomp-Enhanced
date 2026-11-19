@@ -35,6 +35,8 @@ the game, a commented file you can also edit by hand.
 * Vsync (on): no tearing, and on a 60 or 120 Hz screen the game keeps time with it, so the camera
   moves evenly. A 144 Hz screen shows 59.29 pictures a second unevenly: turn on G-Sync/FreeSync
   (for windowed and full screen), or set the screen to 60 or 120 Hz.
+* CRT filter (F6: off, scanlines, CRT; "crt" in the launcher): the lines of a TV picture, or a
+  curved tube with a shadow mask and glow. Shown through Vulkan, also with the CPU renderer.
 * The CPU renderer draws the picture with the processor, so no graphics card is needed; the
   resolution is what costs. On a slower PC pick the quick setup for its number of cores (2 cores:
   resolution 2, 4 cores: 3); every effect stays on. "renderer = vulkan" (experimental)
@@ -61,6 +63,10 @@ CONTROLS
   F11 or Alt+Enter   toggle fullscreen         Esc   leave fullscreen
   F12                screenshot (screenshots folder)
   F5                 cheats window, changes apply at once
+  F6                 CRT filter: off, scanlines, CRT
+  F7                 overlay: the CRT filter's settings, with sliders (seen at once); Save keeps
+                     them. The game pauses, or runs behind it with "Pause the game" off. Hold Tab
+                     or L2 to hide it. Mouse, arrows + Space, or a controller (A). Esc closes
   F9                 60 fps camera on / off, to compare
   Tab (hold)         fast-forward (can be disabled)
   F1 - F4            memory card 1 - 4 in slot 1 (shown in the window title)
@@ -149,4 +155,6 @@ NOTES
   To give the game to a friend, give them the launcher: they build from their own disc.
 * SDL2 is used under the zlib license (LICENSE-SDL2.txt). The Vulkan renderer includes
   parallel-psx (ISC/MIT), volk (MIT), SPIRV-Cross and the Vulkan headers (Apache-2.0); their
-  licences are in runtime/vk of the sources.
+  licences are in runtime/vk of the sources. The CRT filters are crt-hyllian (MIT, Hyllian) and
+  crt-lottes (public domain, Timothy Lottes) from libretro's slang-shaders (runtime/vk/crt). The
+  overlay (F7) is Dear ImGui (MIT, runtime/imgui).

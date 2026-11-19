@@ -19,6 +19,8 @@
 #ifdef HMBTN_VULKAN
 #include "vk/vk_renderer.h"
 #endif
+#include "overlay.h"
+#include "crt_params.h"
 
 uint16_t g_pad_buttons[2];
 bool g_pad_connected[2];
@@ -591,6 +593,11 @@ int platform_init(void) {
         SDL_RaiseWindow(win);
     }
     update_title();
+    {   /* the overlay (F7): its font about 18 pixels on a 1080-line screen */
+        SDL_DisplayMode m;
+        int px = SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &m) == 0 && m.h > 0 ? m.h * 18 / 1080 : 18;
+        overlay_init(px < 14 ? 14 : px);
+    }
     {
         SDL_DisplayMode m;
         if (g_cfg.vsync && SDL_GetCurrentDisplayMode(SDL_GetWindowDisplayIndex(win), &m) == 0 && m.refresh_rate > 0) {
@@ -654,7 +661,8 @@ void platform_vulkan(void) {
         tex = NULL;
         ren = NULL;
         vkp = 1;
-        vkr_vsync(0, g_cfg.vsync);
+        /* the CPU renderer (the CRT filters): waits only while keeping time with the screen, as SDL's */
+        vkr_vsync(0, g_cfg.vsync && (g_vk || vsync_k));
     }
     if (vkp && vk_window(1, win2)) {
         if (tex2) SDL_DestroyTexture(tex2);
@@ -665,6 +673,33 @@ void platform_vulkan(void) {
     }
 #endif
 }
+
+/* The CRT filter (0 off, 1 scanlines, 2 CRT; F6 goes round): a Vulkan shader where the windows are
+ * shown, so with the CPU renderer Vulkan shows them from the first filter on (when it can). */
+void platform_crt(int mode) {
+    if (g_cfg.headless) return;
+#ifdef HMBTN_VULKAN
+    static int tried;
+    if (mode && !vkp && !tried && !g_cfg.renderer_vk) {
+        tried = 1;
+        if (vkr_init(0)) platform_vulkan();
+    }
+    if (vkp) {
+        static int logged;
+        if (mode && mode != logged) LOGI("CRT filter: %s", mode == 2 ? "crt-lottes" : "crt-hyllian (scanlines)");
+        logged = mode;
+        g_cfg.crt = mode;
+        vkr_crt(mode, mode ? g_cfg.crt_param[mode - 1] : NULL, mode ? crt_param_count(mode - 1) : 0, g_cfg.crt_smooth);
+        return;
+    }
+#endif
+    if (mode) LOGW("CRT filter: needs Vulkan, which isn't available here");
+    g_cfg.crt = 0;
+}
+
+int platform_crt_mode(void) { return g_cfg.crt; }
+float *platform_crt_params(int shader) { return g_cfg.crt_param[shader & 1]; }
+int *platform_crt_smooth(void) { return &g_cfg.crt_smooth; }
 
 void platform_shutdown(void) {
     if (g_cfg.headless) return;
@@ -961,6 +996,48 @@ static void hd_vk(int win, int n) {
 }
 #endif
 
+/* The overlay (F7) through SDL's renderer: ImGui's triangles with the font as a texture
+ * (SDL_RenderGeometryRaw: SDL 2.0.18 and newer) */
+static SDL_Texture *ov_tex;
+typedef struct { const char *vtx; int nvtx; const unsigned short *idx; } OvList;
+
+static void ov_list(void *ctx, const void *vtx, int nvtx, const unsigned short *idx, int nidx) {
+    OvList *o = ctx;
+    o->vtx = vtx;
+    o->nvtx = nvtx;
+    o->idx = idx;
+    (void)nidx;
+}
+
+static void ov_cmd(void *ctx, const float c[4], int idx_offset, int vtx_offset, int count) {
+    OvList *o = ctx;
+    SDL_Rect r = { (int)c[0], (int)c[1], (int)(c[2] - c[0]), (int)(c[3] - c[1]) };
+    if (r.w <= 0 || r.h <= 0) return;
+    SDL_RenderSetClipRect(ren, &r);
+    const char *v = o->vtx + (size_t)vtx_offset * 20;     /* x, y, u, v (floats), then R, G, B, A */
+    SDL_RenderGeometryRaw(ren, ov_tex, (const float *)v, 20, (const SDL_Color *)(v + 16), 20, (const float *)(v + 8), 20,
+                          o->nvtx - vtx_offset, o->idx + idx_offset, count, 2);
+}
+
+static void overlay_sdl(void) {
+    int nv, ni;
+#ifndef _WIN32
+    if (!dyn_SDL_RenderGeometryRaw) return;     /* an older SDL: no overlay */
+#endif
+    if (!overlay_sizes(&nv, &ni)) return;
+    if (!ov_tex) {
+        const unsigned char *px;
+        int w, h;
+        overlay_font(&px, &w, &h);
+        if (!(ov_tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, w, h))) return;
+        SDL_UpdateTexture(ov_tex, NULL, px, w * 4);
+        SDL_SetTextureBlendMode(ov_tex, SDL_BLENDMODE_BLEND);
+    }
+    OvList o = { 0 };
+    overlay_draw(&o, ov_list, ov_cmd);
+    SDL_RenderSetClipRect(ren, NULL);
+}
+
 static void present(int w, int h, int wide, bool same) {
 #ifdef HMBTN_VULKAN
     if (vkp) {
@@ -1006,6 +1083,7 @@ static void present(int w, int h, int wide, bool same) {
         SDL_RenderCopy(ren, show, &src, &dst);
         hd_draw(ren, hd_get(hd_main_view2), w, h, dst);
     }
+    overlay_sdl();
     uint64_t t1 = SDL_GetPerformanceCounter();
     SDL_RenderPresent(ren);
     uint64_t t2 = SDL_GetPerformanceCounter();
@@ -1298,6 +1376,72 @@ static void interp_start(int jobs) {
     }
 }
 
+/* the window's pixels and its pixels per mouse unit */
+static void window_pixels(int *w, int *h, float *mx, float *my) {
+    int lw, lh;
+#ifdef HMBTN_VULKAN
+    if (vkp) SDL_Vulkan_GetDrawableSize(win, w, h);
+    else
+#endif
+    SDL_GetRendererOutputSize(ren, w, h);
+    SDL_GetWindowSize(win, &lw, &lh);
+    *mx = lw > 0 ? (float)*w / lw : 1.0f;
+    *my = lh > 0 ? (float)*h / lh : 1.0f;
+}
+
+int platform_can_pause(void) { return !netplay_active(); }
+
+/* while the overlay is open: the player's keys, mouse and controller go to it (F6, F11, F12 and
+ * Alt+Enter still to the game's window) */
+static int overlay_takes(const SDL_Event *e) {
+    switch (e->type) {
+    case SDL_KEYDOWN: case SDL_KEYUP: {
+        SDL_Scancode s = e->key.keysym.scancode;
+        return !(s == SDL_SCANCODE_F6 || s == SDL_SCANCODE_F11 || s == SDL_SCANCODE_F12 ||
+                 (s == SDL_SCANCODE_RETURN && (e->key.keysym.mod & KMOD_ALT)));
+    }
+    case SDL_TEXTINPUT: case SDL_MOUSEMOTION: case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: case SDL_MOUSEWHEEL:
+    case SDL_CONTROLLERBUTTONDOWN: case SDL_CONTROLLERBUTTONUP: case SDL_CONTROLLERAXISMOTION:
+        return 1;
+    }
+    return 0;
+}
+
+/* F7 with "Pause the game": the overlay over the last picture, the game paused (its sound too)
+ * until it closes or the box is unticked */
+static void overlay_pause(int w, int h, int wide) {
+    uint64_t f = SDL_GetPerformanceFrequency(), last = SDL_GetPerformanceCounter();
+    if (audio_ok) SDL_PauseAudioDevice(audio, 1);
+    while (overlay_pauses() && !g_quit) {
+        int ww, wh;
+        float mx, my;
+        window_pixels(&ww, &wh, &mx, &my);
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            if (ev.type == SDL_QUIT || (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_CLOSE)) g_quit = 1;
+            if (ev.type == SDL_KEYDOWN && !ev.key.repeat && ev.key.windowID == SDL_GetWindowID(win) &&
+                (ev.key.keysym.scancode == SDL_SCANCODE_F11 ||
+                 (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT)))) {
+                fullscreen = !fullscreen;
+                SDL_SetWindowFullscreen(win, fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                continue;
+            }
+            if (ev.type == SDL_KEYDOWN && !ev.key.repeat && ev.key.keysym.scancode == SDL_SCANCODE_F6) {
+                platform_crt((g_cfg.crt + 1) % 3);
+                continue;
+            }
+            overlay_event(&ev, mx, my);
+        }
+        uint64_t t = SDL_GetPerformanceCounter();
+        overlay_frame(ww, wh, (float)(t - last) / (float)f);
+        last = t;
+        present(w, h, wide, false);
+        SDL_Delay(5);
+    }
+    if (audio_ok) SDL_PauseAudioDevice(audio, 0);
+    px_valid = false;
+}
+
 void platform_frame(void) {
     uint64_t frame = frame_count();
     dump_ram(frame);
@@ -1309,7 +1453,14 @@ void platform_frame(void) {
     bool shown = !g_cfg.headless && (!turbo() || (frame & (g_cfg.vsync ? 15 : 3)) == 0);   /* vsync: each waits */
     if (!g_cfg.headless) {
         SDL_Event ev;
+        int ov = overlay_open(), ovw, ovh;
+        float ovx = 1.0f, ovy = 1.0f;
+        if (ov) window_pixels(&ovw, &ovh, &ovx, &ovy);
         while (SDL_PollEvent(&ev)) {
+            if (ov && overlay_takes(&ev)) {     /* the game running behind the overlay: not its input */
+                overlay_event(&ev, ovx, ovy);
+                continue;
+            }
             switch (ev.type) {
             case SDL_QUIT: g_quit = 1; break;
             case SDL_WINDOWEVENT:
@@ -1352,6 +1503,10 @@ void platform_frame(void) {
                     g_interp = !g_interp;       /* compare: in-between pictures on/off */
                     view2_g_interp = g_interp;
                     LOGI("interp %s", g_interp ? "on" : "off");
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F6) {
+                    platform_crt((g_cfg.crt + 1) % 3);      /* off, scanlines, CRT */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F7) {
+                    overlay_show(1);            /* (co-op: not paused, overlay_pauses) */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
                     SDL_SetWindowFullscreen(win, 0);
@@ -1361,9 +1516,10 @@ void platform_frame(void) {
         }
         {
             const Uint8 *ks = SDL_GetKeyboardState(NULL);
-            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward;
+            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward && !overlay_open();
         }
         uint16_t b = read_controllers();
+        if (overlay_open()) b = 0;          /* the overlay has the player's controls */
         update_rumble();
         static uint16_t mine;           /* Alt held: keeps the buttons as they were */
         if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
@@ -1483,6 +1639,12 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
+    if (overlay_open() && shown) {      /* the overlay over this picture (the game runs behind it) */
+        int ow, oh;
+        float a, c;
+        window_pixels(&ow, &oh, &a, &c);
+        overlay_frame(ow, oh, 1.0f / 59.29f);
+    }
     if (shown && !keep) present(w, h, wide, same && shown_last);
     /* keeping time with a 120 Hz (or faster) screen: the picture again, a VBlank every vsync_k refreshes */
     for (int i = 1; i < vsync_k && shown && !keep && !turbo(); i++) present(w, h, wide, true);
@@ -1496,5 +1658,6 @@ void platform_frame(void) {
     }
     if (shown && win2) present2(wide);
     shown_last = shown;
+    if (overlay_pauses()) overlay_pause(w ? w : px_w, h ? h : px_h, wide);
     if (g_cfg.max_frames && frame >= (uint64_t)g_cfg.max_frames) g_quit = 1;
 }

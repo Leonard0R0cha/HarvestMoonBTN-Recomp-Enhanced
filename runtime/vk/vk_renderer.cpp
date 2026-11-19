@@ -4,6 +4,7 @@
  * back (vkr_download). Command decoding follows gpu.c (psx-spx); written for this port. */
 #include "renderer.hpp"
 #include "vk_renderer.h"
+#include "../overlay.h"
 
 #include <chrono>
 #include <map>
@@ -188,6 +189,11 @@ extern "C" int vkr_init(int s)
 		return 0;
 	device = new Device;
 	device->set_context(*context);
+	if (!s)     /* only the windows (the CPU renderer's pictures through the CRT filters) */
+	{
+		log_msg(2, "vk: windows shown by %s", device->get_gpu_properties().deviceName);
+		return 1;
+	}
 	scale = s;
 	renderer = renderers[0] = new Renderer(*device, scale, 1, nullptr);
 	if (!renderer->is_valid())
@@ -1268,6 +1274,12 @@ static struct Swap
 	BufferHandle held_buf[2];
 	ImageHandle pre, upload;    /* sharp-bilinear prescale target; CPU pictures */
 	ImageHandle hd[2], hd_pre[2];   /* with HD images: the picture at the window's size; its prescale */
+	ImageHandle crt[2], crt_in[2];  /* with a CRT filter: the picture at the window's size; its sampled copy */
+	ImageHandle crt_nat[2];         /* and the copy averaged to the console's size (smooth edges) */
+	VkFormat format = VK_FORMAT_UNDEFINED;
+	std::vector<VkImageView> views;     /* the overlay's (F7): the images as drawn into, ui_draw */
+	std::vector<VkFramebuffer> fbs;
+	BufferHandle ui_buf[2];
 	int frame = 0;
 	bool stale = false;
 	bool vsync = false;         /* wait for the screen's refresh (FIFO; vkr_vsync) */
@@ -1390,6 +1402,12 @@ static bool make_chain(Swap &s)
 	VkSwapchainKHR chain;
 	if (vkCreateSwapchainKHR(dev, &ci, nullptr, &chain) != VK_SUCCESS)
 		return false;
+	for (VkFramebuffer fb : s.fbs)
+		vkDestroyFramebuffer(dev, fb, nullptr);
+	for (VkImageView v : s.views)
+		vkDestroyImageView(dev, v, nullptr);
+	s.fbs.clear();
+	s.views.clear();
 	if (s.chain)
 		vkDestroySwapchainKHR(dev, s.chain, nullptr);
 	else
@@ -1397,6 +1415,7 @@ static bool make_chain(Swap &s)
 		       mode == VK_PRESENT_MODE_IMMEDIATE_KHR ? "IMMEDIATE" : "MAILBOX");
 	s.chain = chain;
 	s.extent = caps.currentExtent;
+	s.format = fmt.format;
 	vkGetSwapchainImagesKHR(dev, chain, &n, nullptr);
 	s.images.resize(n);
 	vkGetSwapchainImagesKHR(dev, chain, &n, s.images.data());
@@ -1599,6 +1618,438 @@ static void hd_compose(ImageHandle &keep, ImageHandle &pre_keep, const ImageHand
 	device->submit(cmd, &fence);    /* now: the window's commands are submitted after these */
 }
 
+/* ---- CRT filters (vkr_crt): the picture drawn at the window's size through a shader of
+ * libretro's slang-shaders (crt/: crt-hyllian, scanlines and a dot mask; crt-lottes, curved, with
+ * bloom and a shadow mask) ---- */
+static const uint32_t crt_vert[] =
+#include "crt/crt.vert.inc"
+    ;
+static const uint32_t crt_hyllian_frag[] =
+#include "crt/crt-hyllian.frag.inc"
+    ;
+static const uint32_t crt_lottes_frag[] =
+#include "crt/crt-lottes.frag.inc"
+    ;
+static const uint32_t crt_box_frag[] =
+#include "crt/box.frag.inc"
+    ;
+static int crt_mode, crt_n, crt_smooth = 1;
+static float crt_p[16];     /* the shader's parameters (crt_params.h), after SourceSize and OutputSize */
+
+extern "C" void vkr_crt(int mode, const float *params, int n, int smooth)
+{
+	crt_mode = mode;
+	crt_smooth = smooth;
+	crt_n = n < 16 ? n : 16;
+	if (params)
+		memcpy(crt_p, params, sizeof *crt_p * crt_n);
+}
+
+/* in (iw x ih: transfer source layout; sampled: shader read-only, ready) through the CRT shader
+ * into keep (dw x dh, transfer source layout when the commands have run). The shader sees the
+ * console's picture: w x h over its upscale (about 240 lines), so a scanline per line; smooth
+ * (crt_smooth): each of its pixels the average of the upscaled ones it covers (nat_keep) */
+static void crt_compose(ImageHandle &keep, ImageHandle &in_keep, ImageHandle &nat_keep, const ImageHandle &in,
+                        bool sampled, int iw, int ih, int dw, int dh, int w, int h)
+{
+	static BufferHandle quad;
+	static Program *prog[2], *box;
+	if (!quad)
+	{
+		static const float corners[] = { -1, -1, 1, -1, -1, 1, 1, 1 };
+		BufferCreateInfo bi;
+		bi.domain = BufferDomain::Device;
+		bi.size = sizeof corners;
+		bi.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		quad = device->create_buffer(bi, corners);
+		prog[0] = device->request_program(crt_vert, sizeof crt_vert, crt_hyllian_frag, sizeof crt_hyllian_frag);
+		prog[1] = device->request_program(crt_vert, sizeof crt_vert, crt_lottes_frag, sizeof crt_lottes_frag);
+		box = device->request_program(crt_vert, sizeof crt_vert, crt_box_frag, sizeof crt_box_frag);
+	}
+	int n = (h + 120) / 240;    /* the upscale: 240 lines (480: interlaced, a scanline per field's line) */
+	int sw = w / (n > 1 ? n : 1), sh = h / (n > 1 ? n : 1);
+	CommandBufferHandle cmd = device->request_command_buffer();
+	const ImageView *view = &in->get_view();
+	if (!sampled)
+	{
+		if (!in_keep || int(in_keep->get_width()) != iw || int(in_keep->get_height()) != ih)
+		{
+			ImageCreateInfo ii = ImageCreateInfo::render_target(iw, ih, VK_FORMAT_R8G8B8A8_UNORM);
+			ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			in_keep = device->create_image(ii, nullptr);
+		}
+		/* in was written by commands submitted before these */
+		cmd->barrier(VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+		                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		             VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+		cmd->image_barrier(*in_keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
+		cmd->blit_image(*in_keep, *in, { 0, 0, 0 }, { iw, ih, 1 }, { 0, 0, 0 }, { iw, ih, 1 }, 0, 0, 0, 0, 1,
+		                VK_FILTER_NEAREST);
+		cmd->image_barrier(*in_keep, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		view = &in_keep->get_view();
+	}
+	if (crt_smooth && (iw > sw || ih > sh))
+	{
+		if (!nat_keep || int(nat_keep->get_width()) != sw || int(nat_keep->get_height()) != sh)
+		{
+			ImageCreateInfo ii = ImageCreateInfo::render_target(sw, sh, VK_FORMAT_R8G8B8A8_UNORM);
+			ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+			nat_keep = device->create_image(ii, nullptr);
+		}
+		/* srcStage fragment: this frame's CRT pass read it last time */
+		cmd->image_barrier(*nat_keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+		RenderPassInfo rp;
+		rp.color_attachments[0] = &nat_keep->get_view();
+		rp.num_color_attachments = 1;
+		rp.store_attachments = 1;
+		cmd->begin_render_pass(rp);
+		cmd->set_quad_state();
+		cmd->set_program(*box);
+		cmd->set_vertex_binding(0, *quad, 0, 8);
+		cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+		cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+		cmd->set_viewport({ 0.0f, 0.0f, float(sw), float(sh), 0.0f, 1.0f });
+		cmd->set_scissor({ { 0, 0 }, { unsigned(sw), unsigned(sh) } });
+		cmd->set_texture(0, 0, *view, StockSampler::NearestClamp);
+		const float ratio[2] = { float(iw) / sw, float(ih) / sh };
+		cmd->push_constants(ratio, 0, sizeof ratio);
+		cmd->draw(4);
+		cmd->end_render_pass();
+		cmd->image_barrier(*nat_keep, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+		view = &nat_keep->get_view();
+	}
+	if (!keep || int(keep->get_width()) != dw || int(keep->get_height()) != dh)
+	{
+		ImageCreateInfo ii = ImageCreateInfo::render_target(dw, dh, VK_FORMAT_R8G8B8A8_UNORM);
+		ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+		ii.initial_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+		keep = device->create_image(ii, nullptr);
+	}
+	/* srcStage transfer: the window's last copy from this frame's image read it */
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+	RenderPassInfo rp;
+	rp.color_attachments[0] = &keep->get_view();
+	rp.num_color_attachments = 1;
+	rp.store_attachments = 1;
+	cmd->begin_render_pass(rp);
+	cmd->set_quad_state();
+	cmd->set_program(*prog[crt_mode == 2]);
+	cmd->set_vertex_binding(0, *quad, 0, 8);
+	cmd->set_vertex_attrib(0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+	cmd->set_primitive_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
+	cmd->set_viewport({ 0.0f, 0.0f, float(dw), float(dh), 0.0f, 1.0f });
+	cmd->set_scissor({ { 0, 0 }, { unsigned(dw), unsigned(dh) } });
+	/* smooth: the shaders sample at the console pixels' centres, which at an even upscale fall on
+	 * the edge between two pixels of the picture; nearest took one or the other by rounding,
+	 * column by column (thin vertical lines where an edge crosses a console pixel) */
+	cmd->set_texture(0, 0, *view, StockSampler::LinearClamp);
+	struct
+	{
+		float source[4], output[4], p[16];
+	} push = { { float(sw), float(sh), 1.0f / sw, 1.0f / sh }, { float(dw), float(dh), 1.0f / dw, 1.0f / dh }, {} };
+	memcpy(push.p, crt_p, sizeof *crt_p * crt_n);
+	cmd->push_constants(&push, 0, 32 + 4 * crt_n);     /* the shader's block: its parameters only */
+	cmd->draw(4);
+	cmd->end_render_pass();
+	cmd->image_barrier(*keep, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+	                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	                   VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+	device->submit(cmd);    /* now: the window's commands are submitted after these */
+}
+
+/* ---- The overlay (F7, overlay.cpp): ImGui's triangles drawn over the game's window, in its own
+ * render pass on the swapchain image (after the picture's copies), with the font as a texture ---- */
+static const uint32_t ui_vert[] =
+#include "ui/ui.vert.inc"
+    ;
+static const uint32_t ui_frag[] =
+#include "ui/ui.frag.inc"
+    ;
+static struct
+{
+	VkFormat format = VK_FORMAT_UNDEFINED;
+	VkRenderPass pass = VK_NULL_HANDLE;
+	VkDescriptorSetLayout dsl = VK_NULL_HANDLE;
+	VkPipelineLayout layout = VK_NULL_HANDLE;
+	VkPipeline pipe = VK_NULL_HANDLE;
+	VkDescriptorPool pool = VK_NULL_HANDLE;
+	VkDescriptorSet set = VK_NULL_HANDLE;
+	VkSampler sampler = VK_NULL_HANDLE;
+	ImageHandle font;
+	bool failed = false;
+} ui;
+
+static VkShaderModule ui_module(VkDevice dev, const uint32_t *code, size_t size)
+{
+	VkShaderModuleCreateInfo ci = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+	ci.codeSize = size;
+	ci.pCode = code;
+	VkShaderModule m = VK_NULL_HANDLE;
+	vkCreateShaderModule(dev, &ci, nullptr, &m);
+	return m;
+}
+
+/* the pipeline for images of this format (made once; false: can't) */
+static bool ui_ready(VkFormat format)
+{
+	if (ui.pipe && ui.format == format)
+		return true;
+	if (ui.failed || ui.pipe)   /* (another format: not expected, the swapchain picks B8G8R8A8) */
+		return false;
+	ui.failed = true;
+	VkDevice dev = context->get_device();
+	VkAttachmentDescription at = {};
+	at.format = format;
+	at.samples = VK_SAMPLE_COUNT_1_BIT;
+	at.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	at.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	at.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	at.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	at.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	at.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	VkAttachmentReference ref = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	VkSubpassDescription sub = {};
+	sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	sub.colorAttachmentCount = 1;
+	sub.pColorAttachments = &ref;
+	VkRenderPassCreateInfo rp = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+	rp.attachmentCount = 1;
+	rp.pAttachments = &at;
+	rp.subpassCount = 1;
+	rp.pSubpasses = &sub;
+	if (vkCreateRenderPass(dev, &rp, nullptr, &ui.pass) != VK_SUCCESS)
+		return false;
+
+	const unsigned char *px;
+	int fw, fh;
+	overlay_font(&px, &fw, &fh);
+	ImageInitialData init = { px, 0, 0 };
+	ui.font = device->create_image(ImageCreateInfo::immutable_2d_image(fw, fh, VK_FORMAT_R8G8B8A8_UNORM), &init);
+	device->wait_idle();        /* uploaded before the window's own commands read it */
+	VkSamplerCreateInfo si = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+	si.magFilter = si.minFilter = VK_FILTER_LINEAR;
+	si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	si.maxLod = 0.25f;
+	vkCreateSampler(dev, &si, nullptr, &ui.sampler);
+
+	VkDescriptorSetLayoutBinding b = { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+	VkDescriptorSetLayoutCreateInfo dl = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+	dl.bindingCount = 1;
+	dl.pBindings = &b;
+	vkCreateDescriptorSetLayout(dev, &dl, nullptr, &ui.dsl);
+	VkDescriptorPoolSize ps = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+	VkDescriptorPoolCreateInfo pi = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+	pi.maxSets = 1;
+	pi.poolSizeCount = 1;
+	pi.pPoolSizes = &ps;
+	vkCreateDescriptorPool(dev, &pi, nullptr, &ui.pool);
+	VkDescriptorSetAllocateInfo ai = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+	ai.descriptorPool = ui.pool;
+	ai.descriptorSetCount = 1;
+	ai.pSetLayouts = &ui.dsl;
+	if (vkAllocateDescriptorSets(dev, &ai, &ui.set) != VK_SUCCESS)
+		return false;
+	VkDescriptorImageInfo ii = { ui.sampler, ui.font->get_view().get_view(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	VkWriteDescriptorSet w = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+	w.dstSet = ui.set;
+	w.descriptorCount = 1;
+	w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	w.pImageInfo = &ii;
+	vkUpdateDescriptorSets(dev, 1, &w, 0, nullptr);
+
+	VkPushConstantRange pr = { VK_SHADER_STAGE_VERTEX_BIT, 0, 16 };
+	VkPipelineLayoutCreateInfo li = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+	li.setLayoutCount = 1;
+	li.pSetLayouts = &ui.dsl;
+	li.pushConstantRangeCount = 1;
+	li.pPushConstantRanges = &pr;
+	vkCreatePipelineLayout(dev, &li, nullptr, &ui.layout);
+
+	VkShaderModule vs = ui_module(dev, ui_vert, sizeof ui_vert), fs = ui_module(dev, ui_frag, sizeof ui_frag);
+	VkPipelineShaderStageCreateInfo st[2] = { { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO },
+		                                      { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO } };
+	st[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	st[0].module = vs;
+	st[0].pName = "main";
+	st[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	st[1].module = fs;
+	st[1].pName = "main";
+	VkVertexInputBindingDescription vb = { 0, 20, VK_VERTEX_INPUT_RATE_VERTEX };
+	VkVertexInputAttributeDescription va[3] = { { 0, 0, VK_FORMAT_R32G32_SFLOAT, 0 },
+		                                         { 1, 0, VK_FORMAT_R32G32_SFLOAT, 8 },
+		                                         { 2, 0, VK_FORMAT_R8G8B8A8_UNORM, 16 } };
+	VkPipelineVertexInputStateCreateInfo vi = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+	vi.vertexBindingDescriptionCount = 1;
+	vi.pVertexBindingDescriptions = &vb;
+	vi.vertexAttributeDescriptionCount = 3;
+	vi.pVertexAttributeDescriptions = va;
+	VkPipelineInputAssemblyStateCreateInfo ia = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+	ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	VkPipelineViewportStateCreateInfo vp = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+	vp.viewportCount = vp.scissorCount = 1;
+	VkPipelineRasterizationStateCreateInfo rs = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+	rs.polygonMode = VK_POLYGON_MODE_FILL;
+	rs.cullMode = VK_CULL_MODE_NONE;
+	rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	rs.lineWidth = 1.0f;
+	VkPipelineMultisampleStateCreateInfo ms = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+	ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	VkPipelineColorBlendAttachmentState ba = {};
+	ba.blendEnable = VK_TRUE;
+	ba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	ba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	ba.colorBlendOp = VK_BLEND_OP_ADD;
+	ba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	ba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	ba.alphaBlendOp = VK_BLEND_OP_ADD;
+	ba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	VkPipelineColorBlendStateCreateInfo cb = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+	cb.attachmentCount = 1;
+	cb.pAttachments = &ba;
+	VkDynamicState dyn[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	VkPipelineDynamicStateCreateInfo ds = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+	ds.dynamicStateCount = 2;
+	ds.pDynamicStates = dyn;
+	VkGraphicsPipelineCreateInfo gp = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+	gp.stageCount = 2;
+	gp.pStages = st;
+	gp.pVertexInputState = &vi;
+	gp.pInputAssemblyState = &ia;
+	gp.pViewportState = &vp;
+	gp.pRasterizationState = &rs;
+	gp.pMultisampleState = &ms;
+	gp.pColorBlendState = &cb;
+	gp.pDynamicState = &ds;
+	gp.layout = ui.layout;
+	gp.renderPass = ui.pass;
+	VkResult r = vkCreateGraphicsPipelines(dev, VK_NULL_HANDLE, 1, &gp, nullptr, &ui.pipe);
+	vkDestroyShaderModule(dev, vs, nullptr);
+	vkDestroyShaderModule(dev, fs, nullptr);
+	if (r != VK_SUCCESS)
+		return false;
+	ui.format = format;
+	ui.failed = false;
+	return true;
+}
+
+struct UiCmd
+{
+	float clip[4];
+	uint32_t idx, vtx, n;
+};
+struct UiLists
+{
+	std::vector<uint8_t> data;  /* the vertices (20 bytes each), then the indices */
+	size_t vb = 0;
+	uint32_t nv = 0, ni = 0, vbase = 0, ibase = 0;
+	std::vector<UiCmd> cmds;
+};
+
+static void ui_list(void *ctx, const void *vtx, int nvtx, const unsigned short *idx, int nidx)
+{
+	UiLists &l = *static_cast<UiLists *>(ctx);
+	memcpy(&l.data[size_t(l.nv) * 20], vtx, size_t(nvtx) * 20);
+	memcpy(&l.data[l.vb + size_t(l.ni) * 2], idx, size_t(nidx) * 2);
+	l.vbase = l.nv;
+	l.ibase = l.ni;
+	l.nv += uint32_t(nvtx);
+	l.ni += uint32_t(nidx);
+}
+
+static void ui_cmd(void *ctx, const float clip[4], int idx_offset, int vtx_offset, int count)
+{
+	UiLists &l = *static_cast<UiLists *>(ctx);
+	l.cmds.push_back({ { clip[0], clip[1], clip[2], clip[3] }, l.ibase + uint32_t(idx_offset), l.vbase + uint32_t(vtx_offset),
+	                   uint32_t(count) });
+}
+
+/* the overlay over the game's window image idx (transfer destination layout), left in present
+ * layout; false: none (the caller makes it present layout) */
+static bool ui_draw(Swap &s, VkCommandBuffer cb, uint32_t idx, int f)
+{
+	int nv, ni;
+	if (&s != &swaps[0] || !overlay_sizes(&nv, &ni) || !ui_ready(s.format))
+		return false;
+	VkDevice dev = context->get_device();
+	if (s.fbs.size() != s.images.size())
+	{
+		for (VkImage img : s.images)
+		{
+			VkImageViewCreateInfo vi = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+			vi.image = img;
+			vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			vi.format = s.format;
+			vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+			VkImageView v = VK_NULL_HANDLE;
+			vkCreateImageView(dev, &vi, nullptr, &v);
+			s.views.push_back(v);
+			VkFramebufferCreateInfo fi = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+			fi.renderPass = ui.pass;
+			fi.attachmentCount = 1;
+			fi.pAttachments = &v;
+			fi.width = s.extent.width;
+			fi.height = s.extent.height;
+			fi.layers = 1;
+			VkFramebuffer fb = VK_NULL_HANDLE;
+			vkCreateFramebuffer(dev, &fi, nullptr, &fb);
+			s.fbs.push_back(fb);
+		}
+	}
+	UiLists l;
+	l.vb = size_t(nv) * 20;
+	l.data.resize(l.vb + size_t(ni) * 2);
+	overlay_draw(&l, ui_list, ui_cmd);
+	BufferCreateInfo info;
+	info.domain = BufferDomain::Host;
+	info.size = l.data.size();
+	info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+	s.ui_buf[f] = device->create_buffer(info, l.data.data());
+
+	barrier(cb, s.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+	VkRenderPassBeginInfo rb = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+	rb.renderPass = ui.pass;
+	rb.framebuffer = s.fbs[idx];
+	rb.renderArea = { { 0, 0 }, s.extent };
+	vkCmdBeginRenderPass(cb, &rb, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, ui.pipe);
+	vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, ui.layout, 0, 1, &ui.set, 0, nullptr);
+	VkBuffer buf = s.ui_buf[f]->get_buffer();
+	VkDeviceSize zero = 0;
+	vkCmdBindVertexBuffers(cb, 0, 1, &buf, &zero);
+	vkCmdBindIndexBuffer(cb, buf, l.vb, VK_INDEX_TYPE_UINT16);
+	float w = float(s.extent.width), h = float(s.extent.height);
+	VkViewport v = { 0.0f, 0.0f, w, h, 0.0f, 1.0f };
+	vkCmdSetViewport(cb, 0, 1, &v);
+	const float push[4] = { 2.0f / w, 2.0f / h, -1.0f, -1.0f };
+	vkCmdPushConstants(cb, ui.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof push, push);
+	for (const UiCmd &c : l.cmds)
+	{
+		float x0 = std::max(c.clip[0], 0.0f), y0 = std::max(c.clip[1], 0.0f);
+		float x1 = std::min(c.clip[2], w), y1 = std::min(c.clip[3], h);
+		if (x1 <= x0 || y1 <= y0)
+			continue;
+		VkRect2D sc = { { int32_t(x0), int32_t(y0) }, { uint32_t(x1 - x0), uint32_t(y1 - y0) } };
+		vkCmdSetScissor(cb, 0, 1, &sc);
+		vkCmdDrawIndexed(cb, c.n, 1, c.idx, int32_t(c.vtx), 0);
+	}
+	vkCmdEndRenderPass(cb);
+	return true;
+}
+
 /* Shows a picture in window win: slot's (vkr_keep), or px (w x h, 0xAARRGGBB: the CPU's, a video),
  * at aspect (width / height), letterboxed, scaled as the frontend does (scaling: SCALING_*: 0
  * sharp-bilinear: whole-number nearest prescale, then smooth; 1 sharp; 2 smooth) */
@@ -1614,6 +2065,7 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 	s.held[f][0].reset();
 	s.held[f][1].reset();
 	s.held_buf[f].reset();
+	s.ui_buf[f].reset();
 	uint32_t idx;
 	VkResult r = vkAcquireNextImageKHR(dev, s.chain, UINT64_MAX, s.acquired[f], VK_NULL_HANDLE, &idx);
 	if (r == VK_ERROR_OUT_OF_DATE_KHR)
@@ -1629,7 +2081,12 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 	vkBeginCommandBuffer(cb, &bi);
 
 	ImageHandle src;
-	if (px && w > 0 && h > 0)     /* the CPU's picture: through a buffer */
+	if (px && w > 0 && h > 0 && crt_mode)   /* the CPU's picture for the CRT pass: sampled, uploaded now */
+	{
+		ImageInitialData init = { px, 0, 0 };
+		src = device->create_image(ImageCreateInfo::immutable_2d_image(w, h, VK_FORMAT_B8G8R8A8_UNORM), &init);
+	}
+	else if (px && w > 0 && h > 0)     /* the CPU's picture: through a buffer */
 	{
 		BufferCreateInfo info;
 		info.domain = BufferDomain::Host;
@@ -1674,7 +2131,24 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 		dw = int(wh * aspect);
 	}
 	bool hd = !px && src && w > 0 && h > 0 && dw > 0 && dh > 0 && !hd_pieces[win].empty();
-	if (hd)     /* the picture with HD images over it, made at the window's size: copied 1:1 */
+	if (crt_mode && src && w > 0 && h > 0 && dw > 0 && dh > 0)
+	{   /* through the CRT shader at the window's size (HD images first, under the scanlines): copied 1:1 */
+		if (hd)
+			hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
+		crt_compose(s.crt[f], s.crt_in[f], s.crt_nat[f], hd ? s.hd[f] : src, px != nullptr, hd ? dw : w, hd ? dh : h, dw, dh, w, h);
+		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+		mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		mb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+		                     VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+		barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+		        VK_PIPELINE_STAGE_TRANSFER_BIT);
+		blit(cb, s.crt[f]->get_image(), dw, dh, out, (ww - dw) / 2, (wh - dh) / 2, dw, dh, VK_FILTER_NEAREST);
+		s.held[f][0] = src;
+		s.held[f][1] = s.crt[f];
+	}
+	else if (hd)     /* the picture with HD images over it, made at the window's size: copied 1:1 */
 	{
 		hd_compose(s.hd[f], s.hd_pre[f], src, w, h, dw, dh, scaling, hd_pieces[win]);
 		VkMemoryBarrier mb = { VK_STRUCTURE_TYPE_MEMORY_BARRIER };
@@ -1716,8 +2190,9 @@ extern "C" void vkr_present(int win, int slot, const uint32_t *px, int w, int h,
 			     scaling == 1 ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
 		s.held[f][0] = src;
 	}
-	barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
-	        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+	if (!ui_draw(s, cb, idx, f))
+		barrier(cb, out, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+		        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 	vkEndCommandBuffer(cb);
 
 	VkPipelineStageFlags wait = VK_PIPELINE_STAGE_TRANSFER_BIT;

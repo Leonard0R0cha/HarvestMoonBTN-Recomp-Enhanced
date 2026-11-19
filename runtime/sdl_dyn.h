@@ -21,10 +21,13 @@
     X(SDL_JoystickGetDeviceInstanceID) X(SDL_SetThreadPriority) X(SDL_GetDisplayUsableBounds) \
     X(SDL_RaiseWindow) X(SDL_SetWindowPosition) X(SDL_GetWindowID) \
     X(SDL_DestroyRenderer) X(SDL_GetWindowWMInfo) X(SDL_Vulkan_GetDrawableSize) \
-    X(SDL_GetCurrentDisplayMode) X(SDL_GetWindowDisplayIndex)
+    X(SDL_GetCurrentDisplayMode) X(SDL_GetWindowDisplayIndex) X(SDL_RenderSetClipRect) X(SDL_GetWindowSize)
+/* loaded when there (not in an older SDL2): checked before each use */
+#define SDL_DYN_OPTIONAL(X) X(SDL_RenderGeometryRaw)
 
 #define SDL_DYN_DECL(f) static __typeof__(&f) dyn_##f;
 SDL_DYN_FUNCS(SDL_DYN_DECL)
+SDL_DYN_OPTIONAL(SDL_DYN_DECL)
 
 static const char *sdl_dyn_load(void) {
     static const char *names[] = { "libSDL2-2.0.so.0", "libSDL2-2.0.so", "libSDL2.so" };
@@ -34,6 +37,8 @@ static const char *sdl_dyn_load(void) {
                    "'sudo dnf install SDL2' or 'sudo pacman -S sdl2').";
 #define SDL_DYN_LOAD(f) if (!(dyn_##f = (__typeof__(dyn_##f))dlsym(h, #f))) return "SDL2 is too old: missing " #f;
     SDL_DYN_FUNCS(SDL_DYN_LOAD)
+#define SDL_DYN_LOAD_OPTIONAL(f) dyn_##f = (__typeof__(dyn_##f))dlsym(h, #f);
+    SDL_DYN_OPTIONAL(SDL_DYN_LOAD_OPTIONAL)
     return NULL;
 }
 
@@ -47,6 +52,9 @@ static const char *sdl_dyn_load(void) {
 #define SDL_GetWindowID dyn_SDL_GetWindowID
 #define SDL_DestroyRenderer dyn_SDL_DestroyRenderer
 #define SDL_GetCurrentDisplayMode dyn_SDL_GetCurrentDisplayMode
+#define SDL_RenderSetClipRect dyn_SDL_RenderSetClipRect
+#define SDL_GetWindowSize dyn_SDL_GetWindowSize
+#define SDL_RenderGeometryRaw dyn_SDL_RenderGeometryRaw
 #define SDL_GetWindowDisplayIndex dyn_SDL_GetWindowDisplayIndex
 #define SDL_GetWindowWMInfo dyn_SDL_GetWindowWMInfo
 #define SDL_Vulkan_GetDrawableSize dyn_SDL_Vulkan_GetDrawableSize

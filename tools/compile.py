@@ -125,6 +125,12 @@ def build(release=False, linux_cross=False, clean=False, jobs=None):
         for f in ('spirv_cfg', 'spirv_cross', 'spirv_cross_parsed_ir', 'spirv_parser'):
             srcs.append((os.path.join(pp, 'SPIRV-Cross', f + '.cpp'), cxxflags + ['-w']))
         srcs.append((os.path.join(pp, 'volk', 'volk.c'), target + ['-O2', '-w'] + inc))
+        # the overlay (F7): Dear ImGui (runtime/imgui, MIT), without its OS clipboard/IME/shell helpers
+        imflags = target + ['-std=gnu++14', '-O2', '-DNDEBUG', '-DIMGUI_DISABLE_WIN32_DEFAULT_CLIPBOARD_FUNCTIONS',
+                            '-DIMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS', '-DIMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS']
+        for f in ('imgui', 'imgui_draw', 'imgui_tables', 'imgui_widgets'):
+            srcs.append((os.path.join(rt, 'imgui', f + '.cpp'), imflags + ['-w']))
+        srcs.append((os.path.join(rt, 'overlay.cpp'), imflags + ['-Wall'] + sdl_cflags))
     gen = os.path.join(ROOT, 'generated')
     for f in sorted(os.listdir(gen)):
         if f.endswith('.c'):
