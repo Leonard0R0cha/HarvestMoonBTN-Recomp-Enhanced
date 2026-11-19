@@ -84,7 +84,11 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     if os.path.isdir(assets):
         os.makedirs(os.path.join(out, 'launcher-assets'), exist_ok=True)
         for n in os.listdir(assets):
-            shutil.copy2(os.path.join(assets, n), os.path.join(out, 'launcher-assets', n))
+            src, dst = os.path.join(assets, n), os.path.join(out, 'launcher-assets', n)
+            if os.path.isdir(src):                  # options/: the before/after pictures of the options
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
 
     if make_zip:
         zpath = out + '.zip'
