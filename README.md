@@ -2,6 +2,8 @@
 
 [![Discord](https://img.shields.io/badge/Discord-join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/DANpsThsZn)
 
+![The farmhouse in widescreen at 4x resolution](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/readme-media/farmhouse-16x9.png)
+
 An unofficial, native **Windows and Linux** version of *Harvest Moon: Back to Nature*
 (PlayStation, USA, SLUS-01115), made by **static recompilation**: the game's original
 PlayStation program is translated ahead of time into C and compiled into a normal x86-64
@@ -29,6 +31,13 @@ gameplay mods and a launcher that builds the game from your disc and keeps it up
 - Keyboard and game controller support (Xbox / XInput and other SDL-supported controllers), fully remappable
 - Window or fullscreen (sharp-bilinear, sharp or smooth scaling, 4:3 or square pixels), screenshots
 - Saving works as on the PlayStation, on a standard memory card file usable in emulators too
+
+| Internal resolution | Precise 3D vertices (PGXP) |
+|---|---|
+| ![PlayStation resolution next to ReFarmed at a higher internal resolution](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/readme-media/resolution.png) | ![Original 3D next to PGXP](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/download/readme-media/pgxp.png) |
+
+The screenshots are kept in the [README pictures](https://github.com/d4rksp4rt4n/HMBTN-ReFarmed/releases/tag/readme-media)
+release, not in the repository, which contains nothing from the game.
 
 ## Contents
 
