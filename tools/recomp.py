@@ -10,7 +10,7 @@ import struct, sys, os, json, re
 from collections import defaultdict
 from mips import decode, REG
 
-GAME_LANGS = ['en', 'pt', 'id']     # g_game_lang (runtime/psx_recomp.h)
+GAME_LANGS = ['en', 'pt', 'id', 'de']     # g_game_lang (runtime/psx_recomp.h)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # --extract DIR: the game files (default extract/; build.py --lang gives the translated disc's), and

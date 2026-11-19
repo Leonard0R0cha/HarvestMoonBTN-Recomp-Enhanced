@@ -12,6 +12,10 @@ text is taken, from where the USA game keeps it:
   - the names of the weekdays and seasons (fixed width)
 The files keep their size, so only the changed sectors are written (with a new EDC/ECC).
 
+The European disc (SLES-02781, English and German) works the same way for German: its subfiles 07-11
+are the German dialogue, laid out like the English 02-06 (which match the USA ones), and its font is
+the USA one. Its executable keeps its texts elsewhere, so the menus and items stay in English.
+
 usage: python tools/transplant.py USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.bin
        python tools/transplant.py --patch USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.hmtxt
          (only the bytes the text changes, which the build downloads instead of the translated disc)
@@ -30,6 +34,7 @@ EXE_TEXT_EXACT = (0x80054396, 0x800543A2)
 # the season names (6 letters each) and the weekday names (3 letters each): fixed width, no FFFF
 EXE_NAMES = (0x8004908C, 0x800490E6)
 DIALOGUE_SUBFILES = (2, 3, 4, 5, 6)
+PAL_EXE, PAL_GERMAN = 'SLES_027.81', (7, 8, 9, 10, 11)   # the European disc: its German dialogue
 RECORD, TEXT_AT = 0x2000, 0x1800
 END, SPACE = 0xFFFF, 0x0FFD
 
@@ -95,8 +100,9 @@ def fix_form1(sector):
 
 # ---- reading the translated disc ----
 
-def read_files(path, names):
-    """{name: bytes} of the game files on a disc image (.bin/.iso/.cue) or in a .zip with one inside"""
+def read_files(path, names, optional=()):
+    """{name: bytes} of the game files on a disc image (.bin/.iso/.cue) or in a .zip with one inside
+    (the optional ones only when they are there)"""
     if path.lower().endswith('.zip'):
         with zipfile.ZipFile(path) as z:
             inner = [n for n in z.namelist() if n.lower().endswith(('.bin', '.iso'))]
@@ -110,9 +116,11 @@ def read_files(path, names):
     else:
         disc = Disc(resolve_bin(path))
     out = {}
-    for n in names:
+    for n in tuple(names) + tuple(optional):
         e = find_file(disc, n)
         if not e:
+            if n in optional:
+                continue
             raise SystemExit('%s is not on %s' % (n, path))
         out[n] = disc.read_extent(e['lba'], e['size'])
     return out
@@ -129,13 +137,14 @@ def words(b, at):
 
 # ---- the transplant ----
 
-def dialogue(us_hdt, us_pack, tr_hdt, tr_pack):
-    """the USA A_FILE.BIN with the text half of each dialogue record from the translated one"""
+def dialogue(us_hdt, us_pack, tr_hdt, tr_pack, from_subs=DIALOGUE_SUBFILES):
+    """the USA A_FILE.BIN with the text half of each dialogue record from the translated one (its subfiles
+    from_subs, in the order of the USA 02-06)"""
     out = bytearray(us_pack)
     us_parts, tr_parts = afile_split(us_hdt, us_pack), afile_split(tr_hdt, tr_pack)
     taken = 0
-    for sub in DIALOGUE_SUBFILES:
-        (ua, uz), (ta, tz) = us_parts[sub], tr_parts[sub]
+    for sub, tr_sub in zip(DIALOGUE_SUBFILES, from_subs):
+        (ua, uz), (ta, tz) = us_parts[sub], tr_parts[tr_sub]
         if uz - ua != tz - ta:
             raise SystemExit('dialogue subfile %02d has another size on the translated disc' % sub)
         for rec in range((uz - ua) // RECORD):
@@ -207,9 +216,16 @@ def usa_files(usa):
 
 def translated_files(us, translated):
     """{name: bytes} of the USA game files with the text of the translated disc"""
-    tr = read_files(translated, NAMES)
-    pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'])
-    exe, n_texts = exe_texts(us['SLUS_011.15'], tr['SLUS_011.15'])
+    tr = read_files(translated, ('A_FILE.HDT', 'A_FILE.BIN'), optional=('SLUS_011.15', PAL_EXE))
+    if 'SLUS_011.15' not in tr and PAL_EXE in tr:         # the European disc: its German dialogue only
+        pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'],
+                                 PAL_GERMAN)
+        exe, n_texts = us['SLUS_011.15'], 0
+    elif 'SLUS_011.15' in tr:
+        pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'])
+        exe, n_texts = exe_texts(us['SLUS_011.15'], tr['SLUS_011.15'])
+    else:
+        raise SystemExit('%s is not a Harvest Moon: Back to Nature disc' % translated)
     print('  %d dialogue texts and %d texts of the executable taken' % (n_lines, n_texts))
     return dict(us, **{'A_FILE.BIN': pack, 'SLUS_011.15': exe})
 
@@ -292,10 +308,9 @@ def patch_image(usa, patch, out):
     return write_image(usa, disc, us, apply_patch(us, patch), out)
 
 
-def source_hashes(path):
+def source_hashes(path, names=('SLUS_011.15', 'A_FILE.BIN')):
     """{name: sha256} of the game files of a translated disc, to know it is the one expected"""
-    return {n: hashlib.sha256(d).hexdigest()
-            for n, d in read_files(path, ('SLUS_011.15', 'A_FILE.BIN')).items()}
+    return {n: hashlib.sha256(d).hexdigest() for n, d in read_files(path, names).items()}
 
 
 if __name__ == '__main__':
