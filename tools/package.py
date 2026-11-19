@@ -45,7 +45,9 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     deleted (only replaced), instead of dist/name"""
     dist = dist or os.path.join(ROOT, 'dist')
     out = os.path.abspath(into) if into else os.path.join(dist, name)
-    keep = ('saves', 'disc', 'disc-pt', 'languages', 'screenshots', 'recordings', 'hmbtn.ini')   # the player's files survive a rebuild
+    # the player's files survive a rebuild; also the launcher's build-files (its toolchain download, the
+    # files taken from the disc) and textures (packs, dumps, the downloaded portraits), else fetched again
+    keep = ('saves', 'disc', 'disc-pt', 'languages', 'screenshots', 'recordings', 'hmbtn.ini', 'build-files', 'textures')
     if os.path.exists(out) and not into:
         for n in os.listdir(out):
             if n not in keep:

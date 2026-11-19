@@ -7,7 +7,8 @@
   deps/zig            Zig (used as a Linux cross C compiler)
   deps/SDL2-src       SDL2 headers
 
-Every download is checked against a pinned SHA-256.
+Every download is checked against a pinned SHA-256. What is there already is kept: a folder is fetched
+again only when its pinned archive changes (deps/<name>/.sha256 says which it came from).
 Linux hosts: Zig for Linux and the SDL2 headers (deps/zig, deps/SDL2-src; compile.py then uses Zig),
 for a PC without a C compiler (the launcher's Build page). With a C/C++ compiler and the SDL2
 development package installed this isn't needed.
@@ -157,7 +158,8 @@ def fetch_min(dest):
         if not todo:
             print('%-14s already present' % d['name'])
             continue
-        print('%-14s downloading %d files from %s' % (d['name'], len(todo), d['url']), flush=True)
+        print('%-14s %d of %d files missing or changed, fetching only those from %s'
+              % (d['name'], len(todo), len(files), d['url']), flush=True)
         got = zip_members(d['url'], [d['top'] + '/' + r for r in todo])
         for r, h in todo.items():
             data = got[d['top'] + '/' + r]
@@ -185,9 +187,16 @@ def main():
         todo = [d for d in DEPS if linux or not d['linux']]
     for d in todo:
         out = os.path.join(dest, d['name'])
+        stamp = os.path.join(out, '.sha256')        # the pinned archive it came from
         if os.path.isdir(out):
-            print('%-14s already present' % d['name'])
-            continue
+            if not os.path.isfile(stamp):           # fetched before stamps: the pins haven't changed since
+                with open(stamp, 'w') as f:
+                    f.write(d['sha256'])
+            if open(stamp).read() == d['sha256']:
+                print('%-14s already present' % d['name'])
+                continue
+            print('%-14s a new version is pinned' % d['name'])
+            shutil.rmtree(out)
         archive = os.path.join(dest, os.path.basename(d['url']))
         print('%-14s downloading %s' % (d['name'], d['url']))
         download(d['url'], archive)
@@ -200,6 +209,8 @@ def main():
         print('%-14s extracting' % d['name'])
         safe_extract(archive, tmp)
         os.rename(os.path.join(tmp, d['top']), out)
+        with open(stamp, 'w') as f:
+            f.write(d['sha256'])
         shutil.rmtree(tmp)
         os.remove(archive)
     print('toolchain ready in', dest)
