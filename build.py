@@ -6,13 +6,15 @@
   3. compiles the runtime + the generated code into a native program      -> build/
   4. puts a ready-to-play folder together                                  -> dist/
 
-usage: python build.py [--disc PATH] [--lang pt|id] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
+usage: python build.py [--disc PATH] [--lang pt|id|de] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
 
   --disc PATH  your disc image (.cue or .bin); default: the first .cue (or .bin) in disc/
   --lang pt    the game's text in Brazilian Portuguese: downloads a fan translation's patch, applies it to
                your disc image (the result goes into disc-pt/ beside the game) and builds from that
   --lang id    in Indonesian: downloads the text of a fan translation that comes as a whole disc and puts
                it onto a copy of your disc image, in disc-id/ (see TRANSLATIONS)
+  --lang de    the dialogue in German, from your own European disc (SLES-02781, Rev 1) in the game
+               folder: put onto a copy of your USA disc image, in disc-de/ (menus stay in English)
   --pak        also turn your disc image into the compact data pack HarvestMoonBTN.pak and put it
                in the dist folder, so the game runs without the disc image
   --zip        also create a .zip of the dist folder
@@ -81,6 +83,23 @@ TRANSLATIONS = {
             'SLUS_011.15': '510236bf538c36315e3ff90bf3d94a8243b4bbb74607c0763d01e45a7980a592',
             'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
             'A_FILE.BIN': '6c065d52ca0d5775c2bfee3399aca412a0aa1238ee8a2a0cfcf89288e21582ad',
+        },
+    },
+    # the European disc has the dialogue in English and German: the German goes onto a copy of your USA disc
+    # the same way (tools/transplant.py). Nothing to download: your own European disc image (.bin/.cue, or a
+    # .zip with it) must be in the game folder or in build/translations/
+    'de': {
+        'name': 'German, the dialogue of the European release (SLES-02781 Rev 1; menus stay in English)',
+        'source': 'Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)',
+        'source_files': {
+            'SLES_027.81': '19dd5459897ff68bc3fe01c8af5b24dc18ce345c7f67d5aee865c4f542943afb',
+            'A_FILE.BIN': 'b2cf278285b9769470991b0abb870239e1bf872a2aa03fd45d7381426da0dde6',
+        },
+        'image': 'HarvestMoon-BTN-DE',
+        'files': {
+            'SLUS_011.15': '34e3b35dcd3fb1cd9a7d4813b8a9ef987915826e3d436f1908ecbe2d4fdf1444',
+            'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
+            'A_FILE.BIN': '42768cff0c43b9780f992d7702a40bbbc83032aeb7629d15f6a7a540acd08d7e',
         },
     },
 }
@@ -191,10 +210,11 @@ def find_translation_disc(lang, out):
                         and os.path.realpath(p) not in seen:
                     seen.add(os.path.realpath(p))
                     # the .zip with the name it has on its page first, then the rest
-                    found.insert(0, p) if n.replace(' ', '_') == t['source'] else found.append(p)
+                    found.insert(0, p) if n.replace(' ', '_').startswith(t['source'].replace(' ', '_')) \
+                        else found.append(p)
     for p in found:
         try:
-            if transplant.source_hashes(p) == t['source_files']:
+            if transplant.source_hashes(p, tuple(t['source_files'])) == t['source_files']:
                 return p
         except (SystemExit, Exception):
             continue
@@ -211,9 +231,14 @@ def make_translated_image(lang, disc_path, out):
         d = os.path.join(out, 'disc-' + lang)
         img = os.path.join(d, t['image'] + '.bin')
         try:
+            if 'text_url' not in t:         # your own disc of that language: nothing to download
+                raise FileNotFoundError('nothing to download')
             text = download(t['text_url'], t['text_sha256'], 'the translation\'s text')
         except OSError as e:                # offline: the translated disc, if it is in the game folder
             src = find_translation_disc(lang, out)
+            if not src and 'text_url' not in t:
+                sys.exit('%s needs your own disc of it: put %s (.bin + .cue, or a .zip with it)\ninto the '
+                         'game folder (%s) and build again.' % (lang, t['source'], out))
             if not src:
                 sys.exit('Could not download the %s text (%s).\nConnect to the internet, or put %s (as it '
                          'comes, or the disc image in it)\ninto the game folder (%s) and build again.'
