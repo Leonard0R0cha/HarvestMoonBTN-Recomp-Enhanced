@@ -124,6 +124,12 @@ OPTIONS = [
      ('cheats', 'cheats', 'cheat_items', 'bool'), ('cheats', 'cheats', 'cheat_tools', 'bool')]
 COOP_PORT = '7845'
 
+# Before/after pictures of an option (launcher-assets/options/<key>_off.png and _on.png): a little one beside
+# the option, and both side by side when it is clicked. The captions: an option's own values, or None for
+# the language's Off/On. An option without its two pictures shows none.
+OPTION_PICTURES = {'widescreen': ('Off', '16:9'), 'upscale': ('1x', '4x'), 'staminabar': None, 'portraits': None,
+                   'pgxp': None, 'scaling': ('sharp-bilinear', 'smooth')}
+
 # Video presets by processor: the picture is drawn by the processor (no graphics card needed), and
 # the internal resolution is what costs. Every effect stays on; only the resolution changes.
 PRESETS = [
@@ -541,6 +547,7 @@ UI = {
         'key_set': 'Set', 'key_add': 'Add', 'key_wait': 'Press a key... (Esc: cancel)',
         'key_bad': 'That key cannot be used',
         'need_up2': 'Needs resolution 2 or more', 'need_pgxp': 'Needs Precise 3D (PGXP)',
+        'pic_tip': 'Click to see it in the game', 'pic_close': 'Close',
         'on': 'On', 'off': 'Off', 'browse': 'Browse...', 'default': 'default: %s',
         'close': 'Close', 'save': 'Save', 'play': 'Save and play',
         'unsaved': 'Unsaved changes', 'saved': 'Saved', 'ask_save': 'Save your changes?',
@@ -647,6 +654,7 @@ UI = {
         'key_set': 'Definir', 'key_add': 'Adicionar', 'key_wait': 'Aperte uma tecla... (Esc: cancela)',
         'key_bad': 'Essa tecla não pode ser usada',
         'need_up2': 'Precisa de resolução 2 ou mais', 'need_pgxp': 'Precisa do 3D preciso (PGXP)',
+        'pic_tip': 'Clique para ver no jogo', 'pic_close': 'Fechar',
         'on': 'Ligado', 'off': 'Desligado', 'browse': 'Procurar...', 'default': 'padrão: %s',
         'close': 'Fechar', 'save': 'Salvar', 'play': 'Salvar e jogar',
         'unsaved': 'Alterações não salvas', 'saved': 'Salvo', 'ask_save': 'Salvar as alterações?',
@@ -754,6 +762,7 @@ UI = {
         'key_set': 'Asignar', 'key_add': 'Añadir', 'key_wait': 'Pulsa una tecla... (Esc: cancelar)',
         'key_bad': 'Esa tecla no se puede usar',
         'need_up2': 'Necesita resolución 2 o más', 'need_pgxp': 'Necesita el 3D preciso (PGXP)',
+        'pic_tip': 'Haz clic para verlo en el juego', 'pic_close': 'Cerrar',
         'on': 'Activado', 'off': 'Desactivado', 'browse': 'Buscar...', 'default': 'predeterminado: %s',
         'close': 'Cerrar', 'save': 'Guardar', 'play': 'Guardar y jugar',
         'unsaved': 'Cambios sin guardar', 'saved': 'Guardado', 'ask_save': '¿Guardar los cambios?',
@@ -1502,6 +1511,47 @@ def main():
                 catching['note'].configure(text='')
             catching.clear()
 
+    pics = {}
+
+    def option_pictures(key):
+        """(off, on, thumbnail) of an option, or None"""
+        if key not in pics:
+            off, on = (picture(os.path.join('options', '%s_%s.png' % (key, s)), False) for s in ('off', 'on'))
+            pics[key] = (off, on, on.subsample(4)) if key in OPTION_PICTURES and off and on else None
+        return pics[key]
+
+    def show_pictures(key, title, desc):
+        """the option's before and after, side by side, in a window of its own"""
+        off, on, _ = option_pictures(key)
+        w = tk.Toplevel(root, bg=BG, padx=px(18), pady=px(14))
+        w.title(title)
+        w.transient(root)
+        w.resizable(False, False)
+        tk.Label(w, text=title, font=F['h2'], bg=BG, fg=BLUE, anchor='w').pack(fill='x')
+        if desc:
+            tk.Label(w, text=desc, font=F['s'], bg=BG, fg=TEXT_C, anchor='w', justify='left',
+                     wraplength=off.width() + on.width() + px(24)).pack(fill='x', pady=(2, 10))
+        row = tk.Frame(w, bg=BG)
+        row.pack()
+        caps = OPTION_PICTURES[key] or (T('off'), T('on'))
+        for i, (im, cap) in enumerate(zip((off, on), caps)):
+            col = tk.Frame(row, bg=BG)
+            col.pack(side='left', anchor='n', padx=(0 if i == 0 else px(12), 0))
+            plaque(col, T('off') if cap == 'Off' else cap, F['b']).pack(pady=(0, 6))
+            outer, f = raised(col, WOOD_TOP, 4)
+            outer.pack()
+            tk.Label(f, image=im, bg=WOOD_TOP, bd=0).pack()
+        tk.Frame(w, bg=BG, height=px(10)).pack()
+        button(w, T('pic_close'), w.destroy, small=True).pack(anchor='e')
+        w.bind('<Escape>', lambda e: w.destroy())
+        w.bind('<Button-1>', lambda e: w.destroy() if e.widget in (w,) else None)
+        w.update_idletasks()
+        x = root.winfo_rootx() + (root.winfo_width() - w.winfo_reqwidth()) // 2
+        y = root.winfo_rooty() + (root.winfo_height() - w.winfo_reqheight()) // 2
+        w.geometry('+%d+%d' % (max(0, x), max(0, y)))
+        w.grab_set()
+        w.focus_set()
+
     def option_row(parent, key, kind, title, desc, first):
         if not first:
             tk.Frame(parent, bg=LINE_C, height=1).pack(fill='x', pady=8)
@@ -1522,6 +1572,17 @@ def main():
         note.pack(fill='x')
         ctl = tk.Frame(row, bg=CARD)
         ctl.grid(row=0, column=1, sticky='e', padx=(16, 0))
+        shots = option_pictures(key)
+        if shots:                                          # the little picture: click for before and after
+            outer, f = raised(ctl, WOOD, 3)
+            outer.pack(side='left', padx=(0, px(14)))
+            th = tk.Label(f, image=shots[2], bg=WOOD, bd=0, cursor=cursor)
+            th.pack()
+            th.bind('<Button-1>', lambda e: show_pictures(key, title, desc))
+            hint = tk.Label(txt, text='🔍 ' + T('pic_tip'), font=F['s'], bg=CARD, fg=RED, anchor='w',
+                            cursor=cursor)
+            hint.pack(fill='x', before=note)
+            hint.bind('<Button-1>', lambda e: show_pictures(key, title, desc))
         var = vars_[key]
         if kind.startswith('bool'):
             w, enable = toggle(ctl, var)
