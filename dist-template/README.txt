@@ -64,6 +64,8 @@ CONTROLS
   F12                screenshot (screenshots folder)
   F5                 cheats window, changes apply at once
   F6                 CRT filter: off, scanlines, CRT
+  F7                 overlay (the game pauses): the CRT filter's settings, with sliders; Save keeps
+                     them. Mouse, arrows + Space, or a controller (A to change a slider). Esc closes
   F9                 60 fps camera on / off, to compare
   Tab (hold)         fast-forward (can be disabled)
   F1 - F4            memory card 1 - 4 in slot 1 (shown in the window title)
@@ -153,4 +155,5 @@ NOTES
 * SDL2 is used under the zlib license (LICENSE-SDL2.txt). The Vulkan renderer includes
   parallel-psx (ISC/MIT), volk (MIT), SPIRV-Cross and the Vulkan headers (Apache-2.0); their
   licences are in runtime/vk of the sources. The CRT filters are crt-hyllian (MIT, Hyllian) and
-  crt-lottes (public domain, Timothy Lottes) from libretro's slang-shaders (runtime/vk/crt).
+  crt-lottes (public domain, Timothy Lottes) from libretro's slang-shaders (runtime/vk/crt). The
+  overlay (F7) is Dear ImGui (MIT, runtime/imgui).

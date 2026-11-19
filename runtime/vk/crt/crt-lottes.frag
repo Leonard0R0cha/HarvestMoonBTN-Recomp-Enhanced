@@ -1,17 +1,13 @@
 #version 450
 
 /* HMBTN: crt/shaders/crt-lottes.slang from github.com/libretro/slang-shaders (public domain, see
- * below), one stage: the parameters are its defaults, SourceSize (the console's picture: its
- * lines) and OutputSize come as push constants, and outside the curved screen is black. */
+ * below), one stage: SourceSize (the console's picture: its lines), OutputSize and the parameters
+ * (crt_params.h) come as push constants, and outside the curved screen is black. */
 
 layout(push_constant, std430) uniform Registers
 {
     vec4 SourceSize;
     vec4 OutputSize;
-} global;
-
-struct Params
-{
     float hardScan;
     float hardPix;
     float warpX;
@@ -25,8 +21,9 @@ struct Params
     float hardBloomScan;
     float bloomAmount;
     float shape;
-};
-const Params params = Params(-8.0, -3.0, 0.031, 0.041, 0.5, 1.5, 1.0, 3.0, 1.0, -1.5, -2.0, 0.15, 2.0);
+} params;
+
+#define global params
 
 // PUBLIC DOMAIN CRT STYLED SCAN-LINE SHADER
 //

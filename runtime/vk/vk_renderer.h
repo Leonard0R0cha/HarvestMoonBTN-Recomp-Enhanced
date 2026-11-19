@@ -54,8 +54,9 @@ void vkr_present(int win, int slot, const uint32_t *px, int w, int h, double asp
  * resolution; only over a picture of the GPU's (slot) */
 typedef struct { uint64_t key; const uint16_t *px; int w, h; float x0, y0, x1, y1, u0, v0, u1, v1; } VkHdPiece;
 void vkr_overlay(int win, const VkHdPiece *p, int n);
-/* the windows' pictures through a CRT filter: 0 off, 1 scanlines (crt-hyllian), 2 CRT (crt-lottes) */
-void vkr_crt(int mode);
+/* the windows' pictures through a CRT filter: 0 off, 1 scanlines (crt-hyllian), 2 CRT (crt-lottes);
+ * params: its n parameters (crt_params.h) */
+void vkr_crt(int mode, const float *params, int n);
 /* 0: the game's renderer, 1: the one in-between pictures are redrawn into (2, 3: their tags; 4 ..
  * 7: the same for the second view's GPU, gpu_view2.c); the calls above go to it */
 void vkr_target(int k);

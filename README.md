@@ -246,6 +246,7 @@ ways:
 | F12 | screenshot (saved in `screenshots/`) |
 | F5 | cheats window, changes apply at once (not in online co-op) |
 | F6 | CRT filter: off, scanlines, CRT (needs Vulkan, also with the CPU renderer) |
+| F7 | overlay: the CRT filter's settings, the game paused (not in online co-op); F7 or Esc closes it |
 | F9 | 60 fps camera on / off (with `interp = 1`), to compare |
 | F1–F4 | put memory card 1–4 in slot 1 (3 diaries each; shown in the window title; not in online co-op) |
 | L1 / R1 on a diary list | previous / next memory card (shown above the list); when loading, only cards that have a diary |
@@ -274,6 +275,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `scaling` | `sharp-bilinear` | `sharp-bilinear` = sharp pixels that stay even at any size, `sharp` = nearest pixel, `smooth` = bilinear |
 |  | `aspect43` | `1` | `1` = 4:3 picture like a TV, `0` = square pixels |
 |  | `crt` | `off` | a CRT TV look, shown through Vulkan (also with the CPU renderer; F6 switches): `scanlines` (crt-hyllian: the lines of a TV picture, sharp), `crt` (crt-lottes: a curved tube with a shadow mask and glow) |
+| `[crt]` | `hyllian_...`, `lottes_...` | the shaders' own | each filter's settings (the shader parameters, as in RetroArch), set with sliders in the overlay (F7), which saves them here |
 |  | `vsync` | `1` | wait for the screen's refresh (no tearing); on a 60/120/180/240 Hz screen the game keeps time with it (about 1% faster than the console), so the camera moves evenly. At other rates (e.g. 144 Hz) G-Sync/FreeSync makes it even; `0` = don't wait |
 |  | `renderer` | `cpu` | `vulkan` = the graphics card draws the picture (experimental; falls back to `cpu` without Vulkan) |
 |  | `upscale` | `2` | internal resolution 1–4, 1–8 with `renderer = vulkan` (2+ = smoother 3D edges; 4 = 1280×960, 8 = 2560×1920) |
@@ -520,7 +522,8 @@ The port uses [SDL2](https://libsdl.org) (zlib license, see
 volk (MIT), SPIRV-Cross and the Vulkan headers (Apache-2.0); see
 [runtime/vk/README.md](runtime/vk/README.md). The CRT filters are from libretro's
 [slang-shaders](https://github.com/libretro/slang-shaders): crt-hyllian (MIT, Hyllian) and crt-lottes
-(public domain, Timothy Lottes), in `runtime/vk/crt` with their notices. The launcher exe is made with
+(public domain, Timothy Lottes), in `runtime/vk/crt` with their notices. The overlay (F7) is
+[Dear ImGui](https://github.com/ocornut/imgui) (MIT, `runtime/imgui`). The launcher exe is made with
 [PyInstaller](https://pyinstaller.org). The toolchain downloaded by `tools/fetch_deps.py`
 (llvm-mingw, SDL2, Zig) is used only to build and is not part of this repository.
 Hardware information came from the public PlayStation documentation, above all

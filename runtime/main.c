@@ -8,6 +8,7 @@
 #include "workers.h"
 #ifdef HMBTN_VULKAN
 #include "vk/vk_renderer.h"
+#include "crt_params.h"
 #endif
 #include <stdarg.h>
 #include <time.h>
@@ -174,6 +175,25 @@ static bool locate_disc(void) {
 }
 
 /* ------------------------------------------------------------------ config */
+static char ui_language[8] = "en";
+const char *config_language(void) { return ui_language; }
+
+/* [crt] hyllian_<name> / lottes_<name>: a CRT filter's setting (crt_params.h), kept in its range */
+static int crt_option(const char *key, const char *val) {
+    for (int s = 0; s < 2; s++) {
+        size_t n = strlen(crt_shader_key[s]);
+        if (strncmp(key, crt_shader_key[s], n)) continue;
+        for (int i = 0; i < crt_param_count(s); i++) {
+            const CrtParam *p = &crt_params[s][i];
+            if (strcmp(key + n, p->name)) continue;
+            float v = (float)atof(val);
+            g_cfg.crt_param[s][i] = v < p->min ? p->min : v > p->max ? p->max : v;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void trim(char *s) {
     char *e = s + strlen(s);
     while (e > s && isspace((unsigned char)e[-1])) *--e = 0;
@@ -255,7 +275,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "fastforward")) g_cfg.allow_fast_forward = atoi(val);
     else if (!strcmp(key, "loglevel")) g_log_level = atoi(val);
     else if (!strncmp(key, "coop_", 5)) {}   /* the launcher's co-op page: it passes them as --host / --join */
-    else if (!strcmp(key, "language")) {}    /* the launcher's own */
+    else if (crt_option(key, val)) {}
+    else if (!strcmp(key, "language")) snprintf(ui_language, sizeof ui_language, "%s", val);   /* the launcher's (and the overlay's) */
     else if (!strcmp(key, "game_pt")) {}     /* the launcher's: the language its Build page makes */
     else if (!platform_set_binding(key, val)) LOGW("unknown config option '%s'", key);
 }
@@ -286,6 +307,48 @@ static time_t ini_time;
 static time_t ini_changed(void) {
     struct stat st;
     return stat(ini_path, &st) == 0 ? st.st_mtime : 0;
+}
+
+/* Sets one option in hmbtn.ini, keeping everything else as it is (as the launcher's set_ini): its
+ * line, else a new one at the top of its [section] (made at the end if missing). 0: not written */
+int config_save(const char *section, const char *key, const char *value) {
+    static char text[1 << 18];
+    size_t len = 0, kl = strlen(key);
+    FILE *f = fopen(ini_path, "r");
+    if (f) {
+        len = fread(text, 1, sizeof text - 1, f);
+        fclose(f);
+        if (len == sizeof text - 1) return 0;   /* not all of it */
+    }
+    text[len] = 0;
+    char line[1200], head[80];
+    snprintf(line, sizeof line, "%s = %s\n", key, value);
+    snprintf(head, sizeof head, "[%s]", section);
+    char *at = NULL, *end = NULL, *sec = NULL;
+    for (char *l = text; *l; l = end) {
+        end = strchr(l, '\n');
+        end = end ? end + 1 : l + strlen(l);
+        char *b = l;
+        while (*b == ' ' || *b == '\t') b++;
+        if (!strncmp(b, key, kl) && (b[kl] == ' ' || b[kl] == '\t' || b[kl] == '=')) { at = l; break; }
+        if (!sec && !strncmp(b, head, strlen(head))) sec = end;
+    }
+    if (!(f = fopen(ini_path, "w"))) return 0;
+    if (at) {                       /* the key's line, replaced */
+        fwrite(text, 1, (size_t)(at - text), f);
+        fputs(line, f);
+        fputs(end, f);
+    } else if (sec) {               /* a new line at the top of its section */
+        fwrite(text, 1, (size_t)(sec - text), f);
+        fputs(line, f);
+        fputs(sec, f);
+    } else {
+        fputs(text, f);
+        fprintf(f, "%s\n%s\n%s", len && text[len - 1] != '\n' ? "\n" : "", head, line);
+    }
+    fclose(f);
+    ini_time = ini_changed();       /* (not a change for config_cheats) */
+    return 1;
 }
 
 int config_cheats(int v[CHEATS]) {
@@ -454,6 +517,8 @@ int main(int argc, char **argv) {
     g_cfg.emptybag = 1;
     g_cfg.spritechair = 1;
     g_cfg.depthtest = 1;
+    for (int s = 0; s < 2; s++)
+        for (int i = 0; i < CRT_PARAMS; i++) g_cfg.crt_param[s][i] = crt_params[s][i].def;
     char ini[1200];
     snprintf(ini, sizeof ini, "%shmbtn.ini", exe_dir);
     load_ini(ini);

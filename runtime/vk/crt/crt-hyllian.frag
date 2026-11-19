@@ -27,21 +27,28 @@
 */
 
 /* HMBTN: crt/shaders/hyllian/crt-hyllian-fast.slang from github.com/libretro/slang-shaders, one
- * stage: the parameters are its defaults, SourceSize (the console's picture: its lines) and
- * OutputSize come as push constants, the vertex shader's half-texel shift is done here. */
+ * stage: SourceSize (the console's picture: its lines), OutputSize and the parameters (crt_params.h)
+ * come as push constants, the vertex shader's half-texel shift is done here. */
 
 layout(push_constant, std430) uniform Registers
 {
     vec4 SourceSize;
     vec4 OutputSize;
-} global;
+    float MASK_INTENSITY;
+    float InputGamma;
+    float OutputGamma;
+    float BRIGHTBOOST;
+    float SCANLINES;
+    float SHARPER;
+} params;
 
-#define MASK_INTENSITY 0.5
-#define InputGamma 2.4
-#define OutputGamma 2.2
-#define BRIGHTBOOST 1.5
-#define SCANLINES 0.72
-#define SHARPER 0.0
+#define global params
+#define MASK_INTENSITY params.MASK_INTENSITY
+#define InputGamma params.InputGamma
+#define OutputGamma params.OutputGamma
+#define BRIGHTBOOST params.BRIGHTBOOST
+#define SCANLINES params.SCANLINES
+#define SHARPER params.SHARPER
 
 #define SourceSize global.SourceSize
 #define COMPAT_TEXTURE texture

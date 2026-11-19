@@ -256,7 +256,7 @@ TEXT = {
                     'nearest pixel. smooth: soft.'),
         'aspect43': ('4:3 picture', 'Like a CRT TV. Off: square pixels.'),
         'crt': ('CRT filter', 'scanlines: the lines of a TV picture, sharp. crt: a curved tube with a '
-                'shadow mask and glow. F6 switches in the game. Needs Vulkan (also with the CPU renderer).'),
+                'shadow mask and glow. F6 switches in the game, F7 adjusts it. Needs Vulkan (also with the CPU renderer).'),
         'vsync': ('Vsync', "Waits for the screen's refresh: no tearing. On a 60 or 120 Hz screen the game keeps "
                   'time with it, so the camera moves evenly (about 1% faster than the console). At 144 Hz and '
                   'other rates, G-Sync or FreeSync makes it even.'),
@@ -349,7 +349,7 @@ TEXT = {
                     'próximo. smooth: suave.'),
         'aspect43': ('Imagem 4:3', 'Como numa TV de tubo. Desligado: pixels quadrados.'),
         'crt': ('Filtro CRT', 'scanlines: as linhas da imagem de uma TV, nítidas. crt: um tubo curvo com '
-                'máscara de sombra e brilho. F6 alterna no jogo. Precisa de Vulkan (também com o renderizador CPU).'),
+                'máscara de sombra e brilho. F6 alterna no jogo, F7 ajusta. Precisa de Vulkan (também com o renderizador CPU).'),
         'vsync': ('Vsync', 'Espera a atualização da tela: sem cortes na imagem. Numa tela de 60 ou 120 Hz o jogo '
                   'acompanha o ritmo dela, e a câmera se move por igual (cerca de 1% mais rápido que o console). '
                   'Em 144 Hz e outras taxas, o G-Sync ou FreeSync deixa por igual.'),
@@ -442,7 +442,7 @@ TEXT = {
                     'píxel más cercano. smooth: suave.'),
         'aspect43': ('Imagen 4:3', 'Como en un televisor de tubo. Apagado: píxeles cuadrados.'),
         'crt': ('Filtro CRT', 'scanlines: las líneas de la imagen de un televisor, nítidas. crt: un tubo curvo '
-                'con máscara de sombra y brillo. F6 cambia en el juego. Necesita Vulkan (también con el '
+                'con máscara de sombra y brillo. F6 cambia en el juego, F7 lo ajusta. Necesita Vulkan (también con el '
                 'renderizador CPU).'),
         'vsync': ('Vsync', 'Espera el refresco de la pantalla: sin cortes en la imagen. En una pantalla de 60 o '
                   '120 Hz el juego sigue su ritmo, y la cámara se mueve de forma pareja (cerca de 1% más rápido '
@@ -1949,6 +1949,8 @@ def main():
 
     def save():
         nonlocal text
+        if os.path.exists(INI):     # as it is now: the game's overlay (F7) may have saved to it meanwhile
+            text = open(INI, encoding='utf-8').read()
         for page, section, key, kind in OPTIONS:
             v = val(key)
             if kind.startswith('spin') and v.isdigit():     # typed numbers too: keep them in range
