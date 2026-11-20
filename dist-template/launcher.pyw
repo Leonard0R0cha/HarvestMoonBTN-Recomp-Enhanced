@@ -609,8 +609,10 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Fan translation (Indonesian edition of the Kucing NPC mod). '
         'The first time its text is downloaded and put onto a copy of your disc (disc-id folder).',
         'gl_de': 'Deutsch', 'gl_de_d': 'The German dialogue of the European release. Needs your own European '
-        'disc (Rev 1, .bin + .cue) in this folder: its dialogue is put onto a copy of your disc (disc-de '
-        'folder). Menus and items stay in English.',
+        'disc in this folder, besides your USA one: SLES-02781, Rev 1 (English/German), as .bin + .cue (or a '
+        '.zip with them), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". Rev 0 and the French disc '
+        'do not work. Its dialogue is put onto a copy of your disc (disc-de folder). Menus and items stay in '
+        'English.',
         'gl_ready': 'Built: switches at once.', 'gl_first': 'The first time, Play builds the game in it '
         '(about a minute).',
         'gl_now': 'In use now.', 'gl_coop': 'Online co-op: both players need the same language. The texts '
@@ -721,8 +723,10 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Tradução de fã (edição indonésia do mod do Kucing NPC). Na '
         'primeira vez o texto dela é baixado e posto numa cópia do seu disco (pasta disc-id).',
         'gl_de': 'Deutsch', 'gl_de_d': 'As falas em alemão da versão europeia. Precisa do seu próprio disco '
-        'europeu (Rev 1, .bin + .cue) nesta pasta: as falas dele vão para uma cópia do seu disco (pasta '
-        'disc-de). Menus e itens ficam em inglês.',
+        'europeu nesta pasta, além do americano: SLES-02781, Rev 1 (inglês/alemão), em .bin + .cue (ou um '
+        '.zip com eles), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". O Rev 0 e o disco francês '
+        'não servem. As falas dele vão para uma cópia do seu disco (pasta disc-de). Menus e itens ficam em '
+        'inglês.',
         'gl_ready': 'Montado: troca na hora.', 'gl_first': 'Na primeira vez, o Jogar monta o jogo nela '
         '(cerca de um minuto).',
         'gl_now': 'Em uso agora.', 'gl_coop': 'Coop online: os dois precisam da mesma língua. Os textos dos '
@@ -835,8 +839,10 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Traducción de fans (edición indonesia del mod de Kucing NPC). '
         'La primera vez su texto se descarga y se pone en una copia de tu disco (carpeta disc-id).',
         'gl_de': 'Deutsch', 'gl_de_d': 'Los diálogos en alemán de la versión europea. Necesita tu propio '
-        'disco europeo (Rev 1, .bin + .cue) en esta carpeta: sus diálogos se ponen en una copia de tu disco '
-        '(carpeta disc-de). Los menús y objetos quedan en inglés.',
+        'disco europeo en esta carpeta, además del estadounidense: SLES-02781, Rev 1 (inglés/alemán), en .bin '
+        '+ .cue (o un .zip con ellos), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". El Rev 0 y el '
+        'disco francés no sirven. Sus diálogos se ponen en una copia de tu disco (carpeta disc-de). Los menús '
+        'y objetos quedan en inglés.',
         'gl_ready': 'Construido: cambia al instante.', 'gl_first': 'La primera vez, Jugar construye el juego '
         'en él (cerca de un minuto).',
         'gl_now': 'En uso ahora.', 'gl_coop': 'Coop online: los dos necesitan el mismo idioma. Los textos de '
