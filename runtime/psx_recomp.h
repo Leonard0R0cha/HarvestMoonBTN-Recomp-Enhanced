@@ -318,6 +318,7 @@ void farm_area_loaded(uint32_t entry);
 void build_card_save(void);
 void build_card_load(void);      /* fixes.c: the greenhouse stands through the storms */
 uint32_t bulk_feed_most(CPU *c, uint32_t most);   /* ... and fodder / chicken feed up to 999 */
+int ship_reach(CPU *c);                                /* a thrown item falling near a shipping bin */
 uint32_t sprite_spot_z(uint32_t z, uint32_t actor);    /* ... the yellow sprite off the chair */
 void p2_tick_end(void);
 int p2_faint_skipped(void);

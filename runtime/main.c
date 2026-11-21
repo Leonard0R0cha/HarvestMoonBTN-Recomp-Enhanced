@@ -254,6 +254,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "earlycabinet")) g_cfg.earlycabinet = atoi(val);
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
     else if (!strcmp(key, "spritechair")) g_cfg.spritechair = atoi(val);
+    else if (!strcmp(key, "shipreach")) g_cfg.shipreach = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
     else if (!strcmp(key, "spritehire")) g_cfg.spritehire = atoi(val);
@@ -517,6 +518,7 @@ int main(int argc, char **argv) {
     g_cfg.overclock = 200;
     g_cfg.emptybag = 1;
     g_cfg.spritechair = 1;
+    g_cfg.shipreach = 1;
     g_cfg.depthtest = 1;
     for (int s = 0; s < 2; s++)
         for (int i = 0; i < CRT_PARAMS; i++) g_cfg.crt_param[s][i] = crt_params[s][i].def;
