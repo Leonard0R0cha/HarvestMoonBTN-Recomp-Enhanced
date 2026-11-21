@@ -50,7 +50,7 @@ if getattr(sys, 'frozen', False) and sys.platform.startswith('linux') and not os
 if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py'):
     # "Launcher.exe script.py ...": the Build page runs the build scripts with the Python this exe carries
     import runpy, traceback
-    import collections, concurrent.futures, glob, hashlib, json, lzma, platform, shutil, tarfile, \
+    import collections, concurrent.futures, filecmp, glob, hashlib, json, lzma, platform, shutil, tarfile, \
         urllib.request, zipfile, zlib  # noqa: F401  (what the scripts import, so that PyInstaller packs it)
     if sys.stdout:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
