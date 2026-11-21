@@ -11,7 +11,6 @@ Two flavours:
 These folders contain the game's program code (and with --pak its data) translated from your
 copy - they are for your own use, not for sharing.
 """
-import filecmp
 import os, shutil, zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,10 +40,23 @@ DISC_NOTE = ("Put your own disc image of Harvest Moon: Back to Nature (USA) here
              "the .cue file and its .bin file (any file names).\n")
 
 
+def same_file(a, b):
+    """byte-for-byte comparison (no filecmp: the launcher exe runs this script and packs only what it imports)"""
+    if os.path.getsize(a) != os.path.getsize(b):
+        return False
+    with open(a, 'rb') as fa, open(b, 'rb') as fb:
+        while True:
+            ca, cb = fa.read(1 << 20), fb.read(1 << 20)
+            if ca != cb:
+                return False
+            if not ca:
+                return True
+
+
 def copy_in_use(src, dst):
     """copy2 that also works when dst is the program running right now (the launcher building into its
     own folder): Windows will not overwrite a running exe but lets it be renamed, so it moves aside"""
-    if os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False):   # the same launcher: nothing to do
+    if os.path.isfile(dst) and same_file(src, dst):   # the same launcher: nothing to do
         return
     try:
         shutil.copy2(src, dst)
