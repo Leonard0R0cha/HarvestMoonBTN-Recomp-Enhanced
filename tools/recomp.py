@@ -675,6 +675,14 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
 MODULE_SITE_HOOKS['GF_FARM'].update({
     0x800BCF88: 'R[6] = farm_area_size(R[16], R[6]);',
     0x800BCFAC: 'farm_area_loaded(R[16]);'})
+# The bell herds the animals (bellherd, runtime/bell.c; site hooks run after their instruction):
+# the cow's / sheep's roll for hearing it (800E169C / 800DFAC4), the goal it takes (800E16E4 /
+# 800DFB0C), the walk's "near the goal" (800D1D90) and the door it went through (800D2CCC / 800D2D0C)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x800E169C: 'R[2] = bell_heard(c, R[2]);', 0x800DFAC4: 'R[2] = bell_heard(c, R[2]);',
+    0x800E16E4: 'bell_sent(c);', 0x800DFB0C: 'bell_sent(c);',
+    0x800D1D90: 'R[2] = bell_keep_going(c, R[2]);',
+    0x800D2CCC: 'bell_through(c);', 0x800D2D0C: 'bell_through(c);'})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
