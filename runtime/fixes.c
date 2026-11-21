@@ -113,6 +113,74 @@ uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record
     return own_field(c) ? 0 : solid;
 }
 
+/* Shipping bins that take what falls near them (shipreach): a thrown item (52 bytes, a0 of its
+ * flight 800CC7CC: +2 the item, +12 its fall speed, +36/+40/+44 x, y, z) goes in a bin only when it
+ * lands on the bin's own floor polygons (the floor under a point, 800CE550, keeps its polygon at
+ * gp+688; bit 0x80 of its first byte = a bin, 800BF3D0), and one that meets the bin's side bounces
+ * off it (800CC878). Thrown from in front of the hen house's bin the egg mostly fell outside. While
+ * the item falls to about the bin's top, the floor is looked at around it too (up to SHIP_REACH
+ * away; over the bin itself the game's own landing is left to do it); a bin there takes it, as
+ * the game does (800CCAA8: 800F3BCC ships it, sound 19, 800CCBE8 ends the throw, 8001AF70(7, 1)). Items 101 and 390 fly their own way, and an item the table at
+ * 8006C858 (40 bytes, +18) does not let go in a bin is left to the game. */
+#define SHIP_REACH 240
+#define SHIP_ABOVE 40               /* the item down to about the bin's top */
+#define ITEM_TABLE 0x8006C858u
+#define BIN_POLY 688u               /* gp+: the polygon under the last point looked at */
+
+static int bin_near(CPU *c, uint32_t p, int32_t x, int32_t y, int32_t z, int32_t above) {
+    MEM_W32(p, (uint32_t)x);
+    MEM_W32(p + 4u, (uint32_t)y);
+    MEM_W32(p + 8u, (uint32_t)z);
+    c->r[4] = p;
+    call_addr(c, 0x800CE550u);
+    if (c->r[2]) return 0;                                  /* no floor there */
+    uint32_t poly = MEM_R32(c->r[28] + BIN_POLY);
+    return poly && (MEM_R8(poly) & 0x80u) && (int32_t)MEM_R32(p + 4u) - y <= above;
+}
+
+int ship_reach(CPU *c) {
+    if (!g_cfg.shipreach) return 0;
+    uint32_t s = c->r[4];
+    int16_t id = (int16_t)MEM_R16(s + 2u);
+    if (id <= 0 || id == 101 || id == 390 || (int32_t)MEM_R32(s + 12u) <= 0) return 0;
+    if (!MEM_R16(MEM_R32(ITEM_TABLE) + (uint32_t)id * 40u + 18u)) return 0;
+    static const int8_t dir[8][2] = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    uint32_t gp = regs[28], poly = MEM_R32(gp + BIN_POLY);
+    uint32_t p = regs[29] - 0x40u;
+    int32_t x = (int32_t)MEM_R32(s + 36u), y = (int32_t)MEM_R32(s + 40u), z = (int32_t)MEM_R32(s + 44u);
+    c->r[29] = regs[29] - 0x80u;
+    int found = bin_near(c, p, x, y, z, 0x7FFFFFF) ? -1 : 0;   /* over it already: the game's own */
+    for (int ring = 1; ring <= 2 && !found; ring++)
+        for (int k = 0; k < 8 && !found; k++) {
+            c->r[29] = regs[29] - 0x80u;
+            int32_t d = SHIP_REACH * ring / 4;              /* 2 = straight, 1+1 = diagonal (~0.7) */
+            int32_t dx = dir[k][0] * d, dz = dir[k][1] * d;
+            if (dir[k][0] && dir[k][1]) { dx = dx * 3 / 2; dz = dz * 3 / 2; }
+            found = bin_near(c, p, x + dx, y, z + dz, SHIP_ABOVE);
+        }
+    MEM_W32(gp + BIN_POLY, poly);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    if (found <= 0) return 0;
+    c->r[29] = regs[29] - 0x40u;
+    c->r[4] = (uint16_t)id;
+    call_addr(c, 0x800F3BCCu);
+    c->r[4] = 19;
+    call_addr(c, 0x8001FABCu);
+    c->r[4] = s;
+    call_addr(c, 0x800CCBE8u);
+    c->r[4] = 7;
+    c->r[5] = 1;
+    call_addr(c, 0x8001AF70u);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    return 1;
+}
+
 /* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
  * which 80110E34 copies each tick from a table of 7 (80127EE0, 16 bytes: x, y, z, facing) to the
  * sprite (a0; its spot at +172, its x, y, z at +56). The yellow one's (spot 3, -240, 0, -146) puts

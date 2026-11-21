@@ -287,6 +287,7 @@ typedef struct {
     int  earlycabinet;          /* the first house's pile of boxes opens the cabinet (fixes.c) */
     int  cropwalk;              /* the player walks through planted crops (fixes.c) */
     int  spritechair;           /* the yellow Harvest Sprite stands off the chair at home (fixes.c) */
+    int  shipreach;             /* a thrown item falling near a shipping bin goes in (fixes.c) */
     int  staminabar;            /* the stamina and tiredness in a window under the clock (fixes.c) */
     int  biggreenhouse;         /* a built greenhouse is 7 x 19 fields */
     int  runthrough;            /* running goes through the cows, sheep and horse (fixes.c) */
