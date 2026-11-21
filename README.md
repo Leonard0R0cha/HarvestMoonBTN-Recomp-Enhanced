@@ -98,6 +98,16 @@ and stops with a clear message if they don't match:
 | `A_FILE.HDT` | `0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd` |
 | `A_FILE.BIN` | `612f9ac8279a364c2fdd19cb75e63df2e892a6f52b6f1d8081ea8560b18decd4` |
 
+For reference, a good dump of the whole disc matches the
+[Redump entry](https://redump.info/disc/86) (one track, `.bin` of 213,954,384 bytes):
+
+| Disc image (`.bin`) | Hash |
+|---|---|
+| CRC32 | `B0E8F078` |
+| SHA-1 | `cb26381fa1336bdd15f07469e59f1143ccf37b03` |
+
+The build does not check these: an image that differs only outside the game's files still works.
+
 ## Building
 
 ### Windows, the easy way: the launcher
