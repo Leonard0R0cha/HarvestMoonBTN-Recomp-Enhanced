@@ -270,6 +270,7 @@ void friend_title_drawn(void);
 uint32_t friend_next_wrap(uint32_t lt);
 uint32_t friend_prev_wrap(uint32_t page);
 uint32_t friend_page(CPU *c, uint32_t routine);
+void stamina_glyph_others(int on);               /* fixes.c: the port's own letters drawn */
 void birthday_marks(CPU *c);                     /* friends.c: birthdays on the calendar */
 void birthday_text_asked(CPU *c);
 void birthday_text_loaded(void);
