@@ -180,6 +180,8 @@ static void parse_script(const char *s) {
             g_cfg.precisecull = 0;              /* recordings made before it have no precisecull= */
             g_cfg.spritechair = 0;              /* nor spritechair= */
             g_cfg.shipreach = 0;                /* nor shipreach= */
+            g_cfg.friendpage = 0;               /* written only when on */
+            g_cfg.birthdays = 0;                /* nor birthdays= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
             continue;
         }
@@ -198,6 +200,8 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
         if (!strncmp(tok, "spritechair=", 12)) { g_cfg.spritechair = atoi(tok + 12); continue; }
         if (!strncmp(tok, "shipreach=", 10)) { g_cfg.shipreach = atoi(tok + 10); continue; }
+        if (!strncmp(tok, "friendpage=", 11)) { g_cfg.friendpage = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "birthdays=", 10)) { g_cfg.birthdays = atoi(tok + 10); continue; }
         if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bulkfood=", 9)) { g_cfg.bulkfood = atoi(tok + 9); continue; }
         if (!strncmp(tok, "spritehire=", 11)) { g_cfg.spritehire = atoi(tok + 11); continue; }
@@ -543,6 +547,8 @@ int platform_init(void) {
             fprintf(rec_file, "precisecull=%d\n", g_cfg.precisecull);   /* changes what the game draws */
             fprintf(rec_file, "dualshock=%d\n", g_cfg.dualshock);       /* the pad's answers change the game's code */
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
+            if (g_cfg.friendpage) fprintf(rec_file, "friendpage=%d\n", g_cfg.friendpage);
+            if (g_cfg.birthdays) fprintf(rec_file, "birthdays=%d\n", g_cfg.birthdays);
             if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
             if (g_cfg.spritehire) fprintf(rec_file, "spritehire=%d\n", g_cfg.spritehire);
             if (g_cfg.sturdygreenhouse) fprintf(rec_file, "sturdygreenhouse=%d\n", g_cfg.sturdygreenhouse);

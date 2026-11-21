@@ -314,6 +314,8 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `emptybag` | `1` | R1 / R2 do nothing when there is no tool / item to switch to, so they no longer stop the player for a moment while running; `0` = original |
 |  | `spritechair` | `1` | in the Harvest Sprites' house the yellow sprite stands a little farther back from the table, so the chair no longer cuts in and out of its feet as the camera moves; `0` = original spot |
 |  | `shipreach` | `1` | a thrown item that falls near a shipping bin (the hen house's, the barn's, the farm's) goes in, instead of only one that lands right on top of it; `0` = original |
+|  | `friendpage` | `0` | one more page in the START menu (Left / Right): the town's 32 people with their hearts (the bachelorettes in their heart colour); Up / Down pick one: their portrait (redrawn with `portraits`) and whether you talked to them / gave them a gift today; `0` = original |
+|  | `birthdays` | `0` | the calendar in your house marks the birthdays of the town's people (and the Harvest Sprites) with a heart, and X on the day says whose; `0` = original |
 |  | `earlycabinet`, `cropwalk`, `runthrough`, `randomnames`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
 |  | `split` | `0` | `1` = farmer 2 can go into buildings alone (online co-op only, experimental), see [Co-op](#co-op) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |

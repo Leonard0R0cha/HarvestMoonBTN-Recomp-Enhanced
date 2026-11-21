@@ -264,6 +264,15 @@ void names_open(CPU *c);                      /* names.c: the naming screen open
 void names_buttons(CPU *c);                   /* ... and its buttons read: Select picks a random name */
 void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
 void stamina_glyph_seen(CPU *c);
+void friends_glyph_seen(CPU *c);                 /* friends.c: the town's friendships page */
+uint32_t friend_title(CPU *c, uint32_t text);
+void friend_title_drawn(void);
+uint32_t friend_next_wrap(uint32_t lt);
+uint32_t friend_prev_wrap(uint32_t page);
+uint32_t friend_page(CPU *c, uint32_t routine);
+void birthday_marks(CPU *c);                     /* friends.c: birthdays on the calendar */
+void birthday_text_asked(CPU *c);
+void birthday_text_loaded(void);
 void hud_fade_anchor(int x, int y, int kind);     /* fixes.c: the clock see-through over the farmer */
 void hud_fade(CPU *c, uint32_t flag);
 void clock_begin(CPU *c);

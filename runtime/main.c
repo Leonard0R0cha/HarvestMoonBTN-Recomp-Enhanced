@@ -255,6 +255,8 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
     else if (!strcmp(key, "spritechair")) g_cfg.spritechair = atoi(val);
     else if (!strcmp(key, "shipreach")) g_cfg.shipreach = atoi(val);
+    else if (!strcmp(key, "friendpage")) g_cfg.friendpage = atoi(val);
+    else if (!strcmp(key, "birthdays")) g_cfg.birthdays = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
     else if (!strcmp(key, "spritehire")) g_cfg.spritehire = atoi(val);
