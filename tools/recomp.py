@@ -446,7 +446,7 @@ ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
 # and 800231AC (who called tells what is named) and reads its buttons in 80023DBC.
 ENTRY_HOOKS.update({a: 'names_open(c);' for a in (0x80023130, 0x80023170, 0x800231AC)})
 ENTRY_HOOKS[0x80023DBC] = 'names_buttons(c);'
-ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
+ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); friends_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
 # The clock (and the stamina) see-through while the farmer is behind them (runtime/fixes.c): the
 # window builders' semi-transparency flag on the stack (background +40, border lines +28, corner
 # pixels +20), set while the clock routine (GF_FARM 800FB674) builds. Its window (800136D4 through
@@ -636,6 +636,20 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
     0x8010E98C: 'sprite_hired(c);',
     # a sprite under contract asks about another job: the talk's text (a1 loaded at 8010DC98)
     0x8010DC98: 'sprite_talk_text(c);'})
+# The town's friendships page (friendpage, runtime/friends.c; site hooks run after their
+# instruction): the START menu (800FC1AC) draws its title with a1 = the farm's name (800FC220), the
+# page after / before (800FE928: v0 = page < 8 at 800FE9E0; 800FEA00: the page below 0 at 800FEAB0)
+# and the page's routine loaded from 80127308 (v1 at 800FC2D4)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x800FC220: 'R[5] = friend_title(c, R[5]);', 0x800FC23C: 'friend_title_drawn();',
+    0x800FE9E0: 'R[2] = friend_next_wrap(R[2]);',
+    0x800FEAB0: 'R[2] = friend_prev_wrap(R[2]);',
+    0x800FC2D4: 'R[3] = friend_page(c, R[3]);'})
+# Birthdays on the calendar (birthdays, runtime/friends.c): the hearts after the calendar's cursor
+# is drawn (800FA4F4 called from 800FA1B0), the names when its day's events are shown (8002261C
+# called from 800FA4C0) and once that text is loaded (80022A94, below)
+MODULE_SITE_HOOKS['GF_FARM'][0x800FA1B8] = 'birthday_marks(c);'
+ENTRY_HOOKS[0x8002261C] = 'birthday_text_asked(c);'
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010E6E8] = 'sprite_menu(c);'
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CB6C] = 'sprite_night(c);'   # each sprite's night
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CD80] = 'sprite_update(c);'  # each sprite's frame
@@ -643,7 +657,7 @@ MODULE_ENTRY_HOOKS['GF_FARM'][0x801105C8] = 'sprite_pick_from(c);'  # a sprite p
 MODULE_ENTRY_HOOKS['GF_FARM'][0x80110658] = 'if (sprite_pick_bed(c)) return;'  # ... the nearest
 MODULE_ENTRY_HOOKS['GF_FARM'][0x801103E8] = 'sprite_face_bed(c);'  # a sprite waters the bed ahead ...
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8011031C] = 'sprite_face_bed(c);'  # ... or harvests it: facing it
-SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded();'
+SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded(); birthday_text_loaded();'
 ENTRY_HOOKS[0x80022B98] = 'sprite_text_tick(c);'
 SITE_HOOKS[0x80022CDC] = 'sprite_menu_answered(c, R[4]); build_menu_answered(R[4]);'   # a menu's answer, just stored at gp+836
 # The carpenter's building order (buildorder, runtime/buildorder.c; site hooks run after their
