@@ -286,6 +286,12 @@ uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record
 int item_picture_from_disc(CPU *c);              /* fixes.c: an item's picture from the disc */
 uint32_t bulk_food_yes(CPU *c, uint32_t answer); /* ... bulk food at the shops */
 int bulk_food_state(CPU *c);
+uint32_t bell_heard(CPU *c, uint32_t roll);      /* bell.c: the bell herds the animals */
+void bell_sent(CPU *c);
+uint32_t bell_keep_going(CPU *c, uint32_t near);
+void bell_through(CPU *c);
+#define BELL_WALKERS 20
+int bell_walker(uint32_t rec);                   /* an animal the bell leads: its number, else -1 */
 uint32_t sprite_talked(CPU *c, uint32_t flags);  /* sprites.c: the sprites hired through the Chef */
 uint32_t sprite_friendship(CPU *c, uint32_t friendship);
 uint32_t sprite_spring(uint32_t talks);

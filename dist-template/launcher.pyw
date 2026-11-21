@@ -115,6 +115,7 @@ OPTIONS = [
     ('mods', 'behaviour', 'biggreenhouse', 'bool'),
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
+    ('mods', 'behaviour', 'bellherd', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
     ('mods', 'behaviour', 'birthdays', 'bool'),
@@ -294,6 +295,10 @@ TEXT = {
         'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
         'buildorder': ('Pick the building order', 'Gotz asks which extension to build next (hen house, kitchen, barn, bigger house, greenhouse) instead of the fixed order; each keeps its own price and lumber.'),
         'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
+        'bellherd': ('The bell herds the animals', 'Ring the bell inside the barn: every cow and sheep there walks to the door on its own '
+                     'and out to the pasture, where they stand in rows in front of the barn. Ring it on the pasture: they all walk back in, '
+                     'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
+                     'may stay behind: ring again. It works on rainy days too. Off: the bell only calls some animals to you.'),
         'friendpage': ('Town friendships page', 'One more page in the START menu (Left / Right): the 32 people of the town with their hearts (the bachelorettes in their heart colour); Up / Down pick one to see their portrait (the redrawn one with Redrawn portraits) and whether you talked to them and gave them a gift today.'),
         'birthdays': ('Birthdays on the calendar', 'The calendar in your house marks with a heart the days someone in town (or a Harvest Sprite) has a birthday, and X on that day tells whose birthday it is.'),
         'randomnames': ('Random names', 'On the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal; press it again for another. Your own lists go in names.txt next to the game.'),
@@ -388,6 +393,10 @@ TEXT = {
         'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
         'buildorder': ('Escolher a ordem das ampliações', 'O Gotz pergunta qual ampliação construir (galinheiro, cozinha, estábulo, casa maior, estufa) em vez da ordem fixa; cada uma com seu preço e sua madeira.'),
         'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
+        'bellherd': ('Sino leva os animais', 'Toque o sino dentro do celeiro: todas as vacas e ovelhas de lá andam sozinhas até a porta '
+                     'e saem para o pasto, onde ficam em fileiras na frente do celeiro. Toque o sino no pasto: todas voltam andando para dentro, '
+                     'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
+                     'para trás: toque de novo. Funciona também em dia de chuva. Desligado: o sino só chama alguns animais até você.'),
         'friendpage': ('Página de amizades da cidade', 'Mais uma página no menu START (Esquerda / Direita): os 32 moradores com os corações (as garotas na cor do coração delas); Cima / Baixo escolhem um para ver o retrato (o redesenhado, com Retratos redesenhados) e se você já conversou e deu presente hoje.'),
         'birthdays': ('Aniversários no calendário', 'O calendário da sua casa marca com um coração os dias de aniversário dos moradores (e dos duendes), e o X no dia diz de quem é o aniversário.'),
         'randomnames': ('Nomes aleatórios', 'Na tela de nome, o Select sorteia um nome para o fazendeiro, a fazenda, o cachorro, o cavalo, o bebê ou o animal; aperte de novo para outro. Suas próprias listas vão no names.txt, na pasta do jogo.'),
@@ -485,6 +494,10 @@ TEXT = {
         'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),
         'buildorder': ('Elegir el orden de las ampliaciones', 'Gotz pregunta qué ampliación construir (gallinero, cocina, establo, casa más grande, invernadero) en vez del orden fijo; cada una con su precio y su madera.'),
         'runthrough': ('Correr atraviesa los animales', 'Corriendo pasas a través de las vacas, las ovejas y el caballo; caminando sigues empujándolos.'),
+        'bellherd': ('La campana lleva a los animales', 'Toca la campana dentro del establo: todas las vacas y ovejas de allí caminan solas hasta '
+                     'la puerta y salen al prado, donde quedan en filas frente al establo. Tócala en el prado: todas vuelven caminando adentro, '
+                     'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '
+                     'se quedan atrás: toca otra vez. También funciona en días de lluvia. Desactivado: la campana solo llama a algunos animales.'),
         'friendpage': ('Página de amistades del pueblo', 'Una página más en el menú START (Izquierda / Derecha): las 32 personas del pueblo con sus corazones (las chicas en el color de su corazón); Arriba / Abajo eligen una para ver su retrato (el redibujado, con Retratos redibujados) y si ya hablaste con ella y le diste un regalo hoy.'),
         'birthdays': ('Cumpleaños en el calendario', 'El calendario de tu casa marca con un corazón los días de cumpleaños de la gente del pueblo (y de los duendes), y X en ese día dice de quién es el cumpleaños.'),
         'randomnames': ('Nombres al azar', 'En la pantalla de nombre, Select elige un nombre al azar para el granjero, la granja, el perro, el caballo, el bebé o el animal; púlsalo otra vez para otro. Tus propias listas van en names.txt, junto al juego.'),

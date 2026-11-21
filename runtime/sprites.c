@@ -234,15 +234,13 @@ static int way_free(int way, int now, uint32_t free_bits) {
     return 1;                       /* back: where it came from (tested as "ahead" next time) */
 }
 
-uint32_t sprite_walk_way(CPU *c, uint32_t way) {
-    uint32_t rec = c->r[18];
-    /* not in the second view's extra run of the frame (p2view.c): it puts the RAM back, but not the
-     * counters below, and the co-op player with that window would walk the sprites another way */
-    if (!g_cfg.spritehire || g_view2_run || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
-        || (rec - SPRITES) % SPRITE_SIZE || !(MEM_R32(rec + 52) & 0x2000u)) return way;
-    uint16_t action = MEM_R16(rec + 38);
+/* the cows and sheep the bell leads to the barn's door (bellherd, bell.c) walk the same way */
+#define WALKERS (SPRITE_COUNT + BELL_WALKERS)
+
+/* the way to the target for walker i (0.. the sprites, then the bell's animals) */
+static uint32_t walk_toward(CPU *c, uint32_t rec, uint32_t way, int i) {
     int32_t speed = (int32_t)c->r[21];
-    if (action < 8 || action > 11 || speed <= 0) return way;
+    if (speed <= 0) return way;
     int now = MEM_R16(rec + 34) & 3;
     uint32_t free_bits = c->r[19];
     int32_t dx = (int32_t)MEM_R32(rec + 88) - (int32_t)MEM_R32(rec + 56);
@@ -251,9 +249,8 @@ uint32_t sprite_walk_way(CPU *c, uint32_t way) {
     /* no nearer after a few picks (an animal or a wall across the way, gone round to and fro):
      * the game's own picks for a while, which go round it, then ours again */
     {
-        int i = (int)((rec - SPRITES) / SPRITE_SIZE);
-        static int32_t tx[SPRITE_COUNT], tz[SPRITE_COUNT], best[SPRITE_COUNT];
-        static uint8_t stall[SPRITE_COUNT], game[SPRITE_COUNT];
+        static int32_t tx[WALKERS], tz[WALKERS], best[WALKERS];
+        static uint8_t stall[WALKERS], game[WALKERS];
         int32_t x = (int32_t)MEM_R32(rec + 88), z = (int32_t)MEM_R32(rec + 96);
         if (x != tx[i] || z != tz[i]) { tx[i] = x; tz[i] = z; best[i] = ax + az; stall[i] = game[i] = 0; }
         if (game[i]) { game[i]--; best[i] = ax + az; return way; }
@@ -290,6 +287,20 @@ uint32_t sprite_walk_way(CPU *c, uint32_t way) {
         if (calls < every) MEM_W16(rec + 46, (uint16_t)(every - calls));
     }
     return (uint32_t)pick << 16;
+}
+
+uint32_t sprite_walk_way(CPU *c, uint32_t way) {
+    uint32_t rec = c->r[18];
+    /* not in the second view's extra run of the frame (p2view.c): it puts the RAM back, but not the
+     * counters below, and the co-op player with that window would walk the sprites another way */
+    if (g_view2_run || !(MEM_R32(rec + 52) & 0x2000u)) return way;
+    int animal = bell_walker(rec);
+    if (animal >= 0) return walk_toward(c, rec, way, SPRITE_COUNT + animal);
+    if (!g_cfg.spritehire || rec < SPRITES || rec >= SPRITES + SPRITE_COUNT * SPRITE_SIZE
+        || (rec - SPRITES) % SPRITE_SIZE) return way;
+    uint16_t action = MEM_R16(rec + 38);
+    if (action < 8 || action > 11) return way;
+    return walk_toward(c, rec, way, (int)((rec - SPRITES) / SPRITE_SIZE));
 }
 
 /* a sprite at work waters (801103E8) or harvests (8011031C) the bed 100 ahead of it (a0 the
