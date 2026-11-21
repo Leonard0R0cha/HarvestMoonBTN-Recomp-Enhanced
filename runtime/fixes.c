@@ -222,10 +222,13 @@ uint32_t sprite_spot_z(uint32_t z, uint32_t actor) {
 
 static uint32_t glyph_args[6];          /* the last glyph's stack arguments (+16 to +36) */
 static int fade_now;                    /* the clock is see-through this frame */
-static int glyph_known, stamina_drawing;
+static int glyph_known, stamina_drawing, others_drawing;
+
+/* the port's own letters (friends.c: the hearts) are not the game's: their colours stay theirs */
+void stamina_glyph_others(int on) { others_drawing = on; }
 
 void stamina_glyph_seen(CPU *c) {
-    if (stamina_drawing) return;
+    if (stamina_drawing || others_drawing) return;
     for (int i = 0; i < 6; i++) glyph_args[i] = MEM_R32(c->r[29] + 16 + (uint32_t)i * 4);
     glyph_known = 1;
 }

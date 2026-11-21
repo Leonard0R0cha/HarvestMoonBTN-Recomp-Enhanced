@@ -175,7 +175,10 @@ static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y,
     MEM_W32(sp + 28, rgb >> 16 & 0xFF);
     MEM_W32(sp + 32, pal);
     MEM_W32(sp + 36, 0);
-    return call4(c, GLYPH_AT, ot, p, (uint32_t)letter, (uint32_t)x);
+    stamina_glyph_others(1);        /* the stamina window copies the game's last letter's colour */
+    uint32_t next = call4(c, GLYPH_AT, ot, p, (uint32_t)letter, (uint32_t)x);
+    stamina_glyph_others(0);
+    return next;
 }
 
 #define RGB(r, g, b) ((uint32_t)(b) << 16 | (uint32_t)(g) << 8 | (uint32_t)(r))
