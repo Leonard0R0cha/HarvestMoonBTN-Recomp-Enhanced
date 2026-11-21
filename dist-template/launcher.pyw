@@ -547,7 +547,7 @@ UI = {
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
             ('F12', 'Screenshot (screenshots folder)')],
-        'applied': '%s chosen. Save to keep it.',
+        'applied': '%s chosen and saved.',
         'video_sub': 'The picture is drawn by the processor: resolution is what costs the most.',
         'game_sub': 'Game files, memory cards and shortcuts that save time.',
         'mods': 'Mods', 'mods_sub': 'Changes to how the original game plays. All off unless you switch them '
@@ -660,7 +660,7 @@ UI = {
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
             ('F12', 'Captura de tela (pasta screenshots)')],
-        'applied': '%s escolhido. Salve para manter.',
+        'applied': '%s escolhido e salvo.',
         'video_sub': 'A imagem é desenhada pelo processador: a resolução é o que mais pesa.',
         'game_sub': 'Arquivos do jogo, memory cards e atalhos que poupam tempo.',
         'mods': 'Mods', 'mods_sub': 'Mudanças em como o jogo original funciona. Todas desligadas até você '
@@ -774,7 +774,7 @@ UI = {
             ('F9', 'Activa / desactiva la cámara a 60 fps'),
             ('F11  /  Alt+Enter', 'Pantalla completa'),
             ('F12', 'Captura de pantalla (carpeta screenshots)')],
-        'applied': '%s elegido. Guarda para conservarlo.',
+        'applied': '%s elegido y guardado.',
         'video_sub': 'La imagen la dibuja el procesador: la resolución es lo que más cuesta.',
         'game_sub': 'Archivos del juego, memory cards y atajos que ahorran tiempo.',
         'mods': 'Mods', 'mods_sub': 'Cambios en cómo se juega el juego original. Todos apagados hasta que '
@@ -909,6 +909,45 @@ def set_ini(text, section, key, value):
     return '\n'.join(lines) + '\n'
 
 
+def screen_area(root):
+    """(left, top, width, height) of all the monitors together"""
+    if os.name == 'nt':
+        try:
+            import ctypes
+            m = ctypes.windll.user32.GetSystemMetrics
+            if m(78) > 0 and m(79) > 0:
+                return m(76), m(77), m(78), m(79)     # the virtual screen
+        except Exception:
+            pass
+    return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
+
+
+def window_spot(saved, w, h, area):
+    """'WxH+X+Y' for the window: the one saved last time if it is still on a screen, else w x h centred"""
+    left, top, sw, sh = area
+    m = re.match(r'^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$', saved.strip())     # Tk writes "940x700+-8+0"
+    if m:
+        sw_, sh_, sx, sy = (int(g) for g in m.groups())
+        # its title bar must be reachable: at least 120 x 40 of it inside the screens
+        if sw_ >= 200 and sh_ >= 150 and sx + sw_ - 120 >= left and sx + 120 <= left + sw \
+                and sy >= top - 10 and sy + 40 <= top + sh:
+            return '%dx%d+%d+%d' % (min(sw_, sw), min(sh_, sh), sx, sy)
+    w, h = min(w, sw), min(h, sh)
+    return '%dx%d+%d+%d' % (w, h, left + (sw - w) // 2, top + max(0, (sh - h) // 2 - 20))
+
+
+def place_window(root, saved, w, h, maxed):
+    try:
+        area = screen_area(root)
+        if not saved:                            # the first time: centred on the main screen
+            area = (0, 0, root.winfo_screenwidth(), root.winfo_screenheight())
+        root.geometry(window_spot(saved, w, h, area))
+        if maxed and os.name == 'nt':
+            root.state('zoomed')
+    except Exception:
+        root.geometry('%dx%d' % (w, h))
+
+
 def selftest():
     t = '[video]\n# 1 = smooth\nsmooth = 0\n[keyboard]\n#key_up = Up\n'
     v, act = read_ini(t)
@@ -918,6 +957,10 @@ def selftest():
     assert set_ini(t, 'video', 'smooth', '') == t.replace('smooth = 0', '#smooth = 0')
     assert set_ini(t, 'general', 'disc', 'a.cue').endswith('[general]\ndisc = a.cue\n')
     assert read_ini(set_ini(t, 'keyboard', 'key_up', 'W'))[0]['key_up'] == 'W'
+    scr = (0, 0, 1920, 1080)
+    assert window_spot('', 940, 700, scr) == '940x700+490+170'
+    assert window_spot('1200x800+-8+-8', 940, 700, scr) == '1200x800+-8+-8'
+    assert window_spot('1200x800+3000+100', 940, 700, scr) == '940x700+490+170'    # its monitor is gone
     assert cpu_cores()[0] >= 1 and language() in UI and preset_for(2) == 0 and preset_for(8) == 2
     assert all(set(TEXT[l]) == set(TEXT['en']) and set(UI[l]) == set(UI['en']) for l in UI)
     assert mix('#000000', '#ffffff', 0.5) == '#808080'
@@ -1249,8 +1292,8 @@ def main():
             root.iconphoto(True, tk.PhotoImage(file=os.path.join(ASSETS, 'icon.png')))
     except Exception:
         pass
-    root.geometry('%dx%d' % (px(940), px(700)))
     root.minsize(px(780), px(560))
+    place_window(root, loaded.get('window', ''), px(940), px(700), loaded.get('window_max') == '1')
     root.configure(bg=BG)
     fam = 'Segoe UI' if os.name == 'nt' else 'TkDefaultFont'
     # the site's sizes: 20px titles, 16px menu, 14px text
@@ -1718,7 +1761,8 @@ def main():
                 def use(name=name, vals=vals):
                     for k, v in {**PRESET_ALL, **vals}.items():
                         vars_[k].set(res_label(v, val('widescreen')) if k in RES_KEYS else v)
-                    state['note'] = T('applied') % T(name)
+                    save()                                # kept at once: it is the whole choice
+                    state['note'] = '✔ ' + T('applied') % T(name)
                     show('start')
                     refresh()
                 button(f, T('use'), use, accent=i == rec, small=True).pack(anchor='w')
@@ -2115,6 +2159,7 @@ def main():
             return
         if state['dirty']:
             save()
+        keep_window()
         subprocess.Popen([sys.executable, '--after-update'], cwd=HERE,
                          env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1'))
         root.destroy()
@@ -2146,8 +2191,25 @@ def main():
                 return
             if a:
                 save()
+        keep_window()
         root.destroy()
     root.protocol('WM_DELETE_WINDOW', close)
+
+    def keep_window():
+        """the window's place and size for next time, in [launcher] (as it is on disk: the game may have
+        saved to it meanwhile)"""
+        nonlocal text
+        try:
+            if os.path.exists(INI):
+                text = open(INI, encoding='utf-8').read()
+            zoomed = root.state() == 'zoomed'
+            if not zoomed:                       # maximized: the size from before stays
+                text = set_ini(text, 'launcher', 'window', root.geometry())
+            text = set_ini(text, 'launcher', 'window_max', '1' if zoomed else '0')
+            with open(INI, 'w', encoding='utf-8') as f:
+                f.write(text)
+        except Exception:
+            pass
 
     def build():
         for w in body.winfo_children():
