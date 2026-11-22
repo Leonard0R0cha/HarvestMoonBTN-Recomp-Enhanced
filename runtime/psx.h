@@ -155,6 +155,8 @@ void cheats_tick(void);         /* cheats.c: each farm tick */
 void cheats_set(const int v[CHEATS]);   /* ... changed while the game runs */
 int config_cheats(int v[CHEATS]);       /* main.c: the ini's cheats, if it changed */
 void open_cheats_window(void);  /* main.c: F5, the launcher's Cheats page */
+extern int g_jukebox;           /* jukebox.c: the farm's music chosen (0 the game's, 1..4 seasons, 22 rain) */
+void jukebox_set(int song);     /* ... chosen: plays from the next time the farm is entered */
 void p2_cheats(int rest, int bag, int tools);   /* ... farmer 2's stamina, rucksack and tools */
 void p2_leave(void);            /* farmer 2's player left: its things into the storages, farmer 2 gone */
 size_t p2_state_size(void);
