@@ -256,7 +256,7 @@ ways:
 | F12 | screenshot (saved in `screenshots/`) |
 | F5 | cheats window, changes apply at once (not in online co-op) |
 | F6 | CRT filter: off, scanlines, CRT (needs Vulkan, also with the CPU renderer) |
-| F7 | overlay: the CRT filter's settings, changes shown at once; the game paused, or running behind it with "Pause the game" off (always in online co-op); hold Tab or L2 to hide it; F7 or Esc closes it |
+| F7 | overlay: the CRT filter's settings, changes shown at once, and the jukebox (the farm's music of any season or of a rainy day, from the next time you come to the farm; not in online co-op); the game paused, or running behind it with "Pause the game" off (always in online co-op); hold Tab or L2 to hide it; F7 or Esc closes it |
 | F9 | 60 fps camera on / off (with `interp = 1`), to compare |
 | F1–F4 | put memory card 1–4 in slot 1 (3 diaries each; shown in the window title; not in online co-op) |
 | L1 / R1 on a diary list | previous / next memory card (shown above the list); when loading, only cards that have a diary |
@@ -316,6 +316,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `shipreach` | `1` | a thrown item that falls near a shipping bin (the hen house's, the barn's, the farm's) goes in, instead of only one that lands right on top of it; `0` = original |
 |  | `friendpage` | `0` | one more page in the START menu (Left / Right): the town's 32 people with their hearts (the bachelorettes in their heart colour); Up / Down pick one: their portrait (redrawn with `portraits`) and whether you talked to them / gave them a gift today; `0` = original |
 |  | `birthdays` | `0` | the calendar in your house marks the birthdays of the town's people (and the Harvest Sprites) with a heart, and X on the day says whose; `0` = original |
+|  | `jukebox` | `0` | the farm's music, chosen in the overlay (F7), which saves it here: `1`-`4` spring, summer, autumn, winter, `22` a rainy day; festivals and storms keep theirs; `0` = the game's own |
 |  | `earlycabinet`, `cropwalk`, `runthrough`, `bellherd`, `animalmarks`, `randomnames`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
 |  | `split` | `0` | `1` = farmer 2 can go into buildings alone (online co-op only, experimental), see [Co-op](#co-op) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |

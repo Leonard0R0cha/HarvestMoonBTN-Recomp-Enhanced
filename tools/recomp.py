@@ -683,6 +683,9 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
     0x800E16E4: 'bell_sent(c);', 0x800DFB0C: 'bell_sent(c);',
     0x800D1D90: 'R[2] = bell_keep_going(c, R[2]);',
     0x800D2CCC: 'bell_through(c);', 0x800D2D0C: 'bell_through(c);'})
+# The jukebox (F7, runtime/jukebox.c; a site hook runs after its instruction): the farm's music
+# just picked by 800BCB5C (v0, back at 800BC888 in 800BC868)
+MODULE_SITE_HOOKS['GF_FARM'][0x800BC88C] = 'R[2] = jukebox_song(R[2]);'
 # Marks over the animals (animalmarks, runtime/marks.c; site hooks run after their instruction):
 # after each animal's sprite (800CFE40 / 800D0198 with s0 the record), the first instruction past
 # the call's delay slot

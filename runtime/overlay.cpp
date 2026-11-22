@@ -15,20 +15,30 @@ static char status[96];
 
 /* the few words of the overlay, as the launcher's language (en, pt, es) */
 enum { T_FILTER, T_OFF, T_SCAN, T_CRT, T_NEEDS_VK, T_RESET, T_SAVE, T_SAVED, T_NOT_SAVED, T_BACK, T_TYPE, T_SMOOTH,
-       T_PAUSE, T_PEEK, T_N };
+       T_PAUSE, T_PEEK, T_MUSIC, T_SEASONS, T_SPRING, T_SUMMER, T_AUTUMN, T_WINTER, T_RAIN, T_MUSIC_NOTE,
+       T_MUSIC_ONLINE, T_N };
 static const char *const texts[3][T_N] = {
     { "CRT filter", "Off", "Scanlines", "CRT", "Needs Vulkan, which isn't available here.", "Reset", "Save",
       "Saved in hmbtn.ini", "Could not save hmbtn.ini", "F7 or Esc: back to the game",
       "Ctrl+click a slider to type a value.", "Smooth 3D edges", "Pause the game",
-      "Hold Tab or L2: the whole picture" },
+      "Hold Tab or L2: the whole picture", "Farm music (jukebox)", "The game's own", "Spring", "Summer",
+      "Autumn", "Winter", "Rainy day",
+      "Instead of a season's or the rain's, from the next time you come to the farm.",
+      "Not in online co-op." },
     { "Filtro CRT", "Desligado", "Scanlines", "CRT", "Precisa de Vulkan, que n\xc3\xa3o est\xc3\xa1 dispon\xc3\xadvel aqui.",
       "Restaurar", "Salvar", "Salvo em hmbtn.ini", "N\xc3\xa3o foi poss\xc3\xadvel salvar o hmbtn.ini",
       "F7 ou Esc: voltar ao jogo", "Ctrl+clique num controle para digitar um valor.", "Bordas 3D suaves",
-      "Pausar o jogo", "Segure Tab ou L2: a imagem inteira" },
+      "Pausar o jogo", "Segure Tab ou L2: a imagem inteira", "M\xc3\xbasica da fazenda (jukebox)",
+      "A do jogo", "Primavera", "Ver\xc3\xa3o", "Outono", "Inverno", "Dia de chuva",
+      "No lugar da de uma esta\xc3\xa7\xc3\xa3o ou da chuva, da pr\xc3\xb3xima vez que voc\xc3\xaa chegar \xc3\xa0 fazenda.",
+      "N\xc3\xa3o no coop online." },
     { "Filtro CRT", "Apagado", "Scanlines", "CRT", "Necesita Vulkan, que no est\xc3\xa1 disponible aqu\xc3\xad.",
       "Restablecer", "Guardar", "Guardado en hmbtn.ini", "No se pudo guardar hmbtn.ini",
       "F7 o Esc: volver al juego", "Ctrl+clic en un control para escribir un valor.", "Bordes 3D suaves",
-      "Pausar el juego", "Mant\xc3\xa9n Tab o L2: la imagen entera" },
+      "Pausar el juego", "Mant\xc3\xa9n Tab o L2: la imagen entera", "M\xc3\xbasica de la granja (jukebox)",
+      "La del juego", "Primavera", "Verano", "Oto\xc3\xb1o", "Invierno", "D\xc3\xad" "a de lluvia",
+      "En lugar de la de una estaci\xc3\xb3n o la de la lluvia, desde la pr\xc3\xb3xima vez que llegues a la granja.",
+      "No en el coop online." },
 };
 
 static const char *T(int i)
@@ -209,6 +219,27 @@ extern "C" void overlay_event(const void *e, float mx, float my)
     }
 }
 
+/* the jukebox (runtime/jukebox.c): the farm's music of any season, or of a rainy day */
+static void music_page()
+{
+    ImGui::SeparatorText(T(T_MUSIC));
+    bool can = platform_can_pause() != 0;     /* online co-op: the two games would differ */
+    ImGui::BeginDisabled(!can);
+    int now = can ? jukebox_choice() : 0;
+    /* the songs (0 the game's own) and their names: the game's own and the rain's, then the seasons */
+    const int songs[6] = { 0, 22, 1, 2, 3, 4 };
+    const int names[6] = { T_SEASONS, T_RAIN, T_SPRING, T_SUMMER, T_AUTUMN, T_WINTER };
+    for (int m = 0; m < 6; m++)
+    {
+        if (m != 0 && m != 2)
+            ImGui::SameLine();
+        if (ImGui::RadioButton(T(names[m]), now == songs[m]) && songs[m] != now)
+            jukebox_choose(songs[m]);
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("%s", T(can ? T_MUSIC_NOTE : T_MUSIC_ONLINE));
+}
+
 /* the CRT filter: which, and the chosen one's settings */
 static void crt_page()
 {
@@ -311,6 +342,7 @@ extern "C" void overlay_frame(int w, int h, float seconds)
         ImGui::SetItemDefaultFocus();   /* keyboard and controller start here */
         ImGui::EndDisabled();
         crt_page();
+        music_page();
         if (status[0])
             ImGui::TextUnformatted(status);
         ImGui::Separator();

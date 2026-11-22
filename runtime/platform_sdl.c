@@ -130,6 +130,10 @@ typedef struct { int frame, dur, end, period, p2; uint16_t btn; } ScriptEv;   /*
 #define CHEAT_EVENTS 256
 static struct { int frame, v[CHEATS]; } cheat_ev[CHEAT_EVENTS];
 static int n_cheat_ev;
+/* the jukebox's song chosen while playing (F7; "jukebox@FRAME=N" in a recording) */
+#define JUKEBOX_EVENTS 256
+static struct { int frame, song; } jukebox_ev[JUKEBOX_EVENTS];
+static int n_jukebox_ev, jukebox_want = -1;
 static ScriptEv *script;
 static int nscript, script_cap;
 
@@ -183,6 +187,7 @@ static void parse_script(const char *s) {
             g_cfg.friendpage = 0;               /* written only when on */
             g_cfg.birthdays = 0;                /* nor birthdays= */
             g_cfg.bellherd = 0;                 /* nor bellherd= */
+            g_jukebox = 0;                      /* nor jukebox= */
             g_cfg.animalmarks = 0;              /* nor animalmarks= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
             continue;
@@ -212,6 +217,13 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "buildorder=", 11)) { g_cfg.buildorder = atoi(tok + 11); continue; }
         if (!strncmp(tok, "runthrough=", 11)) { g_cfg.runthrough = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bellherd=", 9)) { g_cfg.bellherd = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "jukebox=", 8)) { jukebox_set(atoi(tok + 8)); continue; }
+        if (!strncmp(tok, "jukebox@", 8)) {
+            if (n_jukebox_ev < JUKEBOX_EVENTS &&
+                sscanf(tok + 8, "%d=%d", &jukebox_ev[n_jukebox_ev].frame, &jukebox_ev[n_jukebox_ev].song) == 2)
+                n_jukebox_ev++;
+            continue;
+        }
         if (!strncmp(tok, "animalmarks=", 12)) { g_cfg.animalmarks = atoi(tok + 12); continue; }
         if (!strncmp(tok, "randomnames=", 12)) { g_cfg.randomnames = atoi(tok + 12); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
@@ -292,6 +304,28 @@ static void cheat_events(int frame) {
         fflush(rec_file);
     }
 }
+
+/* the jukebox at a frame boundary: a recording's changes, or the overlay's choice (saved in the
+ * ini, and into the recording) */
+static void jukebox_events(int frame) {
+    for (int i = 0; i < n_jukebox_ev; i++)
+        if (jukebox_ev[i].frame == frame) jukebox_set(jukebox_ev[i].song);
+    int s = jukebox_want;
+    jukebox_want = -1;
+    if (s < 0 || s == g_jukebox || netplay_active()) return;
+    jukebox_set(s);
+    char v[8];
+    snprintf(v, sizeof v, "%d", g_jukebox);
+    config_save("behaviour", "jukebox", v);
+    if (rec_file) {
+        fprintf(rec_file, "jukebox@%d=%d\n", frame, g_jukebox);
+        fflush(rec_file);
+    }
+}
+
+/* the overlay (F7) */
+int  jukebox_choice(void) { return jukebox_want >= 0 ? jukebox_want : g_jukebox; }
+void jukebox_choose(int song) { jukebox_want = song; }
 
 static void record_frame(int frame, uint16_t b) {
     record_pad(0, frame, b);
@@ -560,6 +594,7 @@ int platform_init(void) {
             if (g_cfg.buildorder) fprintf(rec_file, "buildorder=%d\n", g_cfg.buildorder);
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
             if (g_cfg.bellherd) fprintf(rec_file, "bellherd=%d\n", g_cfg.bellherd);
+            if (g_jukebox) fprintf(rec_file, "jukebox=%d\n", g_jukebox);   /* the music changes the game's RAM */
             if (g_cfg.animalmarks) fprintf(rec_file, "animalmarks=%d\n", g_cfg.animalmarks);
             if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
@@ -1540,6 +1575,7 @@ void platform_frame(void) {
         if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
         if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);
         cheat_events((int)frame);
+        jukebox_events((int)frame);
         g_p2_buttons = p2_pad | script_pad((int)frame, 1);   /* co-op with two farmers: the guest's buttons instead */
         g_pad_buttons[0] = netplay_frame((int)frame, mine);   /* co-op: with the other player's */
         { int changed; netplay_status(&changed); if (changed) update_title(); }
@@ -1645,6 +1681,7 @@ void platform_frame(void) {
 
     if (g_cfg.headless) {
         cheat_events((int)frame);
+        jukebox_events((int)frame);
         g_p2_buttons = script_pad((int)frame, 1);
         g_pad_buttons[0] = netplay_frame((int)frame, script_buttons((int)frame));
         record_frame((int)frame, g_pad_buttons[0]);
