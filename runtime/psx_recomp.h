@@ -291,6 +291,7 @@ void bell_sent(CPU *c);
 uint32_t bell_keep_going(CPU *c, uint32_t near);
 void bell_through(CPU *c);
 #define BELL_WALKERS 20
+void animal_marks(CPU *c);                       /* marks.c: the cares left over the animals */
 int bell_walker(uint32_t rec);                   /* an animal the bell leads: its number, else -1 */
 uint32_t sprite_talked(CPU *c, uint32_t flags);  /* sprites.c: the sprites hired through the Chef */
 uint32_t sprite_friendship(CPU *c, uint32_t friendship);

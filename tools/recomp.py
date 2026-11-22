@@ -683,6 +683,11 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
     0x800E16E4: 'bell_sent(c);', 0x800DFB0C: 'bell_sent(c);',
     0x800D1D90: 'R[2] = bell_keep_going(c, R[2]);',
     0x800D2CCC: 'bell_through(c);', 0x800D2D0C: 'bell_through(c);'})
+# Marks over the animals (animalmarks, runtime/marks.c; site hooks run after their instruction):
+# after each animal's sprite (800CFE40 / 800D0198 with s0 the record), the first instruction past
+# the call's delay slot
+MODULE_SITE_HOOKS['GF_FARM'].update({a: 'animal_marks(c);' for a in (
+    0x800D2EEC, 0x800DE840, 0x800E0418, 0x800E1F38, 0x80108C94, 0x8010B188)})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
