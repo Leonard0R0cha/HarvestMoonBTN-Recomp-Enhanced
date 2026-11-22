@@ -76,11 +76,85 @@ static uint32_t run_through_mask(uint32_t mask, uint32_t player) {
     return mask & ~ANIMAL_BITS;
 }
 
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player) {
+
+
+/* What X faces is tested 128 ahead of the player (800CB114, its point at sp+32 / sp+40), and a field
+ * is about 400 across: standing on the fields, as cropwalk lets the player do, the point is mostly
+ * in the player's own field, so the crop in front was only reached from the last 128 of the field
+ * (the player had to line up). On the farm and in the greenhouse, when the point is in the player's
+ * own field: if the next field that way has a ripe crop or a weed the point goes into it, else a
+ * ripe crop under the player is what X faces. Rows grow towards -z. */
+#define FIELD_RECORDS 0x8004B1A4u
+#define FARM_GRID 0x80071DFCu
+#define GH_GRID 0x80074124u
+#define AREA_KIND 0x800A0466u
+#define MAP_NOW 0x800A046Cu
+uint32_t gh_addr(uint32_t a);
+
+static uint32_t game_call(CPU *c, uint32_t at, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+static int face_own_ripe;   /* this X test: the crop under the player is ripe and counts */
+
+/* the field (col, row) under x, z as the game works it out (800D7EF8 the farm, 8011E090 the
+ * greenhouse: the farm's divides by 399, so a field is not quite 400 there); 0 out of the grid */
+static int field_at(CPU *c, uint32_t sp, int gh, int32_t x, int32_t z, int *col, int *row) {
+    uint32_t p = sp - 0x40u;
+    MEM_W32(p, (uint32_t)x);
+    MEM_W32(p + 4u, 0);
+    MEM_W32(p + 8u, (uint32_t)z);
+    if (game_call(c, gh ? 0x8011E090u : 0x800D7EF8u, p, p + 16u, p + 18u, 0)) return 0;
+    *col = (int16_t)MEM_R16(p + 16u);
+    *row = (int16_t)MEM_R16(p + 18u);
+    return 1;
+}
+
+static uint32_t field_addr(int gh, int col, int row) {
+    return gh ? gh_addr(GH_GRID + (uint32_t)((row * 7 + col) * 8)) : FARM_GRID + (uint32_t)((row * 45 + col) * 8);
+}
+
+/* a crop ready to pick (80110790, the sprites' test) or a weed */
+static int ripe_in(CPU *c, int gh, int col, int row) {
+    uint32_t at = field_addr(gh, col, row);
+    uint32_t rec = FIELD_RECORDS + (uint32_t)MEM_R16(at) * 40u;
+    if (MEM_R16(rec) == WEED_FLAGS && MEM_R16(rec + 14) == WEED_ITEM) return 1;
+    if (MEM_R16(rec) != CROP_FLAGS || (int8_t)MEM_R8(rec + 3) == -1) return 0;
+    return game_call(c, 0x80110790u, at, 0, 0, 0) != 0;
+}
+
+static void crop_face_point(CPU *c, uint32_t sp, uint32_t player) {
+    face_own_ripe = 0;
+    uint16_t kind = MEM_R16(AREA_KIND);
+    int gh = kind == 6;
+    if (!gh && kind != 1 && MEM_R32(MAP_NOW) - 20u > 3u) return;
+    int32_t x = (int32_t)MEM_R32(player + 256), z = (int32_t)MEM_R32(player + 264);
+    int32_t px = (int32_t)MEM_R32(sp + 32), pz = (int32_t)MEM_R32(sp + 40);
+    int col, row, pc, pr;
+    if (!field_at(c, sp, gh, x, z, &col, &row) || !field_at(c, sp, gh, px, pz, &pc, &pr)) return;
+    if (pc != col || pr != row) return;                    /* the point is past the field already */
+    int32_t dx = px - x, dz = pz - z;
+    if (dx == 0 && dz == 0) return;
+    int32_t sx = dx > 0 ? 8 : dx < 0 ? -8 : 0, sz = dz > 0 ? 8 : dz < 0 ? -8 : 0;
+    if ((dx < 0 ? -dx : dx) >= (dz < 0 ? -dz : dz)) sz = 0; else sx = 0;
+    for (int k = 0; k < 60; k++) {                         /* on to the next field that way */
+        px += sx;
+        pz += sz;
+        int nc, nr;
+        if (!field_at(c, sp, gh, px, pz, &nc, &nr)) break;
+        if (nc == col && nr == row) continue;
+        if (ripe_in(c, gh, nc, nr)) {
+            MEM_W32(sp + 32, (uint32_t)(px + sx));
+            MEM_W32(sp + 40, (uint32_t)(pz + sz));
+            return;
+        }
+        break;
+    }
+    face_own_ripe = ripe_in(c, gh, col, row);              /* else the ripe one under the player */
+}
+
+uint32_t crop_walk_mask(CPU *c, uint32_t mask, uint32_t why, uint32_t player, uint32_t sp) {
     if (why == 56 || why == 0) mask = run_through_mask(mask, player);
     if (!g_cfg.cropwalk) return mask;
     if (why == 56 || why == 0) return mask | CROP_WALK;
-    if (why == 24) return mask | CROP_FACE;
+    if (why == 24) { crop_face_point(c, sp, player); return mask | CROP_FACE; }
     return mask;
 }
 
@@ -110,7 +184,75 @@ uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record
                (MEM_R16(record) == WEED_FLAGS && MEM_R16(record + 14) == WEED_ITEM);
     if (!crop) return solid;
     if (mask & CROP_WALK) return 0;
-    return own_field(c) ? 0 : solid;
+    return own_field(c) && !face_own_ripe ? 0 : solid;
+}
+
+/* Shipping bins that take what falls near them (shipreach): a thrown item (52 bytes, a0 of its
+ * flight 800CC7CC: +2 the item, +12 its fall speed, +36/+40/+44 x, y, z) goes in a bin only when it
+ * lands on the bin's own floor polygons (the floor under a point, 800CE550, keeps its polygon at
+ * gp+688; bit 0x80 of its first byte = a bin, 800BF3D0), and one that meets the bin's side bounces
+ * off it (800CC878). Thrown from in front of the hen house's bin the egg mostly fell outside. While
+ * the item falls to about the bin's top, the floor is looked at around it too (up to SHIP_REACH
+ * away; over the bin itself the game's own landing is left to do it); a bin there takes it, as
+ * the game does (800CCAA8: 800F3BCC ships it, sound 19, 800CCBE8 ends the throw, 8001AF70(7, 1)). Items 101 and 390 fly their own way, and an item the table at
+ * 8006C858 (40 bytes, +18) does not let go in a bin is left to the game. */
+#define SHIP_REACH 240
+#define SHIP_ABOVE 40               /* the item down to about the bin's top */
+#define ITEM_TABLE 0x8006C858u
+#define BIN_POLY 688u               /* gp+: the polygon under the last point looked at */
+
+static int bin_near(CPU *c, uint32_t p, int32_t x, int32_t y, int32_t z, int32_t above) {
+    MEM_W32(p, (uint32_t)x);
+    MEM_W32(p + 4u, (uint32_t)y);
+    MEM_W32(p + 8u, (uint32_t)z);
+    c->r[4] = p;
+    call_addr(c, 0x800CE550u);
+    if (c->r[2]) return 0;                                  /* no floor there */
+    uint32_t poly = MEM_R32(c->r[28] + BIN_POLY);
+    return poly && (MEM_R8(poly) & 0x80u) && (int32_t)MEM_R32(p + 4u) - y <= above;
+}
+
+int ship_reach(CPU *c) {
+    if (!g_cfg.shipreach) return 0;
+    uint32_t s = c->r[4];
+    int16_t id = (int16_t)MEM_R16(s + 2u);
+    if (id <= 0 || id == 101 || id == 390 || (int32_t)MEM_R32(s + 12u) <= 0) return 0;
+    if (!MEM_R16(MEM_R32(ITEM_TABLE) + (uint32_t)id * 40u + 18u)) return 0;
+    static const int8_t dir[8][2] = {{2, 0}, {-2, 0}, {0, 2}, {0, -2}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    uint32_t gp = regs[28], poly = MEM_R32(gp + BIN_POLY);
+    uint32_t p = regs[29] - 0x40u;
+    int32_t x = (int32_t)MEM_R32(s + 36u), y = (int32_t)MEM_R32(s + 40u), z = (int32_t)MEM_R32(s + 44u);
+    c->r[29] = regs[29] - 0x80u;
+    int found = bin_near(c, p, x, y, z, 0x7FFFFFF) ? -1 : 0;   /* over it already: the game's own */
+    for (int ring = 1; ring <= 2 && !found; ring++)
+        for (int k = 0; k < 8 && !found; k++) {
+            c->r[29] = regs[29] - 0x80u;
+            int32_t d = SHIP_REACH * ring / 4;              /* 2 = straight, 1+1 = diagonal (~0.7) */
+            int32_t dx = dir[k][0] * d, dz = dir[k][1] * d;
+            if (dir[k][0] && dir[k][1]) { dx = dx * 3 / 2; dz = dz * 3 / 2; }
+            found = bin_near(c, p, x + dx, y, z + dz, SHIP_ABOVE);
+        }
+    MEM_W32(gp + BIN_POLY, poly);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    if (found <= 0) return 0;
+    c->r[29] = regs[29] - 0x40u;
+    c->r[4] = (uint16_t)id;
+    call_addr(c, 0x800F3BCCu);
+    c->r[4] = 19;
+    call_addr(c, 0x8001FABCu);
+    c->r[4] = s;
+    call_addr(c, 0x800CCBE8u);
+    c->r[4] = 7;
+    c->r[5] = 1;
+    call_addr(c, 0x8001AF70u);
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+    return 1;
 }
 
 /* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
@@ -154,10 +296,13 @@ uint32_t sprite_spot_z(uint32_t z, uint32_t actor) {
 
 static uint32_t glyph_args[6];          /* the last glyph's stack arguments (+16 to +36) */
 static int fade_now;                    /* the clock is see-through this frame */
-static int glyph_known, stamina_drawing;
+static int glyph_known, stamina_drawing, others_drawing;
+
+/* the port's own letters (friends.c: the hearts) are not the game's: their colours stay theirs */
+void stamina_glyph_others(int on) { others_drawing = on; }
 
 void stamina_glyph_seen(CPU *c) {
-    if (stamina_drawing) return;
+    if (stamina_drawing || others_drawing) return;
     for (int i = 0; i < 6; i++) glyph_args[i] = MEM_R32(c->r[29] + 16 + (uint32_t)i * 4);
     glyph_known = 1;
 }

@@ -10,7 +10,7 @@ import struct, sys, os, json, re
 from collections import defaultdict
 from mips import decode, REG
 
-GAME_LANGS = ['en', 'pt', 'id', 'de']     # g_game_lang (runtime/psx_recomp.h)
+GAME_LANGS = ['en', 'pt', 'id', 'de', 'es']     # g_game_lang (runtime/psx_recomp.h)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # --extract DIR: the game files (default extract/; build.py --lang gives the translated disc's), and
@@ -446,7 +446,7 @@ ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
 # and 800231AC (who called tells what is named) and reads its buttons in 80023DBC.
 ENTRY_HOOKS.update({a: 'names_open(c);' for a in (0x80023130, 0x80023170, 0x800231AC)})
 ENTRY_HOOKS[0x80023DBC] = 'names_buttons(c);'
-ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
+ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); friends_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
 # The clock (and the stamina) see-through while the farmer is behind them (runtime/fixes.c): the
 # window builders' semi-transparency flag on the stack (background +40, border lines +28, corner
 # pixels +20), set while the clock routine (GF_FARM 800FB674) builds. Its window (800136D4 through
@@ -522,7 +522,7 @@ MODULE_SITE_HOOKS = {
                 0x800BD0B8: 'first_house_cabinet();',
                 # walking through crops: the player's walk's collision mask (800CB114, after the
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
-                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18], R[16]);',
+                0x800CB1CC: 'R[10] = crop_walk_mask(c, R[10], R[18], R[16], R[29]);',
                 0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
                 # a Harvest Sprite at work heads straight for its bed: the walk of the characters
                 # (800D12B8) has just picked a way (800D196C, back at 800D1744: v0 the way, s2 the
@@ -607,6 +607,9 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   # farmer 2 in the second machine stays on the farm (runtime/p2.c)
                                   0x800CD9A0: 'if (p2_way_out(c)) return;',
                                   0x800CC0F8: 'if (p2_thrown(c)) return;',
+                                  # a thrown item's flight (800CC7CC, a0 = the item): falling near a
+                                  # shipping bin, it goes in (runtime/fixes.c)
+                                  0x800CC7CC: 'if (ship_reach(c)) { R[2] = 1; return; }',
                                   # trading between the farmers in the storage menus (runtime/p2.c)
                                   0x800F7D34: 'if (p2_trade_move(c)) return;',
                                   0x800D57A4: 'if (p2_trade_kind(c)) return;',
@@ -637,6 +640,20 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
     0x8010E98C: 'sprite_hired(c);',
     # a sprite under contract asks about another job: the talk's text (a1 loaded at 8010DC98)
     0x8010DC98: 'sprite_talk_text(c);'})
+# The town's friendships page (friendpage, runtime/friends.c; site hooks run after their
+# instruction): the START menu (800FC1AC) draws its title with a1 = the farm's name (800FC220), the
+# page after / before (800FE928: v0 = page < 8 at 800FE9E0; 800FEA00: the page below 0 at 800FEAB0)
+# and the page's routine loaded from 80127308 (v1 at 800FC2D4)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x800FC220: 'R[5] = friend_title(c, R[5]);', 0x800FC23C: 'friend_title_drawn();',
+    0x800FE9E0: 'R[2] = friend_next_wrap(R[2]);',
+    0x800FEAB0: 'R[2] = friend_prev_wrap(R[2]);',
+    0x800FC2D4: 'R[3] = friend_page(c, R[3]);'})
+# Birthdays on the calendar (birthdays, runtime/friends.c): the hearts after the calendar's cursor
+# is drawn (800FA4F4 called from 800FA1B0), the names when its day's events are shown (8002261C
+# called from 800FA4C0) and once that text is loaded (80022A94, below)
+MODULE_SITE_HOOKS['GF_FARM'][0x800FA1B8] = 'birthday_marks(c);'
+ENTRY_HOOKS[0x8002261C] = 'birthday_text_asked(c);'
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010E6E8] = 'sprite_menu(c);'
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CB6C] = 'sprite_night(c);'   # each sprite's night
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8010CD80] = 'sprite_update(c);'  # each sprite's frame
@@ -644,7 +661,7 @@ MODULE_ENTRY_HOOKS['GF_FARM'][0x801105C8] = 'sprite_pick_from(c);'  # a sprite p
 MODULE_ENTRY_HOOKS['GF_FARM'][0x80110658] = 'if (sprite_pick_bed(c)) return;'  # ... the nearest
 MODULE_ENTRY_HOOKS['GF_FARM'][0x801103E8] = 'sprite_face_bed(c);'  # a sprite waters the bed ahead ...
 MODULE_ENTRY_HOOKS['GF_FARM'][0x8011031C] = 'sprite_face_bed(c);'  # ... or harvests it: facing it
-SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded();'
+SITE_HOOKS[0x80022A94] = 'sprite_text_loaded(); build_text_loaded(); birthday_text_loaded();'
 ENTRY_HOOKS[0x80022B98] = 'sprite_text_tick(c);'
 SITE_HOOKS[0x80022CDC] = 'sprite_menu_answered(c, R[4]); build_menu_answered(R[4]);'   # a menu's answer, just stored at gp+836
 # The carpenter's building order (buildorder, runtime/buildorder.c; site hooks run after their
@@ -662,6 +679,22 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
 MODULE_SITE_HOOKS['GF_FARM'].update({
     0x800BCF88: 'R[6] = farm_area_size(R[16], R[6]);',
     0x800BCFAC: 'farm_area_loaded(R[16]);'})
+# The bell herds the animals (bellherd, runtime/bell.c; site hooks run after their instruction):
+# the cow's / sheep's roll for hearing it (800E169C / 800DFAC4), the goal it takes (800E16E4 /
+# 800DFB0C), the walk's "near the goal" (800D1D90) and the door it went through (800D2CCC / 800D2D0C)
+MODULE_SITE_HOOKS['GF_FARM'].update({
+    0x800E169C: 'R[2] = bell_heard(c, R[2]);', 0x800DFAC4: 'R[2] = bell_heard(c, R[2]);',
+    0x800E16E4: 'bell_sent(c);', 0x800DFB0C: 'bell_sent(c);',
+    0x800D1D90: 'R[2] = bell_keep_going(c, R[2]);',
+    0x800D2CCC: 'bell_through(c);', 0x800D2D0C: 'bell_through(c);'})
+# The jukebox (F7, runtime/jukebox.c; a site hook runs after its instruction): the farm's music
+# just picked by 800BCB5C (v0, back at 800BC888 in 800BC868)
+MODULE_SITE_HOOKS['GF_FARM'][0x800BC88C] = 'R[2] = jukebox_song(R[2]);'
+# Marks over the animals (animalmarks, runtime/marks.c; site hooks run after their instruction):
+# after each animal's sprite (800CFE40 / 800D0198 with s0 the record), the first instruction past
+# the call's delay slot
+MODULE_SITE_HOOKS['GF_FARM'].update({a: 'animal_marks(c);' for a in (
+    0x800D2EEC, 0x800DE840, 0x800E0418, 0x800E1F38, 0x80108C94, 0x8010B188)})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 

@@ -254,6 +254,9 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "earlycabinet")) g_cfg.earlycabinet = atoi(val);
     else if (!strcmp(key, "cropwalk")) g_cfg.cropwalk = atoi(val);
     else if (!strcmp(key, "spritechair")) g_cfg.spritechair = atoi(val);
+    else if (!strcmp(key, "shipreach")) g_cfg.shipreach = atoi(val);
+    else if (!strcmp(key, "friendpage")) g_cfg.friendpage = atoi(val);
+    else if (!strcmp(key, "birthdays")) g_cfg.birthdays = atoi(val);
     else if (!strcmp(key, "staminabar")) g_cfg.staminabar = atoi(val);
     else if (!strcmp(key, "bulkfood")) g_cfg.bulkfood = atoi(val);
     else if (!strcmp(key, "spritehire")) g_cfg.spritehire = atoi(val);
@@ -261,6 +264,9 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "biggreenhouse")) g_cfg.biggreenhouse = atoi(val);
     else if (!strcmp(key, "buildorder")) g_cfg.buildorder = atoi(val);
     else if (!strcmp(key, "runthrough")) g_cfg.runthrough = atoi(val);
+    else if (!strcmp(key, "bellherd")) g_cfg.bellherd = atoi(val);
+    else if (!strcmp(key, "jukebox")) jukebox_set(atoi(val));     /* the F7 overlay saves it */
+    else if (!strcmp(key, "animalmarks")) g_cfg.animalmarks = atoi(val);
     else if (!strcmp(key, "randomnames")) g_cfg.randomnames = atoi(val);
     else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
@@ -517,6 +523,7 @@ int main(int argc, char **argv) {
     g_cfg.overclock = 200;
     g_cfg.emptybag = 1;
     g_cfg.spritechair = 1;
+    g_cfg.shipreach = 1;
     g_cfg.depthtest = 1;
     for (int s = 0; s < 2; s++)
         for (int i = 0; i < CRT_PARAMS; i++) g_cfg.crt_param[s][i] = crt_params[s][i].def;

@@ -100,11 +100,20 @@ jobs:
           set +e; timeout 8 xvfb-run -a dist-template/HarvestMoonBTN-Launcher-Linux; code=$?; set -e
           echo "exit $code"; [ $code -eq 124 ]
 
+      # Zig's own cache: the libc, compiler-rt and libc++ it builds for the target the first time, most of
+      # the next step. Its entries are named by their inputs, so a kept one can't be stale; the key follows
+      # the pinned Zig (fetch_deps.py). deps/ itself is not kept: the step tests that download
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/zig-cache
+          key: zig-${{ runner.os }}-${{ hashFiles('tools/fetch_deps.py') }}
+
       # what its Build page does on a PC without a compiler: its own Python fetches Zig and the SDL2
       # headers, and Zig compiles the runtime (unit tests) and the Vulkan renderer
       - name: The Build page's toolchain
         env:
           PYINSTALLER_RESET_ENVIRONMENT: '1'
+          ZIG_GLOBAL_CACHE_DIR: ${{ runner.temp }}/zig-cache
         run: |
           mkdir -p /tmp/w && cp -r build.py tools runtime dist-template /tmp/w/
           dist-template/HarvestMoonBTN-Launcher-Linux /tmp/w/tools/fetch_deps.py --min

@@ -12,7 +12,7 @@ INI = os.path.join(HERE, 'hmbtn.ini')
 EXE = os.path.join(HERE, 'HarvestMoonBTN.exe' if os.name == 'nt' else 'HarvestMoonBTN')
 # the launcher's release: .github/workflows/release.yml publishes it on GitHub as v<VERSION>, with the Windows
 # and the Linux launcher; a launcher finds newer ones there, updates itself and rebuilds the game
-VERSION = '1.9.0'
+VERSION = '1.11.1'
 RELEASES = 'https://api.github.com/repos/d4rksp4rt4n/HMBTN-ReFarmed/releases/latest'
 LAUNCHER_EXE = 'HarvestMoonBTN-Launcher.exe' if os.name == 'nt' else 'HarvestMoonBTN-Launcher-Linux'   # its asset
 # the redrawn dialogue portraits and title logo (portraits = 1) are not in the code: the launcher downloads
@@ -50,7 +50,7 @@ if getattr(sys, 'frozen', False) and sys.platform.startswith('linux') and not os
 if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py'):
     # "Launcher.exe script.py ...": the Build page runs the build scripts with the Python this exe carries
     import runpy, traceback
-    import collections, concurrent.futures, glob, hashlib, json, lzma, platform, shutil, tarfile, \
+    import collections, concurrent.futures, filecmp, glob, hashlib, json, lzma, platform, shutil, tarfile, \
         urllib.request, zipfile, zlib  # noqa: F401  (what the scripts import, so that PyInstaller packs it)
     if sys.stdout:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
@@ -69,7 +69,7 @@ if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py
 BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle',
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
 # the languages of the game's text (build.py --lang); each built one is kept in languages/
-GAME_LANGS = ['en', 'pt', 'id', 'de']
+GAME_LANGS = ['en', 'pt', 'id', 'de', 'es']
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
 # text, key (keyboard keys: typed, or caught with the Set/Add buttons), pad (controller buttons: typed or
 # picked from PAD_BUTTONS), choice:a|b|c, edit:a|b|c (a choice that can also be typed)
@@ -115,7 +115,11 @@ OPTIONS = [
     ('mods', 'behaviour', 'biggreenhouse', 'bool'),
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
+    ('mods', 'behaviour', 'bellherd', 'bool'),
+    ('mods', 'behaviour', 'animalmarks', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
+    ('mods', 'behaviour', 'friendpage', 'bool'),
+    ('mods', 'behaviour', 'birthdays', 'bool'),
 ] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS] \
   + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool'), ('controller', 'controller', 'rumble', 'bool:1')] \
@@ -292,6 +296,13 @@ TEXT = {
         'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
         'buildorder': ('Pick the building order', 'Gotz asks which extension to build next (hen house, kitchen, barn, bigger house, greenhouse) instead of the fixed order; each keeps its own price and lumber.'),
         'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
+        'bellherd': ('The bell herds the animals', 'Ring the bell inside the barn: every cow and sheep there walks to the door on its own '
+                     'and out to the pasture, where they stand in rows in front of the barn. Ring it on the pasture: they all walk back in, '
+                     'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
+                     'may stay behind: ring again. It works on rainy days too. Off: the bell only calls some animals to you.'),
+        'animalmarks': ('Marks over the animals', 'Over each cow, sheep, chicken, your horse and your dog, a small icon for each thing still left today: a speech bubble (talk), a brush, a milk bottle, scissors (shear) and a feed sack (the hens). Each icon goes away once it is done; an animal with nothing left shows nothing. They start again the next day.'),
+        'friendpage': ('Town friendships page', 'One more page in the START menu (Left / Right): the 32 people of the town with their hearts (the bachelorettes in their heart colour); Up / Down pick one to see their portrait (the redrawn one with Redrawn portraits) and whether you talked to them and gave them a gift today.'),
+        'birthdays': ('Birthdays on the calendar', 'The calendar in your house marks with a heart the days someone in town (or a Harvest Sprite) has a birthday, and X on that day tells whose birthday it is.'),
         'randomnames': ('Random names', 'On the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal; press it again for another. Your own lists go in names.txt next to the game.'),
         'record': ('Record sessions', 'Keeps your button presses in the recordings folder, for bug reports.'),
         'stick_as_dpad': ('Left stick moves too', 'The left stick works as the D-pad.'),
@@ -384,6 +395,13 @@ TEXT = {
         'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
         'buildorder': ('Escolher a ordem das ampliações', 'O Gotz pergunta qual ampliação construir (galinheiro, cozinha, estábulo, casa maior, estufa) em vez da ordem fixa; cada uma com seu preço e sua madeira.'),
         'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
+        'bellherd': ('Sino leva os animais', 'Toque o sino dentro do celeiro: todas as vacas e ovelhas de lá andam sozinhas até a porta '
+                     'e saem para o pasto, onde ficam em fileiras na frente do celeiro. Toque o sino no pasto: todas voltam andando para dentro, '
+                     'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
+                     'para trás: toque de novo. Funciona também em dia de chuva. Desligado: o sino só chama alguns animais até você.'),
+        'animalmarks': ('Marcas em cima dos animais', 'Em cima de cada vaca, ovelha, galinha, do cavalo e do cachorro, um ícone para cada coisa que ainda falta hoje: balão de fala (conversar), escova, garrafa de leite (ordenhar), tesoura (tosquiar) e saco de ração (galinhas). Cada ícone some quando você faz; animal sem nada faltando não mostra nada. Recomeça no dia seguinte.'),
+        'friendpage': ('Página de amizades da cidade', 'Mais uma página no menu START (Esquerda / Direita): os 32 moradores com os corações (as garotas na cor do coração delas); Cima / Baixo escolhem um para ver o retrato (o redesenhado, com Retratos redesenhados) e se você já conversou e deu presente hoje.'),
+        'birthdays': ('Aniversários no calendário', 'O calendário da sua casa marca com um coração os dias de aniversário dos moradores (e dos duendes), e o X no dia diz de quem é o aniversário.'),
         'randomnames': ('Nomes aleatórios', 'Na tela de nome, o Select sorteia um nome para o fazendeiro, a fazenda, o cachorro, o cavalo, o bebê ou o animal; aperte de novo para outro. Suas próprias listas vão no names.txt, na pasta do jogo.'),
         'record': ('Gravar sessões', 'Guarda os botões apertados na pasta recordings, para relatar bugs.'),
         'stick_as_dpad': ('Analógico esquerdo também anda', 'O analógico esquerdo funciona como o direcional.'),
@@ -479,6 +497,13 @@ TEXT = {
         'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),
         'buildorder': ('Elegir el orden de las ampliaciones', 'Gotz pregunta qué ampliación construir (gallinero, cocina, establo, casa más grande, invernadero) en vez del orden fijo; cada una con su precio y su madera.'),
         'runthrough': ('Correr atraviesa los animales', 'Corriendo pasas a través de las vacas, las ovejas y el caballo; caminando sigues empujándolos.'),
+        'bellherd': ('La campana lleva a los animales', 'Toca la campana dentro del establo: todas las vacas y ovejas de allí caminan solas hasta '
+                     'la puerta y salen al prado, donde quedan en filas frente al establo. Tócala en el prado: todas vuelven caminando adentro, '
+                     'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '
+                     'se quedan atrás: toca otra vez. También funciona en días de lluvia. Desactivado: la campana solo llama a algunos animales.'),
+        'animalmarks': ('Marcas sobre los animales', 'Sobre cada vaca, oveja, gallina, tu caballo y tu perro, un icono por cada cosa que aún falta hoy: bocadillo (hablar), cepillo, botella de leche (ordeñar), tijeras (esquilar) y saco de pienso (gallinas). Cada icono se va al hacerlo; un animal sin nada pendiente no muestra nada. Vuelven al día siguiente.'),
+        'friendpage': ('Página de amistades del pueblo', 'Una página más en el menú START (Izquierda / Derecha): las 32 personas del pueblo con sus corazones (las chicas en el color de su corazón); Arriba / Abajo eligen una para ver su retrato (el redibujado, con Retratos redibujados) y si ya hablaste con ella y le diste un regalo hoy.'),
+        'birthdays': ('Cumpleaños en el calendario', 'El calendario de tu casa marca con un corazón los días de cumpleaños de la gente del pueblo (y de los duendes), y X en ese día dice de quién es el cumpleaños.'),
         'randomnames': ('Nombres al azar', 'En la pantalla de nombre, Select elige un nombre al azar para el granjero, la granja, el perro, el caballo, el bebé o el animal; púlsalo otra vez para otro. Tus propias listas van en names.txt, junto al juego.'),
         'record': ('Grabar sesiones', 'Guarda los botones pulsados en la carpeta recordings, para reportar '
                    'errores.'),
@@ -547,7 +572,7 @@ UI = {
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
             ('F12', 'Screenshot (screenshots folder)')],
-        'applied': '%s chosen. Save to keep it.',
+        'applied': '%s chosen and saved.',
         'video_sub': 'The picture is drawn by the processor: resolution is what costs the most.',
         'game_sub': 'Game files, memory cards and shortcuts that save time.',
         'mods': 'Mods', 'mods_sub': 'Changes to how the original game plays. All off unless you switch them '
@@ -600,7 +625,7 @@ UI = {
         'built': 'Done: the game is ready.', 'build_failed': 'The build stopped: the last lines above say why.',
         'need_cue': 'Choose your disc image (.cue or .bin) first.',
         'built_lang': 'The game built here is in %s.', 'lang_en': 'English', 'lang_pt': 'Portuguese',
-        'lang_id': 'Indonesian', 'lang_de': 'German',
+        'lang_id': 'Indonesian', 'lang_de': 'German', 'lang_es': 'Spanish',
         'gamelang': 'Game language', 'gamelang_sub': 'The language of the game\'s own text: dialogue, menus and '
         'items. This launcher\'s language is the flags at the top.',
         'gl_en': 'English', 'gl_en_d': 'The original text of the USA disc.',
@@ -609,13 +634,18 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Fan translation (Indonesian edition of the Kucing NPC mod). '
         'The first time its text is downloaded and put onto a copy of your disc (disc-id folder).',
         'gl_de': 'Deutsch', 'gl_de_d': 'The German dialogue of the European release. Needs your own European '
-        'disc (Rev 1, .bin + .cue) in this folder: its dialogue is put onto a copy of your disc (disc-de '
-        'folder). Menus and items stay in English.',
+        'disc in this folder, besides your USA one: SLES-02781, Rev 1 (English/German), as .bin + .cue (or a '
+        '.zip with them), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". Rev 0 and the French disc '
+        'do not work. Its dialogue is put onto a copy of your disc (disc-de folder). Menus and items stay in '
+        'English.',
+        'gl_es': 'Español', 'gl_es_d': 'Fan translation of the dialogue, with its own font (ñ, accents). The '
+        'first time its text is downloaded and put onto a copy of your disc (disc-es folder). Menus and items '
+        'stay in English.',
         'gl_ready': 'Built: switches at once.', 'gl_first': 'The first time, Play builds the game in it '
         '(about a minute).',
         'gl_now': 'In use now.', 'gl_coop': 'Online co-op: both players need the same language. The texts '
-        'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian '
-        'and German.',
+        'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian, '
+        'German and Spanish.',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
         'updating': 'Downloading the new launcher...', 'update_failed': 'The update failed: %s',
         'portraits_get': 'Downloading the redrawn portraits... %d%%',
@@ -658,7 +688,7 @@ UI = {
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
             ('F12', 'Captura de tela (pasta screenshots)')],
-        'applied': '%s escolhido. Salve para manter.',
+        'applied': '%s escolhido e salvo.',
         'video_sub': 'A imagem é desenhada pelo processador: a resolução é o que mais pesa.',
         'game_sub': 'Arquivos do jogo, memory cards e atalhos que poupam tempo.',
         'mods': 'Mods', 'mods_sub': 'Mudanças em como o jogo original funciona. Todas desligadas até você '
@@ -712,7 +742,7 @@ UI = {
         'built': 'Pronto: o jogo está montado.', 'build_failed': 'A montagem parou: as últimas linhas acima dizem por quê.',
         'need_cue': 'Escolha primeiro a imagem do disco (.cue ou .bin).',
         'built_lang': 'O jogo montado aqui está em %s.', 'lang_en': 'inglês', 'lang_pt': 'português',
-        'lang_id': 'indonésio', 'lang_de': 'alemão',
+        'lang_id': 'indonésio', 'lang_de': 'alemão', 'lang_es': 'espanhol',
         'gamelang': 'Idioma do jogo', 'gamelang_sub': 'A língua do texto do próprio jogo: falas, menus e itens. '
         'A língua deste launcher são as bandeiras lá em cima.',
         'gl_en': 'English', 'gl_en_d': 'O texto original do disco americano.',
@@ -721,13 +751,18 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Tradução de fã (edição indonésia do mod do Kucing NPC). Na '
         'primeira vez o texto dela é baixado e posto numa cópia do seu disco (pasta disc-id).',
         'gl_de': 'Deutsch', 'gl_de_d': 'As falas em alemão da versão europeia. Precisa do seu próprio disco '
-        'europeu (Rev 1, .bin + .cue) nesta pasta: as falas dele vão para uma cópia do seu disco (pasta '
-        'disc-de). Menus e itens ficam em inglês.',
+        'europeu nesta pasta, além do americano: SLES-02781, Rev 1 (inglês/alemão), em .bin + .cue (ou um '
+        '.zip com eles), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". O Rev 0 e o disco francês '
+        'não servem. As falas dele vão para uma cópia do seu disco (pasta disc-de). Menus e itens ficam em '
+        'inglês.',
+        'gl_es': 'Español', 'gl_es_d': 'Tradução de fã das falas, com fonte própria (ñ, acentos). Na primeira '
+        'vez o texto dela é baixado e posto numa cópia do seu disco (pasta disc-es). Menus e itens ficam em '
+        'inglês.',
         'gl_ready': 'Montado: troca na hora.', 'gl_first': 'Na primeira vez, o Jogar monta o jogo nela '
         '(cerca de um minuto).',
         'gl_now': 'Em uso agora.', 'gl_coop': 'Coop online: os dois precisam da mesma língua. Os textos dos '
-        'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio e no '
-        'alemão.',
+        'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio, no '
+        'alemão e no espanhol.',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
         'updating': 'Baixando o novo launcher...', 'update_failed': 'A atualização falhou: %s',
         'portraits_get': 'Baixando os retratos redesenhados... %d%%',
@@ -770,7 +805,7 @@ UI = {
             ('F9', 'Activa / desactiva la cámara a 60 fps'),
             ('F11  /  Alt+Enter', 'Pantalla completa'),
             ('F12', 'Captura de pantalla (carpeta screenshots)')],
-        'applied': '%s elegido. Guarda para conservarlo.',
+        'applied': '%s elegido y guardado.',
         'video_sub': 'La imagen la dibuja el procesador: la resolución es lo que más cuesta.',
         'game_sub': 'Archivos del juego, memory cards y atajos que ahorran tiempo.',
         'mods': 'Mods', 'mods_sub': 'Cambios en cómo se juega el juego original. Todos apagados hasta que '
@@ -826,7 +861,7 @@ UI = {
         'arriba dicen por qué.',
         'need_cue': 'Elige primero la imagen del disco (.cue o .bin).',
         'built_lang': 'El juego construido aquí está en %s.', 'lang_en': 'inglés', 'lang_pt': 'portugués',
-        'lang_id': 'indonesio', 'lang_de': 'alemán',
+        'lang_id': 'indonesio', 'lang_de': 'alemán', 'lang_es': 'español',
         'gamelang': 'Idioma del juego', 'gamelang_sub': 'El idioma del texto del propio juego: diálogos, menús '
         'y objetos. El idioma de este launcher son las banderas de arriba.',
         'gl_en': 'English', 'gl_en_d': 'El texto original del disco de EE. UU.',
@@ -835,13 +870,18 @@ UI = {
         'gl_id': 'Bahasa Indonesia', 'gl_id_d': 'Traducción de fans (edición indonesia del mod de Kucing NPC). '
         'La primera vez su texto se descarga y se pone en una copia de tu disco (carpeta disc-id).',
         'gl_de': 'Deutsch', 'gl_de_d': 'Los diálogos en alemán de la versión europea. Necesita tu propio '
-        'disco europeo (Rev 1, .bin + .cue) en esta carpeta: sus diálogos se ponen en una copia de tu disco '
-        '(carpeta disc-de). Los menús y objetos quedan en inglés.',
+        'disco europeo en esta carpeta, además del estadounidense: SLES-02781, Rev 1 (inglés/alemán), en .bin '
+        '+ .cue (o un .zip con ellos), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". El Rev 0 y el '
+        'disco francés no sirven. Sus diálogos se ponen en una copia de tu disco (carpeta disc-de). Los menús '
+        'y objetos quedan en inglés.',
+        'gl_es': 'Español', 'gl_es_d': 'Traducción de fans de los diálogos, con su propia fuente (ñ, acentos). '
+        'La primera vez su texto se descarga y se pone en una copia de tu disco (carpeta disc-es). Los menús '
+        'y objetos quedan en inglés.',
         'gl_ready': 'Construido: cambia al instante.', 'gl_first': 'La primera vez, Jugar construye el juego '
         'en él (cerca de un minuto).',
         'gl_now': 'En uso ahora.', 'gl_coop': 'Coop online: los dos necesitan el mismo idioma. Los textos de '
-        'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio y '
-        'alemán.',
+        'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio, '
+        'alemán y español.',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
         'updating': 'Descargando el nuevo launcher...', 'update_failed': 'La actualización falló: %s',
         'portraits_get': 'Descargando los retratos redibujados... %d%%',
@@ -903,6 +943,45 @@ def set_ini(text, section, key, value):
     return '\n'.join(lines) + '\n'
 
 
+def screen_area(root):
+    """(left, top, width, height) of all the monitors together"""
+    if os.name == 'nt':
+        try:
+            import ctypes
+            m = ctypes.windll.user32.GetSystemMetrics
+            if m(78) > 0 and m(79) > 0:
+                return m(76), m(77), m(78), m(79)     # the virtual screen
+        except Exception:
+            pass
+    return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
+
+
+def window_spot(saved, w, h, area):
+    """'WxH+X+Y' for the window: the one saved last time if it is still on a screen, else w x h centred"""
+    left, top, sw, sh = area
+    m = re.match(r'^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$', saved.strip())     # Tk writes "940x700+-8+0"
+    if m:
+        sw_, sh_, sx, sy = (int(g) for g in m.groups())
+        # its title bar must be reachable: at least 120 x 40 of it inside the screens
+        if sw_ >= 200 and sh_ >= 150 and sx + sw_ - 120 >= left and sx + 120 <= left + sw \
+                and sy >= top - 10 and sy + 40 <= top + sh:
+            return '%dx%d+%d+%d' % (min(sw_, sw), min(sh_, sh), sx, sy)
+    w, h = min(w, sw), min(h, sh)
+    return '%dx%d+%d+%d' % (w, h, left + (sw - w) // 2, top + max(0, (sh - h) // 2 - 20))
+
+
+def place_window(root, saved, w, h, maxed):
+    try:
+        area = screen_area(root)
+        if not saved:                            # the first time: centred on the main screen
+            area = (0, 0, root.winfo_screenwidth(), root.winfo_screenheight())
+        root.geometry(window_spot(saved, w, h, area))
+        if maxed and os.name == 'nt':
+            root.state('zoomed')
+    except Exception:
+        root.geometry('%dx%d' % (w, h))
+
+
 def selftest():
     t = '[video]\n# 1 = smooth\nsmooth = 0\n[keyboard]\n#key_up = Up\n'
     v, act = read_ini(t)
@@ -912,6 +991,10 @@ def selftest():
     assert set_ini(t, 'video', 'smooth', '') == t.replace('smooth = 0', '#smooth = 0')
     assert set_ini(t, 'general', 'disc', 'a.cue').endswith('[general]\ndisc = a.cue\n')
     assert read_ini(set_ini(t, 'keyboard', 'key_up', 'W'))[0]['key_up'] == 'W'
+    scr = (0, 0, 1920, 1080)
+    assert window_spot('', 940, 700, scr) == '940x700+490+170'
+    assert window_spot('1200x800+-8+-8', 940, 700, scr) == '1200x800+-8+-8'
+    assert window_spot('1200x800+3000+100', 940, 700, scr) == '940x700+490+170'    # its monitor is gone
     assert cpu_cores()[0] >= 1 and language() in UI and preset_for(2) == 0 and preset_for(8) == 2
     assert all(set(TEXT[l]) == set(TEXT['en']) and set(UI[l]) == set(UI['en']) for l in UI)
     assert mix('#000000', '#ffffff', 0.5) == '#808080'
@@ -1243,8 +1326,8 @@ def main():
             root.iconphoto(True, tk.PhotoImage(file=os.path.join(ASSETS, 'icon.png')))
     except Exception:
         pass
-    root.geometry('%dx%d' % (px(940), px(700)))
     root.minsize(px(780), px(560))
+    place_window(root, loaded.get('window', ''), px(940), px(700), loaded.get('window_max') == '1')
     root.configure(bg=BG)
     fam = 'Segoe UI' if os.name == 'nt' else 'TkDefaultFont'
     # the site's sizes: 20px titles, 16px menu, 14px text
@@ -1712,7 +1795,8 @@ def main():
                 def use(name=name, vals=vals):
                     for k, v in {**PRESET_ALL, **vals}.items():
                         vars_[k].set(res_label(v, val('widescreen')) if k in RES_KEYS else v)
-                    state['note'] = T('applied') % T(name)
+                    save()                                # kept at once: it is the whole choice
+                    state['note'] = '✔ ' + T('applied') % T(name)
                     show('start')
                     refresh()
                 button(f, T('use'), use, accent=i == rec, small=True).pack(anchor='w')
@@ -2109,6 +2193,7 @@ def main():
             return
         if state['dirty']:
             save()
+        keep_window()
         subprocess.Popen([sys.executable, '--after-update'], cwd=HERE,
                          env=dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1'))
         root.destroy()
@@ -2140,8 +2225,25 @@ def main():
                 return
             if a:
                 save()
+        keep_window()
         root.destroy()
     root.protocol('WM_DELETE_WINDOW', close)
+
+    def keep_window():
+        """the window's place and size for next time, in [launcher] (as it is on disk: the game may have
+        saved to it meanwhile)"""
+        nonlocal text
+        try:
+            if os.path.exists(INI):
+                text = open(INI, encoding='utf-8').read()
+            zoomed = root.state() == 'zoomed'
+            if not zoomed:                       # maximized: the size from before stays
+                text = set_ini(text, 'launcher', 'window', root.geometry())
+            text = set_ini(text, 'launcher', 'window_max', '1' if zoomed else '0')
+            with open(INI, 'w', encoding='utf-8') as f:
+                f.write(text)
+        except Exception:
+            pass
 
     def build():
         for w in body.winfo_children():

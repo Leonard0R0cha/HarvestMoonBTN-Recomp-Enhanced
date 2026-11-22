@@ -130,6 +130,10 @@ typedef struct { int frame, dur, end, period, p2; uint16_t btn; } ScriptEv;   /*
 #define CHEAT_EVENTS 256
 static struct { int frame, v[CHEATS]; } cheat_ev[CHEAT_EVENTS];
 static int n_cheat_ev;
+/* the jukebox's song chosen while playing (F7; "jukebox@FRAME=N" in a recording) */
+#define JUKEBOX_EVENTS 256
+static struct { int frame, song; } jukebox_ev[JUKEBOX_EVENTS];
+static int n_jukebox_ev, jukebox_want = -1;
 static ScriptEv *script;
 static int nscript, script_cap;
 
@@ -179,6 +183,12 @@ static void parse_script(const char *s) {
             g_cfg.fast_cd = atoi(tok + 7);
             g_cfg.precisecull = 0;              /* recordings made before it have no precisecull= */
             g_cfg.spritechair = 0;              /* nor spritechair= */
+            g_cfg.shipreach = 0;                /* nor shipreach= */
+            g_cfg.friendpage = 0;               /* written only when on */
+            g_cfg.birthdays = 0;                /* nor birthdays= */
+            g_cfg.bellherd = 0;                 /* nor bellherd= */
+            g_jukebox = 0;                      /* nor jukebox= */
+            g_cfg.animalmarks = 0;              /* nor animalmarks= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
             continue;
         }
@@ -196,6 +206,9 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "earlycabinet=", 13)) { g_cfg.earlycabinet = atoi(tok + 13); continue; }
         if (!strncmp(tok, "cropwalk=", 9)) { g_cfg.cropwalk = atoi(tok + 9); continue; }
         if (!strncmp(tok, "spritechair=", 12)) { g_cfg.spritechair = atoi(tok + 12); continue; }
+        if (!strncmp(tok, "shipreach=", 10)) { g_cfg.shipreach = atoi(tok + 10); continue; }
+        if (!strncmp(tok, "friendpage=", 11)) { g_cfg.friendpage = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "birthdays=", 10)) { g_cfg.birthdays = atoi(tok + 10); continue; }
         if (!strncmp(tok, "staminabar=", 11)) { g_cfg.staminabar = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bulkfood=", 9)) { g_cfg.bulkfood = atoi(tok + 9); continue; }
         if (!strncmp(tok, "spritehire=", 11)) { g_cfg.spritehire = atoi(tok + 11); continue; }
@@ -203,6 +216,15 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "biggreenhouse=", 14)) { g_cfg.biggreenhouse = atoi(tok + 14); continue; }
         if (!strncmp(tok, "buildorder=", 11)) { g_cfg.buildorder = atoi(tok + 11); continue; }
         if (!strncmp(tok, "runthrough=", 11)) { g_cfg.runthrough = atoi(tok + 11); continue; }
+        if (!strncmp(tok, "bellherd=", 9)) { g_cfg.bellherd = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "jukebox=", 8)) { jukebox_set(atoi(tok + 8)); continue; }
+        if (!strncmp(tok, "jukebox@", 8)) {
+            if (n_jukebox_ev < JUKEBOX_EVENTS &&
+                sscanf(tok + 8, "%d=%d", &jukebox_ev[n_jukebox_ev].frame, &jukebox_ev[n_jukebox_ev].song) == 2)
+                n_jukebox_ev++;
+            continue;
+        }
+        if (!strncmp(tok, "animalmarks=", 12)) { g_cfg.animalmarks = atoi(tok + 12); continue; }
         if (!strncmp(tok, "randomnames=", 12)) { g_cfg.randomnames = atoi(tok + 12); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
@@ -282,6 +304,28 @@ static void cheat_events(int frame) {
         fflush(rec_file);
     }
 }
+
+/* the jukebox at a frame boundary: a recording's changes, or the overlay's choice (saved in the
+ * ini, and into the recording) */
+static void jukebox_events(int frame) {
+    for (int i = 0; i < n_jukebox_ev; i++)
+        if (jukebox_ev[i].frame == frame) jukebox_set(jukebox_ev[i].song);
+    int s = jukebox_want;
+    jukebox_want = -1;
+    if (s < 0 || s == g_jukebox || netplay_active()) return;
+    jukebox_set(s);
+    char v[8];
+    snprintf(v, sizeof v, "%d", g_jukebox);
+    config_save("behaviour", "jukebox", v);
+    if (rec_file) {
+        fprintf(rec_file, "jukebox@%d=%d\n", frame, g_jukebox);
+        fflush(rec_file);
+    }
+}
+
+/* the overlay (F7) */
+int  jukebox_choice(void) { return jukebox_want >= 0 ? jukebox_want : g_jukebox; }
+void jukebox_choose(int song) { jukebox_want = song; }
 
 static void record_frame(int frame, uint16_t b) {
     record_pad(0, frame, b);
@@ -537,15 +581,21 @@ int platform_init(void) {
             fprintf(rec_file, "earlycabinet=%d\n", g_cfg.earlycabinet);
             fprintf(rec_file, "cropwalk=%d\n", g_cfg.cropwalk);
             fprintf(rec_file, "spritechair=%d\n", g_cfg.spritechair);
+            fprintf(rec_file, "shipreach=%d\n", g_cfg.shipreach);
             fprintf(rec_file, "precisecull=%d\n", g_cfg.precisecull);   /* changes what the game draws */
             fprintf(rec_file, "dualshock=%d\n", g_cfg.dualshock);       /* the pad's answers change the game's code */
             if (g_cfg.staminabar) fprintf(rec_file, "staminabar=%d\n", g_cfg.staminabar);
+            if (g_cfg.friendpage) fprintf(rec_file, "friendpage=%d\n", g_cfg.friendpage);
+            if (g_cfg.birthdays) fprintf(rec_file, "birthdays=%d\n", g_cfg.birthdays);
             if (g_cfg.bulkfood) fprintf(rec_file, "bulkfood=%d\n", g_cfg.bulkfood);
             if (g_cfg.spritehire) fprintf(rec_file, "spritehire=%d\n", g_cfg.spritehire);
             if (g_cfg.sturdygreenhouse) fprintf(rec_file, "sturdygreenhouse=%d\n", g_cfg.sturdygreenhouse);
             if (g_cfg.biggreenhouse) fprintf(rec_file, "biggreenhouse=%d\n", g_cfg.biggreenhouse);
             if (g_cfg.buildorder) fprintf(rec_file, "buildorder=%d\n", g_cfg.buildorder);
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
+            if (g_cfg.bellherd) fprintf(rec_file, "bellherd=%d\n", g_cfg.bellherd);
+            if (g_jukebox) fprintf(rec_file, "jukebox=%d\n", g_jukebox);   /* the music changes the game's RAM */
+            if (g_cfg.animalmarks) fprintf(rec_file, "animalmarks=%d\n", g_cfg.animalmarks);
             if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,
@@ -1540,6 +1590,7 @@ void platform_frame(void) {
         if (netplay_role() == 2) b |= p2_pad;   /* online guest: the numeric keypad and a 2nd controller are its too */
         if (!(SDL_GetModState() & KMOD_ALT)) mine = b | script_buttons((int)frame);
         cheat_events((int)frame);
+        jukebox_events((int)frame);
         g_p2_buttons = p2_pad | script_pad((int)frame, 1);   /* co-op with two farmers: the guest's buttons instead */
         g_pad_buttons[0] = netplay_frame((int)frame, mine);   /* co-op: with the other player's */
         { int changed; netplay_status(&changed); if (changed) update_title(); }
@@ -1645,6 +1696,7 @@ void platform_frame(void) {
 
     if (g_cfg.headless) {
         cheat_events((int)frame);
+        jukebox_events((int)frame);
         g_p2_buttons = script_pad((int)frame, 1);
         g_pad_buttons[0] = netplay_frame((int)frame, script_buttons((int)frame));
         record_frame((int)frame, g_pad_buttons[0]);

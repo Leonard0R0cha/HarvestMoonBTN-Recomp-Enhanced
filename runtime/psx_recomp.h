@@ -41,9 +41,9 @@ extern const int g_num_modules;
 /* the language of the game's text (generated, from the disc the code came from): 0 English, 1 Portuguese,
  * 2 Indonesian (tools/recomp.py GAME_LANGS) */
 extern const int g_game_lang;
-extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de": the launcher reads it in the exe */
+extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de" / "es": the launcher reads it in the exe */
 #define GAME_PT (g_game_lang == 1)
-#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de" */
+#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de", "es" */
 
 extern uint8_t g_ram[0x200000];
 extern uint8_t g_scratch[0x400];
@@ -265,6 +265,16 @@ void names_open(CPU *c);                      /* names.c: the naming screen open
 void names_buttons(CPU *c);                   /* ... and its buttons read: Select picks a random name */
 void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
 void stamina_glyph_seen(CPU *c);
+void friends_glyph_seen(CPU *c);                 /* friends.c: the town's friendships page */
+uint32_t friend_title(CPU *c, uint32_t text);
+void friend_title_drawn(void);
+uint32_t friend_next_wrap(uint32_t lt);
+uint32_t friend_prev_wrap(uint32_t page);
+uint32_t friend_page(CPU *c, uint32_t routine);
+void stamina_glyph_others(int on);               /* fixes.c: the port's own letters drawn */
+void birthday_marks(CPU *c);                     /* friends.c: birthdays on the calendar */
+void birthday_text_asked(CPU *c);
+void birthday_text_loaded(void);
 void hud_fade_anchor(int x, int y, int kind);     /* fixes.c: the clock see-through over the farmer */
 void hud_fade(CPU *c, uint32_t flag);
 void clock_begin(CPU *c);
@@ -272,11 +282,19 @@ void clock_window(CPU *c);
 void clock_window_done(CPU *c);
 extern int g_clock_draw;                          /* fixes.c: the clock routine is building */
 int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player);   /* ... walking through crops (and running through animals) */
+uint32_t crop_walk_mask(CPU *c, uint32_t mask, uint32_t why, uint32_t player, uint32_t sp);   /* ... walking through crops (and running through animals) */
 uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 int item_picture_from_disc(CPU *c);              /* fixes.c: an item's picture from the disc */
 uint32_t bulk_food_yes(CPU *c, uint32_t answer); /* ... bulk food at the shops */
 int bulk_food_state(CPU *c);
+uint32_t bell_heard(CPU *c, uint32_t roll);      /* bell.c: the bell herds the animals */
+void bell_sent(CPU *c);
+uint32_t bell_keep_going(CPU *c, uint32_t near);
+void bell_through(CPU *c);
+#define BELL_WALKERS 20
+void animal_marks(CPU *c);                       /* marks.c: the cares left over the animals */
+int bell_walker(uint32_t rec);                   /* an animal the bell leads: its number, else -1 */
+uint32_t jukebox_song(uint32_t song);            /* jukebox.c: the farm's music, as chosen (F7) */
 uint32_t sprite_talked(CPU *c, uint32_t flags);  /* sprites.c: the sprites hired through the Chef */
 uint32_t sprite_friendship(CPU *c, uint32_t friendship);
 uint32_t sprite_spring(uint32_t talks);
@@ -319,6 +337,7 @@ void farm_area_loaded(uint32_t entry);
 void build_card_save(void);
 void build_card_load(void);      /* fixes.c: the greenhouse stands through the storms */
 uint32_t bulk_feed_most(CPU *c, uint32_t most);   /* ... and fodder / chicken feed up to 999 */
+int ship_reach(CPU *c);                                /* a thrown item falling near a shipping bin */
 uint32_t sprite_spot_z(uint32_t z, uint32_t actor);    /* ... the yellow sprite off the chair */
 void p2_tick_end(void);
 int p2_faint_skipped(void);

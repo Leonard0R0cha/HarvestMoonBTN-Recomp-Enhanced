@@ -156,6 +156,8 @@ void cheats_tick(void);         /* cheats.c: each farm tick */
 void cheats_set(const int v[CHEATS]);   /* ... changed while the game runs */
 int config_cheats(int v[CHEATS]);       /* main.c: the ini's cheats, if it changed */
 void open_cheats_window(void);  /* main.c: F5, the launcher's Cheats page */
+extern int g_jukebox;           /* jukebox.c: the farm's music chosen (0 the game's, 1..4 seasons, 22 rain) */
+void jukebox_set(int song);     /* ... chosen: plays from the next time the farm is entered */
 void p2_cheats(int rest, int bag, int tools);   /* ... farmer 2's stamina, rucksack and tools */
 void p2_leave(void);            /* farmer 2's player left: its things into the storages, farmer 2 gone */
 size_t p2_state_size(void);
@@ -289,9 +291,14 @@ typedef struct {
     int  earlycabinet;          /* the first house's pile of boxes opens the cabinet (fixes.c) */
     int  cropwalk;              /* the player walks through planted crops (fixes.c) */
     int  spritechair;           /* the yellow Harvest Sprite stands off the chair at home (fixes.c) */
+    int  shipreach;             /* a thrown item falling near a shipping bin goes in (fixes.c) */
+    int  friendpage;            /* the START menu has a page of the town's friendships (friends.c) */
+    int  birthdays;             /* the calendar marks and names the birthdays (friends.c) */
     int  staminabar;            /* the stamina and tiredness in a window under the clock (fixes.c) */
     int  biggreenhouse;         /* a built greenhouse is 7 x 19 fields */
     int  runthrough;            /* running goes through the cows, sheep and horse (fixes.c) */
+    int  bellherd;              /* the bell leads the barn's animals out, the farm's in (bell.c) */
+    int  animalmarks;           /* icons over the animals for the cares left today (marks.c) */
     int  randomnames;           /* Select on the naming screen fills in a random name (names.c) */
     int  buildorder;            /* the carpenter lets the player pick the next building (buildorder.c) */
     int  sturdygreenhouse;      /* typhoons and blizzards do not break the greenhouse */

@@ -1,6 +1,6 @@
 /* The in-game overlay (F7, overlay.cpp, Dear ImGui): settings changed while the game is paused
  * (or runs behind it, with the player's controls on the overlay), drawn over the picture by either way of showing it (platform_sdl.c's SDL renderer, Vulkan's
- * vkr_present). For now: the CRT filters and their settings. */
+ * vkr_present). The CRT filters and their settings, the jukebox (the seasons' music) and the save states. */
 #pragma once
 #ifdef __cplusplus
 extern "C" {
@@ -31,6 +31,8 @@ int   *platform_crt_smooth(void);           /* 1: smooth 3D edges under them (th
 int    config_save(const char *section, const char *key, const char *value);   /* in hmbtn.ini */
 const char *config_language(void);          /* the launcher's: en, pt, es */
 int    platform_can_pause(void);            /* 0 in online co-op */
+int    jukebox_choice(void);                /* the farm's music chosen: 0 the game's, 1..4 seasons, 22 rain */
+void   jukebox_choose(int song);            /* ... (taken at the next frame, saved in hmbtn.ini) */
 
 /* save states (savestate.c): asked here, done at the game's next main-loop pass */
 #define SS_SLOTS 8

@@ -40,15 +40,47 @@ DISC_NOTE = ("Put your own disc image of Harvest Moon: Back to Nature (USA) here
              "the .cue file and its .bin file (any file names).\n")
 
 
+def same_file(a, b):
+    """byte-for-byte comparison (no filecmp: the launcher exe runs this script and packs only what it imports)"""
+    if os.path.getsize(a) != os.path.getsize(b):
+        return False
+    with open(a, 'rb') as fa, open(b, 'rb') as fb:
+        while True:
+            ca, cb = fa.read(1 << 20), fb.read(1 << 20)
+            if ca != cb:
+                return False
+            if not ca:
+                return True
+
+
+def copy_in_use(src, dst):
+    """copy2 that also works when dst is the program running right now (the launcher building into its
+    own folder): Windows will not overwrite a running exe but lets it be renamed, so it moves aside"""
+    if os.path.isfile(dst) and same_file(src, dst):   # the same launcher: nothing to do
+        return
+    try:
+        shutil.copy2(src, dst)
+    except PermissionError:
+        old = dst + '.old'
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+        os.replace(dst, old)    # still running under this name until it closes; removed on the next build
+        shutil.copy2(src, dst)
+
+
 def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, into=None):
     """files: [(source, name in folder)]; returns the folder path. into: that folder, where nothing is
     deleted (only replaced), instead of dist/name"""
     dist = dist or os.path.join(ROOT, 'dist')
     out = os.path.abspath(into) if into else os.path.join(dist, name)
-    keep = ('saves', 'disc', 'disc-pt', 'languages', 'screenshots', 'recordings', 'hmbtn.ini')   # the player's files survive a rebuild
+    # the player's files survive a rebuild; also the launcher's build-files (its toolchain download, the
+    # files taken from the disc) and textures (packs, dumps, the downloaded portraits), else fetched again
+    keep = ('saves', 'disc', 'disc-pt', 'languages', 'screenshots', 'recordings', 'hmbtn.ini', 'build-files', 'textures')
     if os.path.exists(out) and not into:
         for n in os.listdir(out):
-            if n not in keep:
+            if n not in keep and not n.startswith('disc-'):     # every translated disc (disc-<lang>)
                 p = os.path.join(out, n)
                 shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
     os.makedirs(out, exist_ok=True)
@@ -78,7 +110,7 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     # (the one for the folder's system: a cross-built Linux folder has none, only launcher.pyw)
     launcher = 'HarvestMoonBTN-Launcher-Linux' if 'Linux' in name else 'HarvestMoonBTN-Launcher.exe'
     if os.path.isfile(os.path.join(TPL, launcher)):
-        shutil.copy2(os.path.join(TPL, launcher), os.path.join(out, launcher))
+        copy_in_use(os.path.join(TPL, launcher), os.path.join(out, launcher))
     # the launcher's own pictures (any it also finds there from elsewhere are kept)
     assets = os.path.join(TPL, 'launcher-assets')
     if os.path.isdir(assets):
