@@ -691,6 +691,9 @@ MODULE_SITE_HOOKS['GF_FARM'][0x800BC88C] = 'R[2] = jukebox_song(R[2]);'
 # the call's delay slot
 MODULE_SITE_HOOKS['GF_FARM'].update({a: 'animal_marks(c);' for a in (
     0x800D2EEC, 0x800DE840, 0x800E0418, 0x800E1F38, 0x80108C94, 0x8010B188)})
+# The letter over the mailbox (mailmark, runtime/marks.c): after the farmer is drawn (800C9E90 on
+# foot, 800CA580 on the horse)
+MODULE_SITE_HOOKS['GF_FARM'].update({a: 'mail_mark(c);' for a in (0x800CA4CC, 0x800CA5C4)})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 
