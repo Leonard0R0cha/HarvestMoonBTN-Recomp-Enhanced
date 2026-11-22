@@ -456,6 +456,10 @@ ENTRY_HOOKS[0x8001530C] = 'HUD_BEGIN(); hud_fade(c, 28);'
 ENTRY_HOOKS[0x8001526C] = 'HUD_BEGIN(); hud_fade(c, 20);'
 ENTRY_HOOKS[0x800136D4] = 'clock_window(c);'
 SITE_HOOKS[0x800225A8] = 'clock_window_done(c);'
+# Save states (runtime/savestate.c): the top of the game's frame loop (80011C80, in 80011C24, which the
+# main loop 80011370 calls for each scene and which never returns itself): the game between two frames,
+# the native calls under it always the same. In the delay slot of its first jal, before the call.
+SITE_HOOKS[0x80011C84] = 'savestate_point(c);'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
 # VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would

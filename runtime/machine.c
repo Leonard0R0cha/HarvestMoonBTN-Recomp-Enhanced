@@ -164,6 +164,28 @@ static void second_gpu(void) {
     view2_g_scene_3d = g_scene_3d;
 }
 
+/* what a machine keeps (but the GPU's): here and in a save state (savestate.c) */
+void machine_parts(MachineAdd add) {
+    mem_machine(add);
+    add("cpu", &g_cpu, sizeof g_cpu);
+    gte_machine(add);
+    sched_machine(add);
+    dma_machine(add);
+    cdrom_machine(add);
+    sio_machine(add);
+    bios_machine(add);
+    memcard_machine(add);
+    spu_machine(add);
+    quick_machine(add);
+    cheats_machine(add);
+    p2_machine(add);
+    add("gp0_addr", &g_gp0_addr, sizeof g_gp0_addr);
+    add("hud_call", &g_hud_call, sizeof g_hud_call);
+    add("held_call", &g_held_call, sizeof g_held_call);
+    add("item_call", &g_item_call, sizeof g_item_call);
+    add("menu_tile", &g_menu_tile, sizeof g_menu_tile);
+}
+
 /* before the boot: the second machine starts from the state the first boots from */
 void machine_init(void (*boot)(void)) {
     /* on one PC: with farmer 2's window; online (step 6): both PCs run both machines in step, the
@@ -190,24 +212,7 @@ void machine_init(void (*boot)(void)) {
         g_mirror = 0;
         return;
     }
-    mem_machine(add);
-    add("cpu", &g_cpu, sizeof g_cpu);
-    gte_machine(add);
-    sched_machine(add);
-    dma_machine(add);
-    cdrom_machine(add);
-    sio_machine(add);
-    bios_machine(add);
-    memcard_machine(add);
-    spu_machine(add);
-    quick_machine(add);
-    cheats_machine(add);
-    p2_machine(add);
-    add("gp0_addr", &g_gp0_addr, sizeof g_gp0_addr);
-    add("hud_call", &g_hud_call, sizeof g_hud_call);
-    add("held_call", &g_held_call, sizeof g_held_call);
-    add("item_call", &g_item_call, sizeof g_item_call);
-    add("menu_tile", &g_menu_tile, sizeof g_menu_tile);
+    machine_parts(add);
     state[0] = malloc(total);
     state[1] = malloc(total);
     state[2] = malloc(total);

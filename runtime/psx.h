@@ -142,6 +142,7 @@ void dump_backtrace(void);
 /* ---- platform (frontend) ---- */
 void platform_frame(void);        /* present + input + throttle; called once per vblank */
 void platform_audio_push(const int16_t *stereo, int frames);
+void platform_state_loaded(void);  /* savestate.c loaded a state: the old sound and picture go, a recording ends */
 int platform_poll_quit(void);     /* handles window events; nonzero when the window was closed */
 extern volatile int g_quit;
 
@@ -195,6 +196,7 @@ typedef void (*MachineAdd)(const char *name, void *p, size_t n);
 extern int g_machine;               /* the machine running now: 0 the first (the game), 1 the second */
 extern int g_mirror;                /* testing: the second runs as the first does, compared each frame */
 void machine_init(void (*boot)(void));
+void machine_parts(MachineAdd add);  /* what a machine keeps (but the GPU's), also for a save state (savestate.c) */
 int machine_vblank(void);           /* at each vblank: 1 = the second machine (no window) */
 extern int g_mirror_park, g_mirror_resume;
 void mem_machine(MachineAdd add);
@@ -310,6 +312,7 @@ typedef struct {
     int  poke_frame[8]; uint32_t poke_addr[8], poke_val[8];   /* testing: 16-bit I/O writes */
     int  call_frame[4]; uint32_t call_addr[4], call_a0[4];   /* testing: call guest functions at frames */
     int  fuzz_start;             /* testing: frame at which random input starts */
+    int  state_test_at, state_test_frames;   /* testing: --savestate-test N:K (savestate.c) */
 } Config;
 enum { SCALING_SHARP_BILINEAR, SCALING_SHARP, SCALING_SMOOTH };   /* Config.scaling; 0 = default */
 extern Config g_cfg;

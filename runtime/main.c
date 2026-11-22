@@ -575,6 +575,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--headless")) g_cfg.headless = 1;
         else if (!strcmp(a, "--verify-data")) { verify_data = 1; g_cfg.headless = 1; }
         else if (!strcmp(a, "--frames")) { g_cfg.max_frames = atoi(nx); i++; }
+        else if (!strcmp(a, "--savestate-test")) { sscanf(nx, "%d:%d", &g_cfg.state_test_at, &g_cfg.state_test_frames); i++; }
         else if (!strcmp(a, "--unthrottled")) g_cfg.unthrottled = 1;
         else if (!strcmp(a, "--shots")) { g_cfg.screenshot_every = atoi(nx); i++; }
         else if (!strcmp(a, "--shotstart")) { g_cfg.screenshot_start = atoi(nx); i++; }
