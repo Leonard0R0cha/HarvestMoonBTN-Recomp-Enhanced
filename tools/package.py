@@ -80,7 +80,7 @@ def package(name, files, pak=None, disc_path=None, make_zip=False, dist=None, in
     keep = ('saves', 'disc', 'disc-pt', 'languages', 'screenshots', 'recordings', 'hmbtn.ini', 'build-files', 'textures')
     if os.path.exists(out) and not into:
         for n in os.listdir(out):
-            if n not in keep:
+            if n not in keep and not n.startswith('disc-'):     # every translated disc (disc-<lang>)
                 p = os.path.join(out, n)
                 shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
     os.makedirs(out, exist_ok=True)

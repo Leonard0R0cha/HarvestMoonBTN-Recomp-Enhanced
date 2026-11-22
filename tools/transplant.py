@@ -10,14 +10,16 @@ text is taken, from where the USA game keeps it:
     starting where it starts on the USA disc and padded with spaces up to its own length, so the
     texts the game finds by counting the FFFF ends stay where they were
   - the names of the weekdays and seasons (fixed width)
+  - with --font (a translation that draws its own letters, like the Spanish one): the font, the first
+    8 KB of subfile 00 (the font image and the palettes of the text's TIMs)
 The files keep their size, so only the changed sectors are written (with a new EDC/ECC).
 
 The European disc (SLES-02781, English and German) works the same way for German: its subfiles 07-11
 are the German dialogue, laid out like the English 02-06 (which match the USA ones), and its font is
 the USA one. Its executable keeps its texts elsewhere, so the menus and items stay in English.
 
-usage: python tools/transplant.py USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.bin
-       python tools/transplant.py --patch USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.hmtxt
+usage: python tools/transplant.py [--font] USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.bin
+       python tools/transplant.py --patch [--font] USA.bin|.cue TRANSLATED.zip|.iso|.bin OUT.hmtxt
          (only the bytes the text changes, which the build downloads instead of the translated disc)
 """
 import hashlib, io, os, struct, sys, zipfile
@@ -36,6 +38,7 @@ EXE_NAMES = (0x8004908C, 0x800490E6)
 DIALOGUE_SUBFILES = (2, 3, 4, 5, 6)
 PAL_EXE, PAL_GERMAN = 'SLES_027.81', (7, 8, 9, 10, 11)   # the European disc: its German dialogue
 RECORD, TEXT_AT = 0x2000, 0x1800
+FONT_SUBFILE, FONT_SIZE = 0, 0x2000      # --font: the start of subfile 00 (font image + text palettes)
 END, SPACE = 0xFFFF, 0x0FFD
 
 
@@ -214,8 +217,16 @@ def usa_files(usa):
     return disc, {n: disc.read_extent(find_file(disc, n)['lba'], find_file(disc, n)['size']) for n in NAMES}
 
 
-def translated_files(us, translated):
-    """{name: bytes} of the USA game files with the text of the translated disc"""
+def take_font(us_hdt, pack, tr_hdt, tr_pack):
+    """pack with the font of the translated disc"""
+    (ua, _), (ta, _) = afile_split(us_hdt, pack)[FONT_SUBFILE], afile_split(tr_hdt, tr_pack)[FONT_SUBFILE]
+    out = bytearray(pack)
+    out[ua:ua + FONT_SIZE] = tr_pack[ta:ta + FONT_SIZE]
+    return bytes(out)
+
+
+def translated_files(us, translated, font=False):
+    """{name: bytes} of the USA game files with the text of the translated disc (and its font)"""
     tr = read_files(translated, ('A_FILE.HDT', 'A_FILE.BIN'), optional=('SLUS_011.15', PAL_EXE))
     if 'SLUS_011.15' not in tr and PAL_EXE in tr:         # the European disc: its German dialogue only
         pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'],
@@ -226,6 +237,8 @@ def translated_files(us, translated):
         exe, n_texts = exe_texts(us['SLUS_011.15'], tr['SLUS_011.15'])
     else:
         raise SystemExit('%s is not a Harvest Moon: Back to Nature disc' % translated)
+    if font:
+        pack = take_font(us['A_FILE.HDT'], pack, tr['A_FILE.HDT'], tr['A_FILE.BIN'])
     print('  %d dialogue texts and %d texts of the executable taken' % (n_lines, n_texts))
     return dict(us, **{'A_FILE.BIN': pack, 'SLUS_011.15': exe})
 
@@ -243,10 +256,10 @@ def write_image(usa, disc, us, files, out):
     return {n: hashlib.sha256(d).hexdigest() for n, d in files.items()}
 
 
-def transplant(usa, translated, out):
+def transplant(usa, translated, out, font=False):
     """-> {name: sha256} of the game files on the new image"""
     disc, us = usa_files(usa)
-    return write_image(usa, disc, us, translated_files(us, translated), out)
+    return write_image(usa, disc, us, translated_files(us, translated, font), out)
 
 
 # ---- the text patch: only the bytes the text changed, so the translation can be downloaded without
@@ -314,10 +327,13 @@ def source_hashes(path, names=('SLUS_011.15', 'A_FILE.BIN')):
 
 
 if __name__ == '__main__':
+    font = '--font' in sys.argv
+    if font:
+        sys.argv.remove('--font')
     if len(sys.argv) == 5 and sys.argv[1] == '--patch':
-        # the text patch the build downloads: python tools/transplant.py --patch USA TRANSLATED OUT.hmtxt
+        # the text patch the build downloads: python tools/transplant.py --patch [--font] USA TRANSLATED OUT.hmtxt
         _, us = usa_files(sys.argv[2])
-        files = translated_files(us, sys.argv[3])
+        files = translated_files(us, sys.argv[3], font)
         data = make_patch(us, files)
         if apply_patch(us, data) != files:
             sys.exit('the patch does not give the same files back')
@@ -327,7 +343,7 @@ if __name__ == '__main__':
         for n, d in sorted(files.items()):
             print(n, hashlib.sha256(d).hexdigest())
     elif len(sys.argv) == 4:
-        for n, h in sorted(transplant(*sys.argv[1:]).items()):
+        for n, h in sorted(transplant(*sys.argv[1:], font=font).items()):
             print(n, h)
     else:
         sys.exit(__doc__)

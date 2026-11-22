@@ -4,8 +4,25 @@
 #define TEXT_PT_H
 #include <stdint.h>
 
+extern const int g_game_lang;
+
+/* the Spanish translation's font has its own (fewer) letters, drawn over other glyphs */
+static inline int es_glyph(const char **s) {
+    static const struct { uint8_t lead, utf8; uint16_t glyph; } letters[] = {
+        { 0xC3, 0xA1, 0x5A }, { 0xC3, 0xA9, 0x55 }, { 0xC3, 0xAD, 0x56 }, { 0xC3, 0xB3, 0x5B },  /* á é í ó */
+        { 0xC3, 0xB1, 0x54 }, { 0xC2, 0xBF, 0x52 }, { 0xC2, 0xA1, 0x53 },                        /* ñ ¿ ¡ */
+    };
+    for (unsigned i = 0; i < sizeof letters / sizeof *letters; i++)
+        if ((uint8_t)(*s)[0] == letters[i].lead && (uint8_t)(*s)[1] == letters[i].utf8) {
+            (*s)++;
+            return letters[i].glyph;
+        }
+    return -1;
+}
+
 /* *s at a UTF-8 accented letter: its glyph, *s moved to the sequence's last byte; else -1 */
 static inline int pt_glyph(const char **s) {
+    if (g_game_lang == 4) return es_glyph(s);
     static const struct { uint8_t utf8; uint16_t glyph; } letters[] = {
         { 0x82, 0x1A }, { 0x83, 0x1C }, { 0x95, 0x1D },                          /* Â Ã Õ */
         { 0xA1, 0x3A }, { 0xA0, 0x3B }, { 0xA2, 0x3C }, { 0xA3, 0x3D },          /* á à â ã */
