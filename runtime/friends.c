@@ -168,6 +168,44 @@ static void text(CPU *c, uint32_t ot, uint32_t buf, const char *s, int x, int y)
     put_back();
 }
 
+/* The Spanish disc's font (transplant.py --font) has its own ink order and the same grey in all
+ * five of its palettes, so a heart drawn red came out black. For it, the hearts take the USA red
+ * (palette 4) and light (1) palettes, put into that font's ink order, from VRAM the game leaves
+ * empty: the glyph's packet gets that palette instead. */
+#define FONT_PAL_TABLE 0x80049044u  /* palette -> its row in VRAM (x 896) */
+#define OWN_PAL_X 576
+#define OWN_PAL_Y 485
+static const uint16_t own_pal[2][16] = {
+    { 0x043F, 0x0000, 0x217F, 0x4B3F, 0x043F, 0x0C9F, 0x365F, 0x29FF,          /* red */
+      0x3EDF, 0x2CDE, 0x790A, 0x037D, 0x0240, 0x01B3, 0x0ED3, 0x0000 },
+    { 0x6FB9, 0x0000, 0x4A91, 0x1907, 0x6FB9, 0x6356, 0x31CC, 0x3E2F,          /* light */
+      0x256A, 0x2CDE, 0x790A, 0x037D, 0x0240, 0x01B3, 0x0ED3, 0x0000 },
+};
+
+static void send_own_pal(void) {
+    static uint64_t sent[3] = { ~0ull, ~0ull, ~0ull };
+    int s = slot();
+    if (sent[s] == frame_count()) return;
+    sent[s] = frame_count();
+    gpu_write_gp0(0xA0000000u);
+    gpu_write_gp0((uint32_t)OWN_PAL_Y << 16 | OWN_PAL_X);
+    gpu_write_gp0(1u << 16 | 32);
+    for (int k = 0; k < 2; k++)
+        for (int i = 0; i < 16; i += 2)
+            gpu_write_gp0(own_pal[k][i] | (uint32_t)own_pal[k][i + 1] << 16);
+}
+
+/* the glyph's packet (p .. next): its palette halfword to ours */
+static void own_glyph_pal(uint32_t p, uint32_t next, uint32_t pal) {
+    int k = pal == 4 ? 0 : pal == 1 ? 1 : -1;
+    if (k < 0 || g_game_lang != 4) return;
+    uint16_t game = (uint16_t)(MEM_R16(FONT_PAL_TABLE + pal * 2) << 6 | 896 >> 4);
+    uint16_t ours = (uint16_t)(OWN_PAL_Y << 6 | (OWN_PAL_X + k * 16) >> 4);
+    send_own_pal();
+    for (uint32_t a = p; a + 2 <= next && a < p + 64; a += 2)
+        if (MEM_R16(a) == game) { MEM_W16(a, ours); return; }
+}
+
 static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y, uint32_t pal, uint32_t rgb) {
     uint32_t sp = c->r[29];
     MEM_W32(sp + 16, (uint32_t)y);
@@ -179,6 +217,7 @@ static uint32_t glyph(CPU *c, uint32_t ot, uint32_t p, int letter, int x, int y,
     stamina_glyph_others(1);        /* the stamina window copies the game's last letter's colour */
     uint32_t next = call4(c, GLYPH_AT, ot, p, (uint32_t)letter, (uint32_t)x);
     stamina_glyph_others(0);
+    own_glyph_pal(p, next, pal);
     return next;
 }
 
