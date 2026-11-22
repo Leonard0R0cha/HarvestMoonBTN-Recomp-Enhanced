@@ -606,6 +606,9 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   # a thrown item's flight (800CC7CC, a0 = the item): falling near a
                                   # shipping bin, it goes in (runtime/fixes.c)
                                   0x800CC7CC: 'if (ship_reach(c)) { R[2] = 1; return; }',
+                                  # the area's events under the farmer (800BDCE8): the X doors' boxes
+                                  # wider for the player's look (runtime/fixes.c)
+                                  0x800BDCE8: 'if (door_reach(c)) return;',
                                   # trading between the farmers in the storage menus (runtime/p2.c)
                                   0x800F7D34: 'if (p2_trade_move(c)) return;',
                                   0x800D57A4: 'if (p2_trade_kind(c)) return;',
