@@ -518,7 +518,7 @@ MODULE_SITE_HOOKS = {
                 0x800BD0B8: 'first_house_cabinet();',
                 # walking through crops: the player's walk's collision mask (800CB114, after the
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
-                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18], R[16]);',
+                0x800CB1CC: 'R[10] = crop_walk_mask(c, R[10], R[18], R[16], R[29]);',
                 0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
                 # a Harvest Sprite at work heads straight for its bed: the walk of the characters
                 # (800D12B8) has just picked a way (800D196C, back at 800D1744: v0 the way, s2 the

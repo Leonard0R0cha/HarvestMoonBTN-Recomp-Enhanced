@@ -281,7 +281,7 @@ void clock_window(CPU *c);
 void clock_window_done(CPU *c);
 extern int g_clock_draw;                          /* fixes.c: the clock routine is building */
 int p2_stamina(int16_t *now, int16_t *most, int16_t *tired);   /* p2.c: farmer 2's, for its window */
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player);   /* ... walking through crops (and running through animals) */
+uint32_t crop_walk_mask(CPU *c, uint32_t mask, uint32_t why, uint32_t player, uint32_t sp);   /* ... walking through crops (and running through animals) */
 uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record, uint32_t cls);
 int item_picture_from_disc(CPU *c);              /* fixes.c: an item's picture from the disc */
 uint32_t bulk_food_yes(CPU *c, uint32_t answer); /* ... bulk food at the shops */
