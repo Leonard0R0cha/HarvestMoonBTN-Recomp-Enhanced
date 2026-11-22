@@ -140,17 +140,17 @@ def words(b, at):
 
 # ---- the transplant ----
 
-def dialogue(us_hdt, us_pack, tr_hdt, tr_pack, from_subs=DIALOGUE_SUBFILES):
+def dialogue(us_hdt, us_pack, tr_hdt, tr_pack, from_subs=DIALOGUE_SUBFILES, fit=False):
     """the USA A_FILE.BIN with the text half of each dialogue record from the translated one (its subfiles
-    from_subs, in the order of the USA 02-06)"""
+    from_subs, in the order of the USA 02-06; with fit, as many records as both have)"""
     out = bytearray(us_pack)
     us_parts, tr_parts = afile_split(us_hdt, us_pack), afile_split(tr_hdt, tr_pack)
     taken = 0
     for sub, tr_sub in zip(DIALOGUE_SUBFILES, from_subs):
         (ua, uz), (ta, tz) = us_parts[sub], tr_parts[tr_sub]
-        if uz - ua != tz - ta:
+        if uz - ua != tz - ta and not fit:
             raise SystemExit('dialogue subfile %02d has another size on the translated disc' % sub)
-        for rec in range((uz - ua) // RECORD):
+        for rec in range(min(uz - ua, tz - ta) // RECORD):
             src = tr_pack[ta + rec * RECORD + TEXT_AT:ta + (rec + 1) * RECORD]
             # a text that does not end in its 2 KB is not one this game can show: keep the USA one
             if not any(words(src, p) == END for p in range(0, len(src), 2)):
@@ -193,10 +193,11 @@ def exe_texts(us_exe, tr_exe):
     return bytes(out), taken
 
 
-def write_file(img, disc, name, data):
-    """overwrite a file of the same size on the image (bytearray), fixing each changed sector"""
+def write_file(img, disc, name, data, prefix=False):
+    """overwrite a file of the same size (or, with prefix, its start) on the image (bytearray), fixing
+    each changed sector"""
     e = find_file(disc, name)
-    if e['size'] != len(data):
+    if e['size'] != len(data) and not (prefix and len(data) <= e['size']):
         raise SystemExit('%s: size changed' % name)
     for i in range((len(data) + 2047) // 2048):
         chunk = data[i * 2048:(i + 1) * 2048]
@@ -210,6 +211,151 @@ def write_file(img, disc, name, data):
 
 
 NAMES = ('SLUS_011.15', 'A_FILE.HDT', 'A_FILE.BIN')
+
+
+# ---- the Japanese disc (SLPS-02489 Rev 1): its dialogue, its font and the texts of its executable ----
+#
+# Its dialogue subfiles 02-06 have the USA records one for one (the USA 02 and 03 have a few more at the
+# end, which stay English). Its font is another: 12x12 cells, 735 of them (kana, Latin capitals, digits,
+# kanji), the first 0xCAE0 bytes of its subfile 00 (13 entries of the packed-image list for VRAM 896,0
+# and 960,0); it goes at the start of DUMMY.DAT (padding the game never reads) for the port to load in
+# place of the USA one (runtime/japanese.c). Its executable keeps its texts in the order of the USA ones
+# (some more, some fewer): JA_TEXTS says which one goes into each USA text; a few are shortened to fit.
+
+JA_EXE = 'SLPS_024.89'
+JA_TEXT = (0x80053600, 0x80055E00)       # the texts of the Japanese executable (every one ends with FFFF)
+JA_SEASONS, JA_WEEKDAYS = (67, 68, 69, 70), 66   # its season names and weekday names (one glyph each)
+JA_NAMES = 1, 33                         # its 33 names, for the USA list of 39 (EXE_TEXT[1])
+JA_OWN_NAMES = {30: (31, ((0, 3),))}   # ... one of them too long: the start of it (see JA_TEXTS)
+JA_FONT_BYTES, JA_FONT_MAGIC = 0xCAE0, b'HMBTN JA FONT 1\0'
+JA_DUMMY = 'DUMMY.DAT'
+# the font's first glyphs, for the texts written here: {hex} is a code, ' ' a space, '/' a new line
+JA_KANA = ('あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれ'
+           'ろわをんがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽぁぃぅぇぉゃゅょっアイウエ'
+           'オカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'
+           'ガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポヴァィゥェォャュョッABCDEFG'
+           'HIJKLMNOPQRSTUVWXYZ0123456789。、ー「」？！…・：＋－（')
+JA_LATIN, JA_DIGITS = 161, 187           # A and 0 in the font
+# for each USA text of EXE_TEXT[0], in order: the number of the Japanese text that goes there, None
+# (nothing), 'latin' (the USA text in the font's capitals: the name entry's letters), (number, cuts) for
+# one too long for the USA place (the glyphs [a:b] of each cut, joined: the same words, shorter) or a
+# few words of its own
+JA_TEXTS = [
+    (214, ((0, 2), (3, 9))), None, None, None, None, 34, 35, 36, (37, ((0, 11), (15, 16))), 38, 39, 40, 41, 42,
+    43, 'まんびきした', '{216}の{1d2}をうたがった', (46, ((6, 13),)), 47, 48, (49, ((0, 5), (11, 18))), 50, 51,
+    (52, ((3, 19),)), (53, ((0, 11), (15, 16))), (54, ((0, 6), (9, 12), (15, 17))), (55, ((0, 11), (18, 19))),
+    56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 71, 72, 73, 74, 75, 76, 77, 80, 81,
+    (83, ((0, 5), (6, 12))), 84, 85, (86, ((3, 11),)), 87, 88, 96, 97, 135, 136,
+    137, 162, 163, (164, ((0, 1), (2, 7))), 165, 166, 167, 89, 90, 91, 92, 98, 112, 120, 122, 144, 150, 151, 93, 94,
+    95, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 113, 114, 115, 116, 117, 118,
+    119, 121, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 138, 139, 140, 141, 142, 143,
+    145, 146, 147, 148, 149, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 169, 170, 171, 172, 178,
+    179, 185, 186, 187, 188, 193, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208,
+    'latin', 'latin', 212, 213, 216, (217, ((7, 10),)), 218, 219, (220, ((0, 2),)), 221, 222, 223, 224, 225, 226, 227, 228,
+    229, 231, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250,
+    (251, ((0, 3),)), 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, (265, ((4, 7),)), 'きゅうりづけ', 267, 268,
+    269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288,
+    289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308,
+    309, 310, 311, 312, (313, ((0, 3),)), 314, 315, 316, 317, 318, 319, 320, (321, ((3, 7),)), 322, 323, 324, 326, 325,
+    327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346,
+    347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366,
+    367, 368, 369, 370, 371, 'パスタ', 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385,
+    386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399, 400, 401, 402, 403, 404, 405,
+    406, 407, 408, 409, 410, 411, 412,
+]
+
+
+def ja_codes(text):
+    out, p = [], 0
+    while p < len(text):
+        if text[p] == '{':
+            q = text.index('}', p)
+            out.append(int(text[p + 1:q], 16))
+            p = q + 1
+            continue
+        out.append(SPACE if text[p] == ' ' else 0xFFFE if text[p] == '/' else JA_KANA.index(text[p]))
+        p += 1
+    return out
+
+
+def ja_latin(codes):
+    """a USA text with its letters and digits in the Japanese font (capitals; other glyphs a space)"""
+    out = []
+    for w in codes:
+        if w < 26 or 0x20 <= w < 0x3A:
+            out.append(JA_LATIN + (w & 0x1F))
+        elif 0x40 <= w < 0x4A:
+            out.append(JA_DIGITS + w - 0x40)
+        else:
+            out.append(w if w >= 0x0F00 else SPACE)
+    return out
+
+
+def text_list(exe, a, z):
+    """[(offset, [codes])] of the texts from a to z of an executable (each ending with FFFF)"""
+    out, begin = [], a - EXE_BASE + EXE_HEADER
+    for p in range(begin, z - EXE_BASE + EXE_HEADER, 2):
+        if words(exe, p) == END:
+            out.append((begin, [words(exe, q) for q in range(begin, p, 2)]))
+            begin = p + 2
+    return out
+
+
+def write_texts(exe, slots, new):
+    """new[i] (codes) over the text slots[i] (offset, codes) of exe (bytearray), padded with spaces (the
+    ones the game finds by address end early instead)"""
+    exact = {a - EXE_BASE + EXE_HEADER for a in EXE_TEXT_EXACT}
+    for (at, old), codes in zip(slots, new):
+        if len(codes) > len(old):
+            raise SystemExit('a Japanese text does not fit (%d glyphs for %d)' % (len(codes), len(old)))
+        if at in exact and len(codes) < len(old):
+            codes = codes + [END]
+        else:
+            codes = codes + [SPACE] * (len(old) - len(codes))
+        exe[at:at + 2 * len(codes)] = struct.pack('<%dH' % len(codes), *codes)
+
+
+def japanese_exe(us_exe, ja_exe):
+    """the USA executable with the Japanese texts"""
+    ja = [c for _, c in text_list(ja_exe, *JA_TEXT)]
+    out = bytearray(us_exe)
+    slots = text_list(us_exe, *EXE_TEXT[0])
+    if len(slots) != len(JA_TEXTS):
+        raise SystemExit('the USA executable has %d texts, not %d' % (len(slots), len(JA_TEXTS)))
+    def text(t, old):
+        if t is None: return []
+        if t == 'latin': return ja_latin(old)
+        if isinstance(t, str): return ja_codes(t)
+        if isinstance(t, tuple): return [g for a, b in t[1] for g in ja[t[0]][a:b]]
+        return ja[t]
+    write_texts(out, slots, [text(t, old) for (_, old), t in zip(slots, JA_TEXTS)])
+    slots = text_list(us_exe, *EXE_TEXT[1])
+    first, count = JA_NAMES
+    write_texts(out, slots, [text(JA_OWN_NAMES[i], None) if i in JA_OWN_NAMES else ja[first + i % count]
+                             for i in range(len(slots))])
+    names = []
+    for s in JA_SEASONS:
+        names += ja[s][:1] + [SPACE] * 5
+    for g in ja[JA_WEEKDAYS][:7]:
+        names += [g, SPACE, SPACE]
+    a = EXE_NAMES[0] - EXE_BASE + EXE_HEADER
+    out[a:a + 2 * len(names)] = struct.pack('<%dH' % len(names), *names)
+    return bytes(out)
+
+
+def japanese_files(us, tr):
+    """{name: bytes} of the USA game files with the Japanese disc's text, and the start of DUMMY.DAT with
+    its font"""
+    pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'],
+                             fit=True)
+    fa = afile_split(tr['A_FILE.HDT'], tr['A_FILE.BIN'])[FONT_SUBFILE][0]
+    font = tr['A_FILE.BIN'][fa:fa + JA_FONT_BYTES]
+    if font[:4] != b'\x0d\x10\x0d\x00':
+        raise SystemExit("the Japanese disc's font is not where it should be")
+    print('  %d dialogue texts and the texts of the executable taken' % n_lines)
+    return dict(us, **{'A_FILE.BIN': pack, 'SLUS_011.15': japanese_exe(us['SLUS_011.15'], tr[JA_EXE]),
+                       JA_DUMMY: JA_FONT_MAGIC + font})
+
 
 
 def usa_files(usa):
@@ -227,7 +373,9 @@ def take_font(us_hdt, pack, tr_hdt, tr_pack):
 
 def translated_files(us, translated, font=False):
     """{name: bytes} of the USA game files with the text of the translated disc (and its font)"""
-    tr = read_files(translated, ('A_FILE.HDT', 'A_FILE.BIN'), optional=('SLUS_011.15', PAL_EXE))
+    tr = read_files(translated, ('A_FILE.HDT', 'A_FILE.BIN'), optional=('SLUS_011.15', PAL_EXE, JA_EXE))
+    if JA_EXE in tr:                                    # the Japanese disc
+        return japanese_files(us, tr)
     if 'SLUS_011.15' not in tr and PAL_EXE in tr:         # the European disc: its German dialogue only
         pack, n_lines = dialogue(us['A_FILE.HDT'], us['A_FILE.BIN'], tr['A_FILE.HDT'], tr['A_FILE.BIN'],
                                  PAL_GERMAN)
@@ -250,10 +398,12 @@ def write_image(usa, disc, us, files, out):
     for n in NAMES:
         if files[n] != us[n]:
             write_file(img, disc, n, files[n])
+    if JA_DUMMY in files:                   # the Japanese font: the start of the padding file
+        write_file(img, disc, JA_DUMMY, files[JA_DUMMY], prefix=True)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, 'wb') as f:
         f.write(img)
-    return {n: hashlib.sha256(d).hexdigest() for n, d in files.items()}
+    return {n: hashlib.sha256(d).hexdigest() for n, d in files.items() if n in NAMES}
 
 
 def transplant(usa, translated, out, font=False):

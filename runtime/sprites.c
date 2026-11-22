@@ -414,7 +414,7 @@ static uint32_t put_number(uint32_t at, int v) {
     char d[12];
     int n = 0;
     do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
-    while (n) at = put(at, (uint16_t)(0x40 + d[--n] - '0'));
+    while (n) at = put(at, game_digit(d[--n] - '0'));
     return at;
 }
 
@@ -446,7 +446,7 @@ static uint32_t put_words(uint32_t at, const char *s) {
             at = put(at, 0x0FF6);
         } else if (ch == '#') {
             count_at = (int)at;
-            at = put(at, (uint16_t)(0x40 + how_many));
+            at = put(at, game_digit(how_many));
         }
     }
     return at;
@@ -616,6 +616,6 @@ void sprite_text_tick(CPU *c) {
     if (pressed & PAD_RIGHT) how_many = how_many >= most ? 1 : how_many + 1;
     if (pressed & PAD_LEFT) how_many = how_many <= 1 ? most : how_many - 1;
     if (how_many == was) return;
-    MEM_W16(TEXT_BUF + (uint32_t)count_at * 2, (uint16_t)(0x40 + how_many));
+    MEM_W16(TEXT_BUF + (uint32_t)count_at * 2, game_digit(how_many));
     game_call(c, SOUND, 5, 0);
 }

@@ -10,7 +10,7 @@ import struct, sys, os, json, re
 from collections import defaultdict
 from mips import decode, REG
 
-GAME_LANGS = ['en', 'pt', 'id', 'de', 'es']     # g_game_lang (runtime/psx_recomp.h)
+GAME_LANGS = ['en', 'pt', 'id', 'de', 'es', 'ja']     # g_game_lang (runtime/psx_recomp.h)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # --extract DIR: the game files (default extract/; build.py --lang gives the translated disc's), and
@@ -446,7 +446,7 @@ ENTRY_HOOKS[0x80014FAC] = 'stamina_window(c);'
 # and 800231AC (who called tells what is named) and reads its buttons in 80023DBC.
 ENTRY_HOOKS.update({a: 'names_open(c);' for a in (0x80023130, 0x80023170, 0x800231AC)})
 ENTRY_HOOKS[0x80023DBC] = 'names_buttons(c);'
-ENTRY_HOOKS[0x80019070] = 'HUD_BEGIN(); stamina_glyph_seen(c); friends_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
+ENTRY_HOOKS[0x80019070] = 'if (ja_glyph(c)) return; HUD_BEGIN(); stamina_glyph_seen(c); friends_glyph_seen(c); hud_fade(c, 36);'   # 80019070 is a HUD builder too (keep its tag)
 # The clock (and the stamina) see-through while the farmer is behind them (runtime/fixes.c): the
 # window builders' semi-transparency flag on the stack (background +40, border lines +28, corner
 # pixels +20), set while the clock routine (GF_FARM 800FB674) builds. Its window (800136D4 through
@@ -456,6 +456,15 @@ ENTRY_HOOKS[0x8001530C] = 'HUD_BEGIN(); hud_fade(c, 28);'
 ENTRY_HOOKS[0x8001526C] = 'HUD_BEGIN(); hud_fade(c, 20);'
 ENTRY_HOOKS[0x800136D4] = 'clock_window(c);'
 SITE_HOOKS[0x800225A8] = 'clock_window_done(c);'
+# The Japanese disc's font (build.py --lang ja, runtime/japanese.c): loaded in place of the USA one, the
+# glyphs given their 12x12 cells and the text 12 pixels a glyph
+ENTRY_HOOKS[0x80017300] = 'if (ja_unpack(c)) return;'
+SITE_HOOKS[0x80018FC0] = 'R[2] += (uint32_t)ja_advance();'
+# ... and its numbers (8001A9xx writes a number's digits as glyphs: 0x40 + digit, 0x69 the minus; the
+# Japanese font has them at 187 and 199)
+SITE_HOOKS[0x8001AA04] = 'if (ja_advance()) R[9] = 199;'
+SITE_HOOKS[0x80018EE4] = 'ja_macro(R[2]);'                     # ... and in the texts put in by number
+SITE_HOOKS[0x8001AA58] = 'if (ja_advance()) R[2] += 187 - 64;'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
 # VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would
@@ -686,6 +695,13 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
 # The jukebox (F7, runtime/jukebox.c; a site hook runs after its instruction): the farm's music
 # just picked by 800BCB5C (v0, back at 800BC888 in 800BC868)
 MODULE_SITE_HOOKS['GF_FARM'][0x800BC88C] = 'R[2] = jukebox_song(R[2]);'
+# The clock's AM / PM (A 0, P 15, M 12 in the USA font) and colon (102) in the Japanese font's capitals (runtime/japanese.c)
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB7B0] = 'if (ja_advance()) R[2] = 161 + 15;'
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB7BC] = 'if (ja_advance()) MEM_W16(R[22] - 24568u, 161);'
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB7C8] = 'if (ja_advance()) R[2] = 161 + 12;'
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB8B4] = 'if (ja_advance()) R[2] = 206;'           # ... and its colon
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB840] = 'ja_clock(R[22] - 24568u);'              # the time in 24 hours
+MODULE_SITE_HOOKS['GF_FARM'][0x800FB8AC] = 'if (ja_advance()) R[6] = 256;'           # the colon's x
 # Marks over the animals (animalmarks, runtime/marks.c; site hooks run after their instruction):
 # after each animal's sprite (800CFE40 / 800D0198 with s0 the record), the first instruction past
 # the call's delay slot
