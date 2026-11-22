@@ -188,6 +188,7 @@ static void parse_script(const char *s) {
             g_cfg.birthdays = 0;                /* nor birthdays= */
             g_cfg.bellherd = 0;                 /* nor bellherd= */
             g_jukebox = 0;                      /* nor jukebox= */
+            g_cfg.animalmarks = 0;              /* nor animalmarks= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
             continue;
         }
@@ -223,6 +224,7 @@ static void parse_script(const char *s) {
                 n_jukebox_ev++;
             continue;
         }
+        if (!strncmp(tok, "animalmarks=", 12)) { g_cfg.animalmarks = atoi(tok + 12); continue; }
         if (!strncmp(tok, "randomnames=", 12)) { g_cfg.randomnames = atoi(tok + 12); continue; }
         if (!strncmp(tok, "split=", 6)) { g_split = atoi(tok + 6); continue; }
         if (!strncmp(tok, "cheats@", 7) && n_cheat_ev < CHEAT_EVENTS) {
@@ -593,6 +595,7 @@ int platform_init(void) {
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
             if (g_cfg.bellherd) fprintf(rec_file, "bellherd=%d\n", g_cfg.bellherd);
             if (g_jukebox) fprintf(rec_file, "jukebox=%d\n", g_jukebox);   /* the music changes the game's RAM */
+            if (g_cfg.animalmarks) fprintf(rec_file, "animalmarks=%d\n", g_cfg.animalmarks);
             if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
             if (g_split) fprintf(rec_file, "split=1\n");     /* the farmers in different places (machine.c) */
             fprintf(rec_file, "cheats=%d:%d:%d:%d:%d:%d\n", g_cfg.cheat_money, g_cfg.cheat_stamina, g_cfg.cheat_clock,

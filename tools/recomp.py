@@ -10,7 +10,7 @@ import struct, sys, os, json, re
 from collections import defaultdict
 from mips import decode, REG
 
-GAME_LANGS = ['en', 'pt', 'id', 'de']     # g_game_lang (runtime/psx_recomp.h)
+GAME_LANGS = ['en', 'pt', 'id', 'de', 'es']     # g_game_lang (runtime/psx_recomp.h)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # --extract DIR: the game files (default extract/; build.py --lang gives the translated disc's), and
@@ -518,7 +518,7 @@ MODULE_SITE_HOOKS = {
                 0x800BD0B8: 'first_house_cabinet();',
                 # walking through crops: the player's walk's collision mask (800CB114, after the
                 # branches that join at 800CB1CC) and the field's answer for a crop (runtime/fixes.c)
-                0x800CB1CC: 'R[10] = crop_walk_mask(R[10], R[18], R[16]);',
+                0x800CB1CC: 'R[10] = crop_walk_mask(c, R[10], R[18], R[16], R[29]);',
                 0x800BE818: 'R[2] = crop_walk_solid(c, R[2], R[17], R[3], R[9]);',
                 # a Harvest Sprite at work heads straight for its bed: the walk of the characters
                 # (800D12B8) has just picked a way (800D196C, back at 800D1744: v0 the way, s2 the
@@ -686,6 +686,11 @@ MODULE_SITE_HOOKS['GF_FARM'].update({
 # The jukebox (F7, runtime/jukebox.c; a site hook runs after its instruction): the farm's music
 # just picked by 800BCB5C (v0, back at 800BC888 in 800BC868)
 MODULE_SITE_HOOKS['GF_FARM'][0x800BC88C] = 'R[2] = jukebox_song(R[2]);'
+# Marks over the animals (animalmarks, runtime/marks.c; site hooks run after their instruction):
+# after each animal's sprite (800CFE40 / 800D0198 with s0 the record), the first instruction past
+# the call's delay slot
+MODULE_SITE_HOOKS['GF_FARM'].update({a: 'animal_marks(c);' for a in (
+    0x800D2EEC, 0x800DE840, 0x800E0418, 0x800E1F38, 0x80108C94, 0x8010B188)})
 # ... and the texts those screens show (delay slot of each jal 8001AC10, the message box)
 MODULE_TEXT_HOOKS = {'saveload': (0x8001AC10, 'R[6] = memcard_text(R[6]);')}
 

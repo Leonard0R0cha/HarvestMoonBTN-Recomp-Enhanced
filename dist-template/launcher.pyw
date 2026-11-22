@@ -69,7 +69,7 @@ if getattr(sys, 'frozen', False) and sys.argv[1:2] and sys.argv[1].endswith('.py
 BUTTONS = ['up', 'down', 'left', 'right', 'cross', 'circle', 'square', 'triangle',
            'l1', 'r1', 'l2', 'r2', 'start', 'select']
 # the languages of the game's text (build.py --lang); each built one is kept in languages/
-GAME_LANGS = ['en', 'pt', 'id', 'de']
+GAME_LANGS = ['en', 'pt', 'id', 'de', 'es']
 # (page, ini section, key, kind)   kind: file, dir, spinN (1..N), bool, bool:1 (on unless set to 0),
 # text, key (keyboard keys: typed, or caught with the Set/Add buttons), pad (controller buttons: typed or
 # picked from PAD_BUTTONS), choice:a|b|c, edit:a|b|c (a choice that can also be typed)
@@ -116,6 +116,7 @@ OPTIONS = [
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
     ('mods', 'behaviour', 'bellherd', 'bool'),
+    ('mods', 'behaviour', 'animalmarks', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
     ('mods', 'behaviour', 'birthdays', 'bool'),
@@ -299,6 +300,7 @@ TEXT = {
                      'and out to the pasture, where they stand in rows in front of the barn. Ring it on the pasture: they all walk back in, '
                      'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
                      'may stay behind: ring again. It works on rainy days too. Off: the bell only calls some animals to you.'),
+        'animalmarks': ('Marks over the animals', 'Over each cow, sheep, chicken, your horse and your dog, a small icon for each thing still left today: a speech bubble (talk), a brush, a milk bottle, scissors (shear) and a feed sack (the hens). Each icon goes away once it is done; an animal with nothing left shows nothing. They start again the next day.'),
         'friendpage': ('Town friendships page', 'One more page in the START menu (Left / Right): the 32 people of the town with their hearts (the bachelorettes in their heart colour); Up / Down pick one to see their portrait (the redrawn one with Redrawn portraits) and whether you talked to them and gave them a gift today.'),
         'birthdays': ('Birthdays on the calendar', 'The calendar in your house marks with a heart the days someone in town (or a Harvest Sprite) has a birthday, and X on that day tells whose birthday it is.'),
         'randomnames': ('Random names', 'On the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal; press it again for another. Your own lists go in names.txt next to the game.'),
@@ -397,6 +399,7 @@ TEXT = {
                      'e saem para o pasto, onde ficam em fileiras na frente do celeiro. Toque o sino no pasto: todas voltam andando para dentro, '
                      'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
                      'para trás: toque de novo. Funciona também em dia de chuva. Desligado: o sino só chama alguns animais até você.'),
+        'animalmarks': ('Marcas em cima dos animais', 'Em cima de cada vaca, ovelha, galinha, do cavalo e do cachorro, um ícone para cada coisa que ainda falta hoje: balão de fala (conversar), escova, garrafa de leite (ordenhar), tesoura (tosquiar) e saco de ração (galinhas). Cada ícone some quando você faz; animal sem nada faltando não mostra nada. Recomeça no dia seguinte.'),
         'friendpage': ('Página de amizades da cidade', 'Mais uma página no menu START (Esquerda / Direita): os 32 moradores com os corações (as garotas na cor do coração delas); Cima / Baixo escolhem um para ver o retrato (o redesenhado, com Retratos redesenhados) e se você já conversou e deu presente hoje.'),
         'birthdays': ('Aniversários no calendário', 'O calendário da sua casa marca com um coração os dias de aniversário dos moradores (e dos duendes), e o X no dia diz de quem é o aniversário.'),
         'randomnames': ('Nomes aleatórios', 'Na tela de nome, o Select sorteia um nome para o fazendeiro, a fazenda, o cachorro, o cavalo, o bebê ou o animal; aperte de novo para outro. Suas próprias listas vão no names.txt, na pasta do jogo.'),
@@ -498,6 +501,7 @@ TEXT = {
                      'la puerta y salen al prado, donde quedan en filas frente al establo. Tócala en el prado: todas vuelven caminando adentro, '
                      'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '
                      'se quedan atrás: toca otra vez. También funciona en días de lluvia. Desactivado: la campana solo llama a algunos animales.'),
+        'animalmarks': ('Marcas sobre los animales', 'Sobre cada vaca, oveja, gallina, tu caballo y tu perro, un icono por cada cosa que aún falta hoy: bocadillo (hablar), cepillo, botella de leche (ordeñar), tijeras (esquilar) y saco de pienso (gallinas). Cada icono se va al hacerlo; un animal sin nada pendiente no muestra nada. Vuelven al día siguiente.'),
         'friendpage': ('Página de amistades del pueblo', 'Una página más en el menú START (Izquierda / Derecha): las 32 personas del pueblo con sus corazones (las chicas en el color de su corazón); Arriba / Abajo eligen una para ver su retrato (el redibujado, con Retratos redibujados) y si ya hablaste con ella y le diste un regalo hoy.'),
         'birthdays': ('Cumpleaños en el calendario', 'El calendario de tu casa marca con un corazón los días de cumpleaños de la gente del pueblo (y de los duendes), y X en ese día dice de quién es el cumpleaños.'),
         'randomnames': ('Nombres al azar', 'En la pantalla de nombre, Select elige un nombre al azar para el granjero, la granja, el perro, el caballo, el bebé o el animal; púlsalo otra vez para otro. Tus propias listas van en names.txt, junto al juego.'),
@@ -621,7 +625,7 @@ UI = {
         'built': 'Done: the game is ready.', 'build_failed': 'The build stopped: the last lines above say why.',
         'need_cue': 'Choose your disc image (.cue or .bin) first.',
         'built_lang': 'The game built here is in %s.', 'lang_en': 'English', 'lang_pt': 'Portuguese',
-        'lang_id': 'Indonesian', 'lang_de': 'German',
+        'lang_id': 'Indonesian', 'lang_de': 'German', 'lang_es': 'Spanish',
         'gamelang': 'Game language', 'gamelang_sub': 'The language of the game\'s own text: dialogue, menus and '
         'items. This launcher\'s language is the flags at the top.',
         'gl_en': 'English', 'gl_en_d': 'The original text of the USA disc.',
@@ -634,11 +638,14 @@ UI = {
         '.zip with them), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". Rev 0 and the French disc '
         'do not work. Its dialogue is put onto a copy of your disc (disc-de folder). Menus and items stay in '
         'English.',
+        'gl_es': 'Español', 'gl_es_d': 'Fan translation of the dialogue, with its own font (ñ, accents). The '
+        'first time its text is downloaded and put onto a copy of your disc (disc-es folder). Menus and items '
+        'stay in English.',
         'gl_ready': 'Built: switches at once.', 'gl_first': 'The first time, Play builds the game in it '
         '(about a minute).',
         'gl_now': 'In use now.', 'gl_coop': 'Online co-op: both players need the same language. The texts '
-        'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian '
-        'and German.',
+        'of this port\'s own extras (building menu, sprites, memory card) stay in English in Indonesian, '
+        'German and Spanish.',
         'update': 'Update to %s', 'update_note': 'Launcher %s is out.',
         'updating': 'Downloading the new launcher...', 'update_failed': 'The update failed: %s',
         'portraits_get': 'Downloading the redrawn portraits... %d%%',
@@ -735,7 +742,7 @@ UI = {
         'built': 'Pronto: o jogo está montado.', 'build_failed': 'A montagem parou: as últimas linhas acima dizem por quê.',
         'need_cue': 'Escolha primeiro a imagem do disco (.cue ou .bin).',
         'built_lang': 'O jogo montado aqui está em %s.', 'lang_en': 'inglês', 'lang_pt': 'português',
-        'lang_id': 'indonésio', 'lang_de': 'alemão',
+        'lang_id': 'indonésio', 'lang_de': 'alemão', 'lang_es': 'espanhol',
         'gamelang': 'Idioma do jogo', 'gamelang_sub': 'A língua do texto do próprio jogo: falas, menus e itens. '
         'A língua deste launcher são as bandeiras lá em cima.',
         'gl_en': 'English', 'gl_en_d': 'O texto original do disco americano.',
@@ -748,11 +755,14 @@ UI = {
         '.zip com eles), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". O Rev 0 e o disco francês '
         'não servem. As falas dele vão para uma cópia do seu disco (pasta disc-de). Menus e itens ficam em '
         'inglês.',
+        'gl_es': 'Español', 'gl_es_d': 'Tradução de fã das falas, com fonte própria (ñ, acentos). Na primeira '
+        'vez o texto dela é baixado e posto numa cópia do seu disco (pasta disc-es). Menus e itens ficam em '
+        'inglês.',
         'gl_ready': 'Montado: troca na hora.', 'gl_first': 'Na primeira vez, o Jogar monta o jogo nela '
         '(cerca de um minuto).',
         'gl_now': 'Em uso agora.', 'gl_coop': 'Coop online: os dois precisam da mesma língua. Os textos dos '
-        'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio e no '
-        'alemão.',
+        'extras deste port (menu de obras, duendes, memory card) ficam em inglês no indonésio, no '
+        'alemão e no espanhol.',
         'update': 'Atualizar para %s', 'update_note': 'Saiu o launcher %s.',
         'updating': 'Baixando o novo launcher...', 'update_failed': 'A atualização falhou: %s',
         'portraits_get': 'Baixando os retratos redesenhados... %d%%',
@@ -851,7 +861,7 @@ UI = {
         'arriba dicen por qué.',
         'need_cue': 'Elige primero la imagen del disco (.cue o .bin).',
         'built_lang': 'El juego construido aquí está en %s.', 'lang_en': 'inglés', 'lang_pt': 'portugués',
-        'lang_id': 'indonesio', 'lang_de': 'alemán',
+        'lang_id': 'indonesio', 'lang_de': 'alemán', 'lang_es': 'español',
         'gamelang': 'Idioma del juego', 'gamelang_sub': 'El idioma del texto del propio juego: diálogos, menús '
         'y objetos. El idioma de este launcher son las banderas de arriba.',
         'gl_en': 'English', 'gl_en_d': 'El texto original del disco de EE. UU.',
@@ -864,11 +874,14 @@ UI = {
         '+ .cue (o un .zip con ellos), "Harvest Moon - Back to Nature (Europe) (En,De) (Rev 1)". El Rev 0 y el '
         'disco francés no sirven. Sus diálogos se ponen en una copia de tu disco (carpeta disc-de). Los menús '
         'y objetos quedan en inglés.',
+        'gl_es': 'Español', 'gl_es_d': 'Traducción de fans de los diálogos, con su propia fuente (ñ, acentos). '
+        'La primera vez su texto se descarga y se pone en una copia de tu disco (carpeta disc-es). Los menús '
+        'y objetos quedan en inglés.',
         'gl_ready': 'Construido: cambia al instante.', 'gl_first': 'La primera vez, Jugar construye el juego '
         'en él (cerca de un minuto).',
         'gl_now': 'En uso ahora.', 'gl_coop': 'Coop online: los dos necesitan el mismo idioma. Los textos de '
-        'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio y '
-        'alemán.',
+        'los extras de este port (menú de obras, duendes, memory card) quedan en inglés en indonesio, '
+        'alemán y español.',
         'update': 'Actualizar a %s', 'update_note': 'Salió el launcher %s.',
         'updating': 'Descargando el nuevo launcher...', 'update_failed': 'La actualización falló: %s',
         'portraits_get': 'Descargando los retratos redibujados... %d%%',

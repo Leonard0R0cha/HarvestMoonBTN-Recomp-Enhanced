@@ -128,7 +128,8 @@ static const char *word(int i) {
     static const char *const en[] = { "Friendships", "Talked", "Gift", "Doctor", "of" };
     static const char *const pt[] = { "Amizades da cidade", "Falou", "Presente", "Doutor", "de" };
     static const char *const id[] = { "Pertemanan", "Bicara", "Hadiah", "Dokter", "dari" };
-    return GAME_PT ? pt[i] : g_game_lang == 2 ? id[i] : en[i];
+    static const char *const es[] = { "Amistades", "Habló", "Regalo", "Doctor", "de" };
+    return GAME_PT ? pt[i] : g_game_lang == 2 ? id[i] : g_game_lang == 4 ? es[i] : en[i];
 }
 
 /* the title's text, where the menu's routine is about to draw it (a1 at 800FC220) */
@@ -461,6 +462,7 @@ void birthday_text_loaded(void) {
         if (GAME_PT) snprintf(line, sizeof line, "Anivers\xC3\xA1rio de %s", name);
         else if (g_game_lang == 2) snprintf(line, sizeof line, "Ulang tahun %s", name);
         else if (g_game_lang == 3) snprintf(line, sizeof line, "%s hat Geburtstag", name);
+        else if (g_game_lang == 4) snprintf(line, sizeof line, "Cumpleaños de %s", name);
         else snprintf(line, sizeof line, "%s's birthday", name);
         if (i) at = put_bday(at, "\n");
         at = put_bday(at, line);
