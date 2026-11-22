@@ -41,9 +41,9 @@ extern const int g_num_modules;
 /* the language of the game's text (generated, from the disc the code came from): 0 English, 1 Portuguese,
  * 2 Indonesian (tools/recomp.py GAME_LANGS) */
 extern const int g_game_lang;
-extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de": the launcher reads it in the exe */
+extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de" / "es": the launcher reads it in the exe */
 #define GAME_PT (g_game_lang == 1)
-#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de" */
+#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de", "es" */
 
 extern uint8_t g_ram[0x200000];
 extern uint8_t g_scratch[0x400];
