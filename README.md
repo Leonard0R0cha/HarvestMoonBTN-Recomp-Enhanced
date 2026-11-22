@@ -385,7 +385,7 @@ plays. All are off by default; in online co-op the host's choice counts.
 | `bellherd` | The bell herds the animals: ringing the bell in the barn, every cow and sheep there walks out through the door to the pasture in front of it (in rows, not on top of each other); ringing it on the pasture, they all walk back in, each to the spot it left from. The ones at the back of the barn may stay behind the troughs: ring again |
 | `animalmarks` | Marks over the animals: over each cow, sheep, chicken, the horse and the dog, a small icon for each care still left today (talk, brush, milk, shear, feed); each goes away once done, and they come back the next day |
 | `randomnames` | Random names: on the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal (again for another). The lists follow the game's language; your own go in `names.txt` next to the exe (see `names-example.txt`; not read online, where both sides use the built-in lists) |
-| `cropwalk` | Walk through crops and weeds: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach |
+| `cropwalk` | Walk through crops and weeds: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach; X picks the ripe crop (or weed) in front of you, or the ripe one under you, without lining up |
 | `staminabar` | Stamina under the clock: a window under the clock shows your stamina (S) and tiredness (F), which the game never shows |
 | `bulkfood` | Buy food in bulk: at a shop shelf you choose how many: one stays in your hands, the rest go to the rucksack and then the fridge |
 

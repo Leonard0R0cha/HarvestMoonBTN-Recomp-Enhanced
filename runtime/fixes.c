@@ -76,11 +76,85 @@ static uint32_t run_through_mask(uint32_t mask, uint32_t player) {
     return mask & ~ANIMAL_BITS;
 }
 
-uint32_t crop_walk_mask(uint32_t mask, uint32_t why, uint32_t player) {
+
+
+/* What X faces is tested 128 ahead of the player (800CB114, its point at sp+32 / sp+40), and a field
+ * is about 400 across: standing on the fields, as cropwalk lets the player do, the point is mostly
+ * in the player's own field, so the crop in front was only reached from the last 128 of the field
+ * (the player had to line up). On the farm and in the greenhouse, when the point is in the player's
+ * own field: if the next field that way has a ripe crop or a weed the point goes into it, else a
+ * ripe crop under the player is what X faces. Rows grow towards -z. */
+#define FIELD_RECORDS 0x8004B1A4u
+#define FARM_GRID 0x80071DFCu
+#define GH_GRID 0x80074124u
+#define AREA_KIND 0x800A0466u
+#define MAP_NOW 0x800A046Cu
+uint32_t gh_addr(uint32_t a);
+
+static uint32_t game_call(CPU *c, uint32_t at, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3);
+static int face_own_ripe;   /* this X test: the crop under the player is ripe and counts */
+
+/* the field (col, row) under x, z as the game works it out (800D7EF8 the farm, 8011E090 the
+ * greenhouse: the farm's divides by 399, so a field is not quite 400 there); 0 out of the grid */
+static int field_at(CPU *c, uint32_t sp, int gh, int32_t x, int32_t z, int *col, int *row) {
+    uint32_t p = sp - 0x40u;
+    MEM_W32(p, (uint32_t)x);
+    MEM_W32(p + 4u, 0);
+    MEM_W32(p + 8u, (uint32_t)z);
+    if (game_call(c, gh ? 0x8011E090u : 0x800D7EF8u, p, p + 16u, p + 18u, 0)) return 0;
+    *col = (int16_t)MEM_R16(p + 16u);
+    *row = (int16_t)MEM_R16(p + 18u);
+    return 1;
+}
+
+static uint32_t field_addr(int gh, int col, int row) {
+    return gh ? gh_addr(GH_GRID + (uint32_t)((row * 7 + col) * 8)) : FARM_GRID + (uint32_t)((row * 45 + col) * 8);
+}
+
+/* a crop ready to pick (80110790, the sprites' test) or a weed */
+static int ripe_in(CPU *c, int gh, int col, int row) {
+    uint32_t at = field_addr(gh, col, row);
+    uint32_t rec = FIELD_RECORDS + (uint32_t)MEM_R16(at) * 40u;
+    if (MEM_R16(rec) == WEED_FLAGS && MEM_R16(rec + 14) == WEED_ITEM) return 1;
+    if (MEM_R16(rec) != CROP_FLAGS || (int8_t)MEM_R8(rec + 3) == -1) return 0;
+    return game_call(c, 0x80110790u, at, 0, 0, 0) != 0;
+}
+
+static void crop_face_point(CPU *c, uint32_t sp, uint32_t player) {
+    face_own_ripe = 0;
+    uint16_t kind = MEM_R16(AREA_KIND);
+    int gh = kind == 6;
+    if (!gh && kind != 1 && MEM_R32(MAP_NOW) - 20u > 3u) return;
+    int32_t x = (int32_t)MEM_R32(player + 256), z = (int32_t)MEM_R32(player + 264);
+    int32_t px = (int32_t)MEM_R32(sp + 32), pz = (int32_t)MEM_R32(sp + 40);
+    int col, row, pc, pr;
+    if (!field_at(c, sp, gh, x, z, &col, &row) || !field_at(c, sp, gh, px, pz, &pc, &pr)) return;
+    if (pc != col || pr != row) return;                    /* the point is past the field already */
+    int32_t dx = px - x, dz = pz - z;
+    if (dx == 0 && dz == 0) return;
+    int32_t sx = dx > 0 ? 8 : dx < 0 ? -8 : 0, sz = dz > 0 ? 8 : dz < 0 ? -8 : 0;
+    if ((dx < 0 ? -dx : dx) >= (dz < 0 ? -dz : dz)) sz = 0; else sx = 0;
+    for (int k = 0; k < 60; k++) {                         /* on to the next field that way */
+        px += sx;
+        pz += sz;
+        int nc, nr;
+        if (!field_at(c, sp, gh, px, pz, &nc, &nr)) break;
+        if (nc == col && nr == row) continue;
+        if (ripe_in(c, gh, nc, nr)) {
+            MEM_W32(sp + 32, (uint32_t)(px + sx));
+            MEM_W32(sp + 40, (uint32_t)(pz + sz));
+            return;
+        }
+        break;
+    }
+    face_own_ripe = ripe_in(c, gh, col, row);              /* else the ripe one under the player */
+}
+
+uint32_t crop_walk_mask(CPU *c, uint32_t mask, uint32_t why, uint32_t player, uint32_t sp) {
     if (why == 56 || why == 0) mask = run_through_mask(mask, player);
     if (!g_cfg.cropwalk) return mask;
     if (why == 56 || why == 0) return mask | CROP_WALK;
-    if (why == 24) return mask | CROP_FACE;
+    if (why == 24) { crop_face_point(c, sp, player); return mask | CROP_FACE; }
     return mask;
 }
 
@@ -110,7 +184,7 @@ uint32_t crop_walk_solid(CPU *c, uint32_t solid, uint32_t query, uint32_t record
                (MEM_R16(record) == WEED_FLAGS && MEM_R16(record + 14) == WEED_ITEM);
     if (!crop) return solid;
     if (mask & CROP_WALK) return 0;
-    return own_field(c) ? 0 : solid;
+    return own_field(c) && !face_own_ripe ? 0 : solid;
 }
 
 /* Shipping bins that take what falls near them (shipreach): a thrown item (52 bytes, a0 of its
