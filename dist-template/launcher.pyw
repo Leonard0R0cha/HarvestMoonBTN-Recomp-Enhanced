@@ -1964,10 +1964,12 @@ def main():
         if job['proc']:
             return
         disc = game_data(val('disc'))
+        make_pak = val('build_pak') == '1'
         if not disc or not disc.lower().endswith(('.cue', '.bin')):
             disc = None                     # a rebuild can do with the files a build took from the disc
-            if val('build_pak') == '1' or not all(os.path.exists(os.path.join(WORK, 'extract', n))
-                                                  for n in GAME_FILES):
+            if make_pak and os.path.exists(os.path.join(HERE, 'HarvestMoonBTN.pak')):
+                make_pak = False            # no disc image to make it from, and the pack made before stays
+            if make_pak or not all(os.path.exists(os.path.join(WORK, 'extract', n)) for n in GAME_FILES):
                 messagebox.showwarning('Harvest Moon', T('need_cue'))
                 return
         save()
@@ -1980,7 +1982,7 @@ def main():
         own_cc = os.name != 'nt' and not getattr(sys, 'frozen', False) and shutil.which('cc')
         cmds = [] if own_cc else [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']]
         cmds.append([sys.executable, os.path.join(WORK, 'build.py'), '--into', HERE] +
-                    (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []) +
+                    (['--disc', disc] if disc else []) + (['--pak'] if make_pak else []) +
                     (['--lang', want_lang()] if want_lang() != 'en' else []))
         env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1', PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
         lines = queue.Queue()
@@ -2344,7 +2346,23 @@ def main():
 
     for v in vars_.values():
         v.trace_add('write', changed)
-    vars_['build_pak'] = tk.StringVar(value='0')    # the Build page's, not a setting
+    # the Build page's, kept in [launcher] (the rebuild after an update makes the pack again); never chosen:
+    # on if a pack is already there
+    vars_['build_pak'] = tk.StringVar(value=loaded.get('build_pak') if loaded.get('build_pak') in ('0', '1') else
+                                      '1' if os.path.exists(os.path.join(HERE, 'HarvestMoonBTN.pak')) else '0')
+
+    def keep_pak(*_):
+        nonlocal text
+        try:
+            if os.path.exists(INI):
+                text = open(INI, encoding='utf-8').read()
+            text = set_ini(text, 'launcher', 'build_pak', val('build_pak'))
+            with open(INI, 'w', encoding='utf-8') as f:
+                f.write(text)
+            loaded['build_pak'] = val('build_pak')
+        except Exception:
+            pass
+    vars_['build_pak'].trace_add('write', keep_pak)
     build()
     if rebuild:
         start_build()
