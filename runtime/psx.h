@@ -294,6 +294,7 @@ typedef struct {
     int  biggreenhouse;         /* a built greenhouse is 7 x 19 fields */
     int  runthrough;            /* running goes through the cows, sheep and horse (fixes.c) */
     int  bellherd;              /* the bell leads the barn's animals out, the farm's in (bell.c) */
+    int  animalmarks;           /* icons over the animals for the cares left today (marks.c) */
     int  randomnames;           /* Select on the naming screen fills in a random name (names.c) */
     int  buildorder;            /* the carpenter lets the player pick the next building (buildorder.c) */
     int  sturdygreenhouse;      /* typhoons and blizzards do not break the greenhouse */
