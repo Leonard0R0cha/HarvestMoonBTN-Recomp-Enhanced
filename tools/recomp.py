@@ -495,6 +495,10 @@ SITE_HOOKS[0x8001FAD8] = 'g_sfx_quiet = 0;'
 # (runtime/fixes.c)
 SITE_HOOKS[0x8001254C] = 'small_draw_room();'
 SITE_HOOKS[0x800127C8] = 'small_draw_room();'
+# the new game's birthday screen: the four seasons' icons (a1 at 80023504) and names (a2 at
+# 80023530) spread over the box when a translated name is too long for 64 pixels (runtime/fixes.c)
+SITE_HOOKS[0x80023504] = 'R[5] = season_icon_x(c, R[17], R[5]);'
+SITE_HOOKS[0x80023530] = 'R[6] = season_name_x(R[17], R[6]);'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =

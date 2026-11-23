@@ -312,6 +312,8 @@ uint32_t sprite_walk_way(CPU *c, uint32_t way);
 void sprite_face_bed(CPU *c);
 uint32_t bulk_food_pay(CPU *c, uint32_t minus_price);
 uint32_t greenhouse_storm(uint32_t breaks);
+uint32_t season_icon_x(CPU *c, uint32_t season, uint32_t x);
+uint32_t season_name_x(uint32_t season, uint32_t x);
 uint32_t gh_addr(uint32_t a);                    /* greenhouse.c: the bigger greenhouse */
 int gh_field_at(CPU *c);
 uint32_t gh_row_ok(uint32_t y, uint32_t ok);
