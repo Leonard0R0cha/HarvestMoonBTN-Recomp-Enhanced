@@ -20,7 +20,8 @@
  * The rest of the hiring stays the game's own.
  *
  * Talking to a sprite under contract on the farm, or in the barn or the coop (a day or more left: the last day it works too), says what it does and asks whether it should do another job: the answer changes its job,
- * the days stay. The talk picks its text in 8010DC94 / 8010DC98 (bank in a0, number in a1); the text
+ * the days stay. The same menu renews the contract of every sprite under one (left / right: 7 or 30
+ * more days, the hire's price a sprite), so it need not run out and be made again at their house. The talk picks its text in 8010DC94 / 8010DC98 (bank in a0, number in a1); the text
  * system (80022B98) stores a menu's answer at gp+836 (80022CD8) and closes the window. */
 #include "psx.h"
 #include "psx_recomp.h"
@@ -66,6 +67,10 @@ enum { NONE, COUNT, DAYS, HIRE, NO_MONEY };
 enum { T_NONE, T_COUNT, T_DAYS, T_DONE, T_NO_MONEY, T_JOBS };
 
 static int phase, want_text, how_many, most, hire_days, cost, count_at, job_menu;
+/* the job menu (the window shows 4 lines and its cursor goes no further: the first line and 3
+ * answers): the job line (left / right: which job) and the renew line (1 week / 30 days) */
+static int renew_at, renew_month, renew_count, job_at, job_pick;
+#define MENU_CURSOR 0x8005E4A4u     /* halfword: the menu's line under the cursor (0 the first) */
 static uint32_t job_sprite;
 static uint32_t pad_was;
 
@@ -452,10 +457,62 @@ static uint32_t put_words(uint32_t at, const char *s) {
     return at;
 }
 
+/* the sprites under contract (a day or more left and a job): the ones a renewal is for */
+static int contracted(void) {
+    int n = 0;
+    for (int i = 0; i < SPRITE_COUNT; i++)
+        if (MEM_R16(sprite(i) + 180) >= 1 && (MEM_R16(sprite(i) + 184) & 7u)) n++;
+    return n;
+}
+
+#define RENEW_FIELD 26             /* the renew line's glyphs (padded): rewritten in place by left / right */
+
+static uint32_t put_renew(uint32_t at) {
+    uint32_t start = at;
+    int price = renew_count * (renew_month ? MONTH_PRICE : WEEK_PRICE);
+    if (GAME_PT) at = put_words(at, renew_month ? "Renovar < 30 dias > " : "Renovar < 1 semana > ");
+    else at = put_words(at, renew_month ? "Renew < 30 days > " : "Renew < 1 week > ");
+    at = put_number(at, price);
+    at = put_words(at, "G");
+    while (at - start < RENEW_FIELD) at = put(at, 0x0FFD);
+    return at;
+}
+
+#define JOB_FIELD 24                /* the job line's glyphs (padded), as the renew line's */
+
+/* the job the first line offers (left / right go through the three) */
+static uint32_t put_job_pick(uint32_t at) {
+    uint32_t start = at;
+    static const char *const pt[3] = { "Colher", "Regar", "Animais" };
+    static const char *const en[3] = { "Harvest", "Water", "Animals" };
+    at = put_words(at, GAME_PT ? "Trocar para < " : "Switch to < ");
+    at = put_words(at, (GAME_PT ? pt : en)[job_pick - 1]);
+    at = put_words(at, " >");
+    while (at - start < JOB_FIELD) at = put(at, 0x0FFD);
+    return at;
+}
+
+/* the job menu's first line: the job and the days left (today too: the last day it works) */
+static uint32_t put_job_line(uint32_t at, uint32_t rec) {
+    uint32_t job = MEM_R16(rec + 184);
+    int days = MEM_R16(rec + 180);
+    if (GAME_PT) {
+        at = put_words(at, job & 1u ? "Colhendo, " : job & 2u ? "Regando, " : "Nos animais, ");
+        at = put_words(at, days == 1 ? "falta " : "faltam ");
+        at = put_number(at, days);
+        at = put_words(at, days == 1 ? " dia." : " dias.");
+    } else {
+        at = put_words(at, job & 1u ? "Harvesting, " : job & 2u ? "Watering, " : "With animals, ");
+        at = put_number(at, days);
+        at = put_words(at, days == 1 ? " day left." : " days left.");
+    }
+    return at;
+}
+
 /* a text was loaded (80022A94): written over when one of ours is wanted */
 void sprite_text_loaded(void) {
     if (g_view2_run) return;
-    if (want_text != T_JOBS) job_menu = 0;     /* another text: the job menu was left */
+    if (want_text != T_JOBS) job_menu = renew_at = job_at = 0;  /* another text: the job menu was left */
     if (!want_text) return;
     int which = want_text;
     want_text = T_NONE;
@@ -484,14 +541,18 @@ void sprite_text_loaded(void) {
         at = put_words(at, "G, budum.\nVolte quando tiver o dinheiro.");
         phase = NONE;
         break;
-    case T_JOBS: {
-        uint32_t job = MEM_R16(job_sprite + 184);
-        at = put_words(at, job & 1u ? "Estou colhendo agora, budum." : job & 2u ? "Estou regando agora, budum."
-                                                                         : "Estou com os animais, budum.");
-        at = put_words(at, "\nQuer que eu troque de serviço?| Colher a plantação\n Regar a plantação\n Cuidar dos animais\n Ah, deixa para lá.");
+    case T_JOBS:
+        load_arrows();
+        at = put_job_line(at, job_sprite);
+        at = put_words(at, "| ");
+        job_at = (int)at;
+        at = put_job_pick(at);
+        at = put_words(at, "\n ");
+        renew_at = (int)at;
+        at = put_renew(at);
+        at = put_words(at, "\n Ah, deixa para lá.");
         job_menu = 2;
         break;
-    }
     } else switch (which) {
     case T_COUNT:
         load_arrows();
@@ -515,14 +576,18 @@ void sprite_text_loaded(void) {
         at = put_words(at, "G, budum.\nCome back when you have it.");
         phase = NONE;
         break;
-    case T_JOBS: {
-        uint32_t job = MEM_R16(job_sprite + 184);
-        at = put_words(at, job & 1u ? "I'm harvesting now, budum." : job & 2u ? "I'm watering now, budum."
-                                                                      : "I'm with the animals, budum.");
-        at = put_words(at, "\nShould I change jobs?| Harvest the fields\n Water the fields\n Take care of the animals\n Oh, never mind.");
+    case T_JOBS:
+        load_arrows();
+        at = put_job_line(at, job_sprite);
+        at = put_words(at, "| ");
+        job_at = (int)at;
+        at = put_job_pick(at);
+        at = put_words(at, "\n ");
+        renew_at = (int)at;
+        at = put_renew(at);
+        at = put_words(at, "\n Oh, never mind.");
         job_menu = 2;
         break;
-    }
     }
     put(at, 0xFFFF);
 }
@@ -550,16 +615,43 @@ void sprite_talk_text(CPU *c) {
         || !(MEM_R16(rec + 184) & 7u)) return;
     job_sprite = rec;
     job_menu = 1;
+    renew_month = 0;
+    renew_count = contracted();
+    {   /* the job offered first: the next one after the sprite's */
+        uint32_t job = MEM_R16(rec + 184);
+        job_pick = job & 1u ? 2 : job & 2u ? 3 : 1;
+    }
     c->r[4] = 2;
     c->r[5] = (uint32_t)(int32_t)(int16_t)MEM_R16(SPRITE_TEXTS + MEM_R16(rec + 172) * 2u);
     want_text = T_JOBS;
 }
 
-/* a menu answered (80022CDC, a0 = 1.. the line): the job menu's (1-3 the jobs, as the hire menu's:
- * bits 1, 2, 4; 4 never mind) changes the sprite's job */
+/* a menu answered (80022CDC, a0 = 1.. the line): the job menu's (1 the job picked on that line, as
+ * the hire menu's: 1-3 = bits 1, 2, 4; 2 renew; 3 never mind) */
 void sprite_menu_answered(CPU *c, uint32_t answer) {
     if (g_view2_run || job_menu != 2) return;
     job_menu = 0;
+    renew_at = job_at = 0;
+    if (answer == 1) answer = (uint32_t)job_pick;
+    else if (answer == 2) answer = 4;
+    else return;
+    if (answer == 4) {
+        /* renew: every sprite under contract gets 7 or 30 more days for the price shown (talk
+         * again to see the days: no text can follow the answer) */
+        int price = renew_count * (renew_month ? MONTH_PRICE : WEEK_PRICE);
+        if (renew_count < 1 || (int32_t)MEM_R32(MONEY) < price) {
+            LOGI("sprites: renewing %d needs %dG", renew_count, price);
+            return;
+        }
+        MEM_W32(MONEY, MEM_R32(MONEY) - (uint32_t)price);
+        for (int i = 0; i < SPRITE_COUNT; i++) {
+            uint32_t r = sprite(i);
+            if (MEM_R16(r + 180) >= 1 && (MEM_R16(r + 184) & 7u))
+                MEM_W16(r + 180, (uint16_t)(MEM_R16(r + 180) + (renew_month ? 30 : 7)));
+        }
+        LOGI("sprites: %d renewed for %d days (%dG)", renew_count, renew_month ? 30 : 7, price);
+        return;
+    }
     if (answer < 1 || answer > 3) return;
     uint32_t rec = job_sprite;
     MEM_W16(rec + 184, (uint16_t)((MEM_R16(rec + 184) & ~7u) | (1u << (answer - 1))));
@@ -606,9 +698,27 @@ void sprite_menu_answered(CPU *c, uint32_t answer) {
          MEM_R16(rec + 38));
 }
 
-/* each tick the text window is drawn (80022B98): left / right change how many */
+/* each tick the text window is drawn (80022B98): left / right change how many, or in the job
+ * menu the renewal's length */
 void sprite_text_tick(CPU *c) {
-    if (g_view2_run || phase != COUNT || !count_at) return;
+    if (g_view2_run) return;
+    if (job_menu == 2 && renew_at) {
+        uint32_t held = MEM_R32(MEM_R32(PAD_STATE));
+        uint32_t pressed = held & ~pad_was;
+        pad_was = held;
+        if (!(pressed & (PAD_LEFT | PAD_RIGHT))) return;
+        uint16_t line = MEM_R16(MENU_CURSOR);
+        if (line == 0 && job_at) {
+            job_pick = pressed & PAD_RIGHT ? job_pick % 3 + 1 : (job_pick + 1) % 3 + 1;
+            put_job_pick((uint32_t)job_at);
+        } else if (line == 1) {
+            renew_month = !renew_month;
+            put_renew((uint32_t)renew_at);
+        } else return;
+        game_call(c, SOUND, 5, 0);
+        return;
+    }
+    if (phase != COUNT || !count_at) return;
     uint32_t held = MEM_R32(MEM_R32(PAD_STATE));
     uint32_t pressed = held & ~pad_was;
     pad_was = held;
