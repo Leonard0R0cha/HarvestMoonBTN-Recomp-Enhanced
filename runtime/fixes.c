@@ -255,6 +255,58 @@ int ship_reach(CPU *c) {
     return 1;
 }
 
+/* Doors that open from wider (doorreach): the doors outside that open with X (events of kind 9000
+ * in the area's list, 8009F78C + 16: +8 the way the farmer must face, 0 down / z-, 1 left / x-,
+ * 2 up / z+, 3 right / x+; the box x / z from +14 / +18 to +20 / +24) are taken by 800BDCE8 (a0
+ * the list, a1 the farmer's position) only with the farmer inside that box; the house's is 388
+ * across, so the farmer had to stand just there. With the option the boxes of those doors are made
+ * DOOR_SIDE wider each side and DOOR_OUT longer on the side the farmer comes from, for the
+ * player's (and farmer 2's, in the player's place) look while 800BDCE8 runs, and put back after:
+ * its answer for X (800C8C84) and for going through (800CDA44) is the same. The doors that are
+ * walked through (kind 0) and the ways out are left as they are. */
+#define DOOR_LIST 0x8009F78Cu
+#define DOOR_KIND 0x9000u
+#define DOOR_SIDE 160
+#define DOOR_OUT 120
+
+int door_box(uint32_t e, int32_t box[4]) {
+    box[0] = (int16_t)MEM_R16(e + 14); box[1] = (int16_t)MEM_R16(e + 18);
+    box[2] = (int16_t)MEM_R16(e + 20); box[3] = (int16_t)MEM_R16(e + 24);
+    if (!g_cfg.doorreach || MEM_R16(e + 2) == 0xFFFF || MEM_R16(e) != DOOR_KIND) return 0;
+    int16_t dir = (int16_t)MEM_R16(e + 8);
+    if (dir < 0 || dir > 3) return 0;
+    if (dir == 1 || dir == 3) { box[1] -= DOOR_SIDE; box[3] += DOOR_SIDE; }
+    else { box[0] -= DOOR_SIDE; box[2] += DOOR_SIDE; }
+    if (dir == 0) box[3] += DOOR_OUT;           /* faces z-: comes from z+ */
+    else if (dir == 1) box[2] += DOOR_OUT;      /* faces x-: comes from x+ */
+    else if (dir == 2) box[1] -= DOOR_OUT;
+    else box[0] -= DOOR_OUT;
+    return 1;
+}
+
+int door_reach(CPU *c) {
+    static int inside;
+    if (inside || !g_cfg.doorreach || c->r[4] != DOOR_LIST || c->r[5] != PLAYER_POS) return 0;
+    static const uint32_t at[4] = {14, 18, 20, 24};
+    uint16_t kept[50][4];
+    uint64_t wide = 0;
+    for (uint32_t i = 0; i < 50; i++) {
+        uint32_t e = DOOR_LIST + 16 + i * 44;
+        int32_t box[4];
+        if (!door_box(e, box)) continue;
+        wide |= 1ull << i;
+        for (int k = 0; k < 4; k++) { kept[i][k] = MEM_R16(e + at[k]); MEM_W16(e + at[k], (uint16_t)box[k]); }
+    }
+    if (!wide) return 0;
+    inside = 1;
+    call_addr(c, 0x800BDCE8u);
+    inside = 0;
+    for (uint32_t i = 0; i < 50; i++)
+        if (wide & (1ull << i))
+            for (int k = 0; k < 4; k++) MEM_W16(DOOR_LIST + 16 + i * 44 + at[k], kept[i][k]);
+    return 1;
+}
+
 /* The yellow Harvest Sprite at home (spritechair): the sprites stand at their spots in their house,
  * which 80110E34 copies each tick from a table of 7 (80127EE0, 16 bytes: x, y, z, facing) to the
  * sprite (a0; its spot at +172, its x, y, z at +56). The yellow one's (spot 3, -240, 0, -146) puts
@@ -732,4 +784,51 @@ void small_draw_room(void) {
     MEM_W32(FRAME_SET_A + 296, SMALL_ROOM);
     MEM_W32(FRAME_SET_B + 300, SMALL_START);
     MEM_W32(FRAME_SET_B + 296, SMALL_ROOM);
+}
+
+/* The new game's birthday screen (8002348C): the four seasons over the days, each an icon
+ * (80024A10 at x = 30 + 64 i) and its name (8001AA7C into 800A0708, drawn by 80017B3C at x + 12),
+ * all at y 60. Names longer than English ones ("Primavera") ran over the next icon: when one
+ * does not fit, the four are spread over the box (x 20..296) by their lengths, measured with the
+ * game's own 8001AA7C, each frame (season 0 comes first). */
+#define SEASON_NAME_AT 0x8001AA7Cu
+#define SEASON_NAME_BUF 0x800A0708u
+static int16_t season_xs[4];
+
+static void season_layout(CPU *c) {
+    uint32_t keep[32];
+    int w[4], sum = 0, fits = 1;
+    const int adv = g_game_lang == 5 ? 12 : 8;
+    memcpy(keep, c->r, sizeof keep);
+    for (int k = 0; k < 4; k++) {
+        c->r[4] = (uint32_t)k;
+        c->r[5] = SEASON_NAME_BUF;
+        call_addr(c, SEASON_NAME_AT);
+        int n = (int)((c->r[2] - SEASON_NAME_BUF) / 2);
+        w[k] = n > 0 ? n * adv - 2 : 0;
+        sum += w[k];
+        if (12 + w[k] > (k < 3 ? 62 : 295 - 222)) fits = 0;
+    }
+    memcpy(c->r, keep, sizeof keep);
+    memset(season_xs, 0, sizeof season_xs);
+    if (fits) return;
+    int gap = (272 - 48 - sum) / 3;   /* 2 pixels inside the box on each side */
+    if (gap < 2) gap = 2;
+    if (gap > 18) gap = 18;
+    int x = 22 + (272 - (48 + sum + 3 * gap)) / 2;
+    for (int k = 0; k < 4; k++) {
+        season_xs[k] = (int16_t)x;
+        x += 12 + w[k] + gap;
+    }
+}
+
+/* a1 of the icon's call (80023504, s1 the season) */
+uint32_t season_icon_x(CPU *c, uint32_t season, uint32_t x) {
+    if (season == 0) season_layout(c);
+    return season < 4 && season_xs[season] ? (uint32_t)season_xs[season] : x;
+}
+
+/* a2 of the name's call (80023530) */
+uint32_t season_name_x(uint32_t season, uint32_t x) {
+    return season < 4 && season_xs[season] ? (uint32_t)(season_xs[season] + 12) : x;
 }

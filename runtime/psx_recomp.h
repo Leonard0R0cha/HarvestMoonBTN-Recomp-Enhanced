@@ -251,6 +251,7 @@ void quick_bag_filter(void);
 /* p2.c: a second farmer, drawn by the player's drawing routine */
 void p2_draw(CPU *c);
 void p2_tick(CPU *c);
+void savestate_point(CPU *c);     /* the top of the game's frame loop (80011C80): a save state is made / put back (savestate.c) */
 void machine_farm_frame(CPU *c);  /* the farm's frame begins: the second machine parks / is taken up (machine.c) */
 int p2_way_out(CPU *c);           /* p2.c: the second machine's farmer 2 does not leave the farm */
 void p2view_frame(CPU *c);      /* entry of the farm's frame: run once more for farmer 2's window (p2view.c) */
@@ -313,6 +314,8 @@ uint32_t sprite_walk_way(CPU *c, uint32_t way);
 void sprite_face_bed(CPU *c);
 uint32_t bulk_food_pay(CPU *c, uint32_t minus_price);
 uint32_t greenhouse_storm(uint32_t breaks);
+uint32_t season_icon_x(CPU *c, uint32_t season, uint32_t x);
+uint32_t season_name_x(uint32_t season, uint32_t x);
 uint32_t gh_addr(uint32_t a);                    /* greenhouse.c: the bigger greenhouse */
 int gh_field_at(CPU *c);
 uint32_t gh_row_ok(uint32_t y, uint32_t ok);
@@ -337,6 +340,8 @@ void farm_area_loaded(uint32_t entry);
 void build_card_save(void);
 void build_card_load(void);      /* fixes.c: the greenhouse stands through the storms */
 uint32_t bulk_feed_most(CPU *c, uint32_t most);   /* ... and fodder / chicken feed up to 999 */
+int door_reach(CPU *c);                                /* X doors taken from wider (doorreach) */
+int door_box(uint32_t e, int32_t box[4]);              /* a door event's box, wider with doorreach */
 int ship_reach(CPU *c);                                /* a thrown item falling near a shipping bin */
 uint32_t sprite_spot_z(uint32_t z, uint32_t actor);    /* ... the yellow sprite off the chair */
 void p2_tick_end(void);

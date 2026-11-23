@@ -1,6 +1,6 @@
 /* The in-game overlay (F7, overlay.cpp, Dear ImGui): settings changed while the game is paused
  * (or runs behind it, with the player's controls on the overlay), drawn over the picture by either way of showing it (platform_sdl.c's SDL renderer, Vulkan's
- * vkr_present). The CRT filters and their settings, and the jukebox (the seasons' music). */
+ * vkr_present). The CRT filters and their settings, the jukebox (the seasons' music) and the save states. */
 #pragma once
 #ifdef __cplusplus
 extern "C" {
@@ -8,6 +8,7 @@ extern "C" {
 
 void overlay_init(int font_px);     /* the font's size in pixels */
 int  overlay_open(void);
+int  overlay_visible(void);         /* open, or a message of its own on the picture (a save state's result) */
 int  overlay_pauses(void);          /* open, with "Pause the game" on (else the game runs behind it) */
 void overlay_show(int on);
 /* an SDL_Event for the overlay (while open); mx, my: the window's pixels per mouse unit */
@@ -32,6 +33,17 @@ const char *config_language(void);          /* the launcher's: en, pt, es */
 int    platform_can_pause(void);            /* 0 in online co-op */
 int    jukebox_choice(void);                /* the farm's music chosen: 0 the game's, 1..4 seasons, 22 rain */
 void   jukebox_choose(int song);            /* ... (taken at the next frame, saved in hmbtn.ini) */
+
+/* save states (savestate.c): asked here, done at the game's next main-loop pass */
+#define SS_SLOTS 8
+enum { SS_NONE, SS_WAITING, SS_SAVED, SS_LOADED, SS_EMPTY, SS_BUSY, SS_TIMEOUT, SS_ONLINE, SS_APART, SS_OTHER, SS_ERROR };
+void savestate_request(int load, int slot);
+int  savestate_pending(void);
+int  savestate_status(int *slot, unsigned *serial);    /* the last result (SS_*), its slot; serial: +1 a result */
+int  savestate_slot(void);                  /* the one F8 / F10 use */
+void savestate_set_slot(int slot);
+int  savestate_slot_info(int slot, char *out, int n);  /* when it was saved; 0: empty */
+void overlay_state_text(char *out, int n);  /* overlay.cpp: the last result, in the launcher's language */
 
 #ifdef __cplusplus
 }

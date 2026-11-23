@@ -296,8 +296,10 @@ static void rep_override(const VkRep *r, unsigned u_lo, unsigned v_lo, unsigned 
 				px[size_t(y) * W + x] = c;
 			}
 		}
+		/* with its mip levels: a sprite drawn narrower than its texels (the HUD squeezed in 21:9) samples
+		 * level 1 or more, and a missing level reads as transparent: the image vanished */
 		ImageInitialData init = { px.data(), 0, 0 };
-		img = device->create_image(ImageCreateInfo::immutable_2d_image(W, H, VK_FORMAT_R8G8B8A8_UNORM), &init);
+		img = device->create_image(ImageCreateInfo::immutable_2d_image(W, H, VK_FORMAT_R8G8B8A8_UNORM, true), &init);
 	}
 	renderer->set_texture_override({ { int(st.tp_x + (ua >> shift)), int(st.tp_y + v_lo), int(nu >> shift), int(nv) },
 	                                 { 0, 0, int(W), int(H) }, img });
