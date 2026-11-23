@@ -116,6 +116,7 @@ OPTIONS = [
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
     ('mods', 'behaviour', 'bellherd', 'bool'),
+    ('mods', 'behaviour', 'doorreach', 'bool'),
     ('mods', 'behaviour', 'animalmarks', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
@@ -296,6 +297,9 @@ TEXT = {
         'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
         'buildorder': ('Pick the building order', 'Gotz asks which extension to build next (hen house, kitchen, barn, bigger house, greenhouse) instead of the fixed order; each keeps its own price and lumber.'),
         'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
+        'doorreach': ('Doors from wider', 'The doors you open with X (your house, the barn, the hen house, the shops in town) work from '
+                      'a wider spot in front of them: you do not need to stand just before the middle of the door. '
+                      'Off: only from the narrow original spot.'),
         'bellherd': ('The bell herds the animals', 'Ring the bell inside the barn: every cow and sheep there walks to the door on its own '
                      'and out to the pasture, where they stand in rows in front of the barn. Ring it on the pasture: they all walk back in, '
                      'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
@@ -395,6 +399,9 @@ TEXT = {
         'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
         'buildorder': ('Escolher a ordem das ampliações', 'O Gotz pergunta qual ampliação construir (galinheiro, cozinha, estábulo, casa maior, estufa) em vez da ordem fixa; cada uma com seu preço e sua madeira.'),
         'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
+        'doorreach': ('Portas com alcance maior', 'As portas que se abrem com X (a sua casa, o celeiro, o galinheiro, as lojas da cidade) '
+                      'funcionam de um trecho mais largo na frente delas: não precisa ficar bem no meio da porta. '
+                      'Desligado: só do ponto estreito do jogo original.'),
         'bellherd': ('Sino leva os animais', 'Toque o sino dentro do celeiro: todas as vacas e ovelhas de lá andam sozinhas até a porta '
                      'e saem para o pasto, onde ficam em fileiras na frente do celeiro. Toque o sino no pasto: todas voltam andando para dentro, '
                      'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
@@ -497,6 +504,9 @@ TEXT = {
         'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),
         'buildorder': ('Elegir el orden de las ampliaciones', 'Gotz pregunta qué ampliación construir (gallinero, cocina, establo, casa más grande, invernadero) en vez del orden fijo; cada una con su precio y su madera.'),
         'runthrough': ('Correr atraviesa los animales', 'Corriendo pasas a través de las vacas, las ovejas y el caballo; caminando sigues empujándolos.'),
+        'doorreach': ('Puertas con más alcance', 'Las puertas que se abren con X (tu casa, el establo, el gallinero, las tiendas del pueblo) '
+                      'funcionan desde un tramo más ancho frente a ellas: no hace falta quedarse justo en el medio de la puerta. '
+                      'Desactivado: solo desde el punto estrecho del juego original.'),
         'bellherd': ('La campana lleva a los animales', 'Toca la campana dentro del establo: todas las vacas y ovejas de allí caminan solas hasta '
                      'la puerta y salen al prado, donde quedan en filas frente al establo. Tócala en el prado: todas vuelven caminando adentro, '
                      'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '

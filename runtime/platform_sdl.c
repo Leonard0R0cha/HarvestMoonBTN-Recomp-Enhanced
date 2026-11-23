@@ -187,6 +187,7 @@ static void parse_script(const char *s) {
             g_cfg.friendpage = 0;               /* written only when on */
             g_cfg.birthdays = 0;                /* nor birthdays= */
             g_cfg.bellherd = 0;                 /* nor bellherd= */
+            g_cfg.doorreach = 0;                /* nor doorreach= */
             g_jukebox = 0;                      /* nor jukebox= */
             g_cfg.animalmarks = 0;              /* nor animalmarks= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
@@ -217,6 +218,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "buildorder=", 11)) { g_cfg.buildorder = atoi(tok + 11); continue; }
         if (!strncmp(tok, "runthrough=", 11)) { g_cfg.runthrough = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bellherd=", 9)) { g_cfg.bellherd = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "doorreach=", 10)) { g_cfg.doorreach = atoi(tok + 10); continue; }
         if (!strncmp(tok, "jukebox=", 8)) { jukebox_set(atoi(tok + 8)); continue; }
         if (!strncmp(tok, "jukebox@", 8)) {
             if (n_jukebox_ev < JUKEBOX_EVENTS &&
@@ -594,6 +596,7 @@ int platform_init(void) {
             if (g_cfg.buildorder) fprintf(rec_file, "buildorder=%d\n", g_cfg.buildorder);
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
             if (g_cfg.bellherd) fprintf(rec_file, "bellherd=%d\n", g_cfg.bellherd);
+            if (g_cfg.doorreach) fprintf(rec_file, "doorreach=%d\n", g_cfg.doorreach);
             if (g_jukebox) fprintf(rec_file, "jukebox=%d\n", g_jukebox);   /* the music changes the game's RAM */
             if (g_cfg.animalmarks) fprintf(rec_file, "animalmarks=%d\n", g_cfg.animalmarks);
             if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
