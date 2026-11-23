@@ -733,3 +733,50 @@ void small_draw_room(void) {
     MEM_W32(FRAME_SET_B + 300, SMALL_START);
     MEM_W32(FRAME_SET_B + 296, SMALL_ROOM);
 }
+
+/* The new game's birthday screen (8002348C): the four seasons over the days, each an icon
+ * (80024A10 at x = 30 + 64 i) and its name (8001AA7C into 800A0708, drawn by 80017B3C at x + 12),
+ * all at y 60. Names longer than English ones ("Primavera") ran over the next icon: when one
+ * does not fit, the four are spread over the box (x 20..296) by their lengths, measured with the
+ * game's own 8001AA7C, each frame (season 0 comes first). */
+#define SEASON_NAME_AT 0x8001AA7Cu
+#define SEASON_NAME_BUF 0x800A0708u
+static int16_t season_xs[4];
+
+static void season_layout(CPU *c) {
+    uint32_t keep[32];
+    int w[4], sum = 0, fits = 1;
+    const int adv = g_game_lang == 5 ? 12 : 8;
+    memcpy(keep, c->r, sizeof keep);
+    for (int k = 0; k < 4; k++) {
+        c->r[4] = (uint32_t)k;
+        c->r[5] = SEASON_NAME_BUF;
+        call_addr(c, SEASON_NAME_AT);
+        int n = (int)((c->r[2] - SEASON_NAME_BUF) / 2);
+        w[k] = n > 0 ? n * adv - 2 : 0;
+        sum += w[k];
+        if (12 + w[k] > (k < 3 ? 62 : 295 - 222)) fits = 0;
+    }
+    memcpy(c->r, keep, sizeof keep);
+    memset(season_xs, 0, sizeof season_xs);
+    if (fits) return;
+    int gap = (272 - 48 - sum) / 3;   /* 2 pixels inside the box on each side */
+    if (gap < 2) gap = 2;
+    if (gap > 18) gap = 18;
+    int x = 22 + (272 - (48 + sum + 3 * gap)) / 2;
+    for (int k = 0; k < 4; k++) {
+        season_xs[k] = (int16_t)x;
+        x += 12 + w[k] + gap;
+    }
+}
+
+/* a1 of the icon's call (80023504, s1 the season) */
+uint32_t season_icon_x(CPU *c, uint32_t season, uint32_t x) {
+    if (season == 0) season_layout(c);
+    return season < 4 && season_xs[season] ? (uint32_t)season_xs[season] : x;
+}
+
+/* a2 of the name's call (80023530) */
+uint32_t season_name_x(uint32_t season, uint32_t x) {
+    return season < 4 && season_xs[season] ? (uint32_t)(season_xs[season] + 12) : x;
+}
