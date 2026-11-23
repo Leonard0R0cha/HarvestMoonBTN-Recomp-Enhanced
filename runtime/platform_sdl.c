@@ -79,8 +79,10 @@ static char bind_pad[14][128] = {
     "leftshoulder", "rightshoulder", "lefttrigger", "righttrigger",
     "start", "back",
 };
-static SDL_Scancode key_codes[14][MAX_BIND];
-static int pad_codes[14][MAX_BIND];     /* SDL_GameControllerButton, or 1000+axis for triggers */
+/* fast-forward (held), not a PS button: key_fastforward / pad_fastforward, the last entry below */
+static char ff_keys[128] = "Tab", ff_pad[128] = "leftstick";
+static SDL_Scancode key_codes[15][MAX_BIND];
+static int pad_codes[15][MAX_BIND];     /* SDL_GameControllerButton, or 1000+axis for triggers */
 static int stick_as_dpad = 1;
 static int rumble = 1;
 
@@ -89,6 +91,7 @@ bool platform_set_binding(const char *key, const char *val) {
     if (!strcmp(key, "stick_as_dpad")) { stick_as_dpad = atoi(val); return true; }
     if (!strcmp(key, "rumble")) { rumble = atoi(val); return true; }
     if (!is_key && !is_pad) return false;
+    if (!strcmp(key + 4, "fastforward")) { snprintf(is_key ? ff_keys : ff_pad, 128, "%s", val); return true; }
     for (int i = 0; i < 14; i++) {
         if (!strcmp(key + 4, ps_buttons[i].name)) {
             snprintf(is_key ? bind_keys[i] : bind_pad[i], 128, "%s", val);
@@ -99,25 +102,26 @@ bool platform_set_binding(const char *key, const char *val) {
 }
 
 static void resolve_bindings(void) {
-    for (int i = 0; i < 14; i++) {
+    for (int i = 0; i < 15; i++) {
         for (int k = 0; k < MAX_BIND; k++) { key_codes[i][k] = SDL_SCANCODE_UNKNOWN; pad_codes[i][k] = -1; }
         char buf[128], *save = NULL;
-        snprintf(buf, sizeof buf, "%s", bind_keys[i]);
+        const char *what = i < 14 ? ps_buttons[i].name : "fastforward";
+        snprintf(buf, sizeof buf, "%s", i < 14 ? bind_keys[i] : ff_keys);
         int n = 0;
         for (char *t = strtok_r(buf, ",", &save); t && n < MAX_BIND; t = strtok_r(NULL, ",", &save)) {
             while (*t == ' ') t++;
             SDL_Scancode sc = SDL_GetScancodeFromName(t);
-            if (sc == SDL_SCANCODE_UNKNOWN) LOGW("unknown key name '%s' for %s", t, ps_buttons[i].name);
+            if (sc == SDL_SCANCODE_UNKNOWN) LOGW("unknown key name '%s' for %s", t, what);
             else key_codes[i][n++] = sc;
         }
-        snprintf(buf, sizeof buf, "%s", bind_pad[i]);
+        snprintf(buf, sizeof buf, "%s", i < 14 ? bind_pad[i] : ff_pad);
         n = 0;
         for (char *t = strtok_r(buf, ",", &save); t && n < MAX_BIND; t = strtok_r(NULL, ",", &save)) {
             while (*t == ' ') t++;
             if (!strcmp(t, "lefttrigger")) { pad_codes[i][n++] = 1000 + SDL_CONTROLLER_AXIS_TRIGGERLEFT; continue; }
             if (!strcmp(t, "righttrigger")) { pad_codes[i][n++] = 1000 + SDL_CONTROLLER_AXIS_TRIGGERRIGHT; continue; }
             SDL_GameControllerButton gb = SDL_GameControllerGetButtonFromString(t);
-            if (gb == SDL_CONTROLLER_BUTTON_INVALID) LOGW("unknown controller button '%s' for %s", t, ps_buttons[i].name);
+            if (gb == SDL_CONTROLLER_BUTTON_INVALID) LOGW("unknown controller button '%s' for %s", t, what);
             else pad_codes[i][n++] = gb;
         }
     }
@@ -820,6 +824,23 @@ void platform_audio_push(const int16_t *stereo, int frames) {
  * the directions, 7 Square, 9 Cross, 1 Circle, 3 R1, + R2, / L1, * L2, 0 Triangle, Enter Start,
  * . Select) */
 static uint16_t p2_pad;
+
+/* the fast-forward key or controller button held (on any controller) */
+static bool fast_forward_held(void) {
+    const Uint8 *ks = SDL_GetKeyboardState(NULL);
+    for (int k = 0; k < MAX_BIND && key_codes[14][k] != SDL_SCANCODE_UNKNOWN; k++)
+        if (ks[key_codes[14][k]]) return true;
+    for (int p = 0; p < MAX_PADS; p++) {
+        if (!pads[p]) continue;
+        for (int k = 0; k < MAX_BIND && pad_codes[14][k] >= 0; k++) {
+            int code = pad_codes[14][k];
+            if (code >= 1000 ? SDL_GameControllerGetAxis(pads[p], (SDL_GameControllerAxis)(code - 1000)) > 16000
+                             : SDL_GameControllerGetButton(pads[p], (SDL_GameControllerButton)code))
+                return true;
+        }
+    }
+    return false;
+}
 
 static uint16_t read_controllers(void) {
     uint16_t b = 0, p2 = 0;
@@ -1582,10 +1603,7 @@ void platform_frame(void) {
                 break;
             }
         }
-        {
-            const Uint8 *ks = SDL_GetKeyboardState(NULL);
-            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward && !overlay_open();
-        }
+        fast_forward = g_cfg.allow_fast_forward && !overlay_open() && fast_forward_held();
         uint16_t b = read_controllers();
         if (overlay_open()) b = 0;          /* the overlay has the player's controls */
         update_rumble();

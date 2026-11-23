@@ -121,8 +121,8 @@ OPTIONS = [
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
     ('mods', 'behaviour', 'birthdays', 'bool'),
-] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS] \
-  + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS] \
+] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS + ['fastforward']] \
+  + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS + ['fastforward']] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool'), ('controller', 'controller', 'rumble', 'bool:1')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
      ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
@@ -277,7 +277,7 @@ TEXT = {
                    'is not affected.'),
         'textspeed': ('Text speed', 'How fast dialogue is typed: 1 = original, up to 16.'),
         'skipscenes': ('Fast-forward cutscenes', 'Hold START during a cutscene.'),
-        'fastforward': ('Fast-forward with Tab', 'Hold Tab to run the game at full speed.'),
+        'fastforward': ('Fast-forward with Tab / L3', 'Hold Tab (or L3 on the controller) to run the game at full speed.'),
         'overclock': ('Processor speed', 'In percent: 100 = the original PlayStation (slows down in busy '
                       'scenes), 200 = no slowdowns.'),
         'emptybag': ('Empty rucksack: R1 / R2 do nothing', 'So running doesn\'t stop when you press them by '
@@ -380,7 +380,7 @@ TEXT = {
                    '16 = 16x. A música não é afetada.'),
         'textspeed': ('Velocidade do texto', 'Quão rápido o diálogo aparece: 1 = original, até 16.'),
         'skipscenes': ('Acelerar cenas', 'Segure START durante uma cena.'),
-        'fastforward': ('Acelerar com Tab', 'Segure Tab para o jogo rodar em velocidade máxima.'),
+        'fastforward': ('Acelerar com Tab / L3', 'Segure Tab (ou L3 no controle) para o jogo rodar em velocidade máxima.'),
         'overclock': ('Velocidade do processador', 'Em porcentagem: 100 = o PlayStation original (fica lento em '
                       'cenas cheias), 200 = sem lentidão.'),
         'emptybag': ('Mochila vazia: R1 / R2 não fazem nada', 'Para não parar de correr ao apertar sem querer.'),
@@ -485,7 +485,7 @@ TEXT = {
                    'La música no se ve afectada.'),
         'textspeed': ('Velocidad del texto', 'Qué tan rápido aparece el diálogo: 1 = original, hasta 16.'),
         'skipscenes': ('Acelerar escenas', 'Mantén START durante una escena.'),
-        'fastforward': ('Acelerar con Tab', 'Mantén Tab para que el juego corra a velocidad máxima.'),
+        'fastforward': ('Acelerar con Tab / L3', 'Mantén Tab (o L3 en el mando) para que el juego corra a velocidad máxima.'),
         'overclock': ('Velocidad del procesador', 'En porcentaje: 100 = la PlayStation original (se ralentiza en '
                       'escenas cargadas), 200 = sin ralentizaciones.'),
         'emptybag': ('Mochila vacía: R1 / R2 no hacen nada', 'Para no dejar de correr si los pulsas sin querer.'),
@@ -548,13 +548,13 @@ TEXT = {
 BUTTON_NAMES = {
     'en': {'up': 'Up', 'down': 'Down', 'left': 'Left', 'right': 'Right', 'cross': 'Cross (X)',
            'circle': 'Circle (O)', 'square': 'Square', 'triangle': 'Triangle', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Fast-forward (hold)'},
     'pt': {'up': 'Cima', 'down': 'Baixo', 'left': 'Esquerda', 'right': 'Direita', 'cross': 'Xis (X)',
            'circle': 'Círculo (O)', 'square': 'Quadrado', 'triangle': 'Triângulo', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Acelerar (segurar)'},
     'es': {'up': 'Arriba', 'down': 'Abajo', 'left': 'Izquierda', 'right': 'Derecha', 'cross': 'Equis (X)',
            'circle': 'Círculo (O)', 'square': 'Cuadrado', 'triangle': 'Triángulo', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Acelerar (mantener)'},
 }
 UI = {
     'en': {
@@ -577,7 +577,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'On a diary list: previous / next memory card'),
             ('Triangle (hold)', 'On a diary list: hold 2 seconds to delete that diary'),
             ('START (hold)', 'Fast-forward a cutscene'),
-            ('Tab (hold)', 'Fast-forward the game'),
+            ('Tab / L3 (hold)', 'Fast-forward the game'),
             ('F5', 'Cheats, while playing'),
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
@@ -693,7 +693,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'Na lista de diários: memory card anterior / seguinte'),
             ('Triângulo (segurar)', 'Na lista de diários: segure 2 segundos para apagar o diário'),
             ('START (segurar)', 'Acelera uma cena'),
-            ('Tab (segurar)', 'Acelera o jogo'),
+            ('Tab / L3 (segurar)', 'Acelera o jogo'),
             ('F5', 'Cheats, durante o jogo'),
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
@@ -810,7 +810,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'En la lista de diarios: memory card anterior / siguiente'),
             ('Triángulo (mantener)', 'En la lista de diarios: mantén 2 segundos para borrar ese diario'),
             ('START (mantener)', 'Acelera una escena'),
-            ('Tab (mantener)', 'Acelera el juego'),
+            ('Tab / L3 (mantener)', 'Acelera el juego'),
             ('F5', 'Trucos, durante el juego'),
             ('F9', 'Activa / desactiva la cámara a 60 fps'),
             ('F11  /  Alt+Enter', 'Pantalla completa'),
