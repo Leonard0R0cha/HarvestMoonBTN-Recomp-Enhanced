@@ -41,9 +41,9 @@ extern const int g_num_modules;
 /* the language of the game's text (generated, from the disc the code came from): 0 English, 1 Portuguese,
  * 2 Indonesian (tools/recomp.py GAME_LANGS) */
 extern const int g_game_lang;
-extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de" / "es": the launcher reads it in the exe */
+extern const char g_game_lang_tag[];   /* "HMBTN-LANG en" / "pt" / "id" / "de" / "es" / "ja": the launcher reads it in the exe */
 #define GAME_PT (g_game_lang == 1)
-#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de", "es" */
+#define GAME_LANG_CODE (g_game_lang_tag + 11)   /* "en", "pt", "id", "de", "es", "ja" */
 
 extern uint8_t g_ram[0x200000];
 extern uint8_t g_scratch[0x400];
@@ -265,6 +265,11 @@ void names_open(CPU *c);                      /* names.c: the naming screen open
 void names_buttons(CPU *c);                   /* ... and its buttons read: Select picks a random name */
 void stamina_window(CPU *c);                    /* fixes.c: the stamina under the clock */
 void stamina_glyph_seen(CPU *c);
+int ja_unpack(CPU *c);                           /* japanese.c: the Japanese disc's font (--lang ja) */
+int ja_glyph(CPU *c);
+int ja_advance(void);
+void ja_clock(uint32_t buf);
+void ja_macro(uint32_t str);
 void friends_glyph_seen(CPU *c);                 /* friends.c: the town's friendships page */
 uint32_t friend_title(CPU *c, uint32_t text);
 void friend_title_drawn(void);

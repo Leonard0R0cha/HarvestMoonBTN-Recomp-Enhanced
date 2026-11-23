@@ -32,17 +32,31 @@ static void finish(int n) {
 
 static uint32_t tmpbuf[0x10000 * 2];
 
+extern int g_ja_icons;                  /* japanese.c: the HUD's icons moved (build.py --lang ja) */
+int ja_dma_packet(uint32_t *w, uint32_t cnt, uint32_t page);
+
 static void gpu_list(uint32_t addr, const uint8_t *ram) {
     int guard = 0;
+    uint32_t mode = 0xE1000000u;        /* the drawing mode last given (for g_ja_icons) */
     for (;;) {
         uint32_t hdr, w;
         memcpy(&hdr, ram + (addr & 0x1FFFFC), 4);
         uint32_t cnt = hdr >> 24;
+        uint32_t own[16];
+        int page = -1;
+        if (g_ja_icons && cnt && cnt <= 16) {   /* a copy, patched: the packets stay as the game made them */
+            for (uint32_t k = 0; k < cnt; k++) memcpy(&own[k], ram + ((addr + 4 + k * 4) & 0x1FFFFC), 4);
+            page = ja_dma_packet(own, cnt, mode & 0x1Fu);
+        }
+        if (page >= 0) gpu_write_gp0((mode & ~0x1Fu) | (uint32_t)page);
         for (uint32_t k = 0; k < cnt; k++) {
             g_gp0_addr = (addr + 4 + k * 4) & 0x1FFFFC;   /* for PGXP */
             memcpy(&w, ram + g_gp0_addr, 4);
+            if (w >> 24 == 0xE1 && k == 0) mode = w;
+            if (page != -1) w = own[k];
             gpu_write_gp0(w);
         }
+        if (page >= 0 || page == -3) gpu_write_gp0(mode);
         if (hdr & 0x800000) break;
         addr = hdr & 0x1FFFFC;
         if (++guard > 0x100000) { LOGE("GPU DMA linked list loop"); break; }

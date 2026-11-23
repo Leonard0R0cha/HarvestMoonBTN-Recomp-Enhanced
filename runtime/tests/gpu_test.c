@@ -1620,6 +1620,7 @@ static void test_texpack(void)
 /* the frontend's (main.c) */
 void log_msg(int level, const char *fmt, ...) { (void)level; (void)fmt; }
 void fatal(const char *fmt, ...) { (void)fmt; printf("FATAL\n"); exit(1); }
+void ja_upload(int32_t *x, int32_t *y, int32_t w, int32_t h) { (void)x; (void)y; (void)w; (void)h; }
 
 int main(int argc, char **argv)
 {

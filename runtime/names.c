@@ -168,7 +168,7 @@ static int glyphs(const char *s, uint16_t out[NAME_MAX]) {
     int n = 0;
     for (; *s && n < NAME_MAX; s++) {
         char ch = *s;
-        int g = GAME_PT ? pt_glyph(&s) : -1;
+        int g = GAME_PT || g_game_lang == 5 ? pt_glyph(&s) : -1;
         if (g >= 0) out[n++] = (uint16_t)g;
         else if (ch >= 'A' && ch <= 'Z') out[n++] = (uint16_t)(ch - 'A');
         else if (ch >= 'a' && ch <= 'z') out[n++] = (uint16_t)(0x20 + ch - 'a');

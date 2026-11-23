@@ -3214,6 +3214,8 @@ static int gp0_cmd_len(uint32_t op)
     }
 }
 
+void ja_upload(int32_t *x, int32_t *y, int32_t w, int32_t h);   /* japanese.c */
+
 static void gp0_env(uint32_t w)
 {
     switch (w >> 24) {
@@ -3298,6 +3300,7 @@ static void gp0_execute(const uint32_t *p)
             S.wr_w = 0x400;
         if (!S.wr_h)
             S.wr_h = 0x200;
+        ja_upload(&S.wr_x, &S.wr_y, S.wr_w, S.wr_h);   /* build.py --lang ja: images moved off its font */
         S.wr_cx = S.wr_x;
         S.wr_cy = S.wr_y;
         S.gp0_state = GP0_STATE_VRAM_WRITE;

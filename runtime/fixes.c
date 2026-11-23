@@ -1,6 +1,7 @@
 /* Fixes to the original game. Hooks emitted by tools/recomp.py. */
 #include "psx.h"
 #include "psx_recomp.h"
+#include "text_pt.h"
 #include <string.h>
 
 /* The farm score on the summary page (the "%" next to the name, 800FB908) adds up to 100:
@@ -339,8 +340,8 @@ uint32_t sprite_spot_z(uint32_t z, uint32_t actor) {
 #define GLYPH_AT 0x80019070u
 #define ALLOC_AT 0x80011F5Cu
 #define PLAYER_STAMINA 0x80071A12u      /* what is left, the most, the tiredness (halfwords) */
-#define LETTER(c) ((c) - 'A')           /* the font: A-Z from 0, a-z from 0x20, 0-9 from 0x40 */
-#define DIGIT(d) (0x40 + (d))
+#define LETTER(c) (g_game_lang == 5 ? 161 + (c) - 'A' : (c) - 'A')   /* the font: A-Z from 0, a-z 0x20, 0-9 0x40 */
+#define DIGIT(d) game_digit(d)
 #define RGB(r, g, b) ((uint32_t)(b) << 16 | (uint32_t)(g) << 8 | (uint32_t)(r))
 #define BAR_X (CLOCK_X + 12)
 #define BAR_W 28
@@ -400,7 +401,7 @@ static uint32_t stamina_row(CPU *c, uint32_t ot, uint32_t p, int y, int letter, 
     do {
         p = glyph(c, ot, p, DIGIT(value % 10), x, y);
         value /= 10;
-        x -= 8;
+        x -= g_game_lang == 5 ? 10 : 8;       /* the Japanese digits are 10 pixels wide */
     } while (value);
     return p;
 }

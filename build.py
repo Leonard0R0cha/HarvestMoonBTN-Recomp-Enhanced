@@ -6,7 +6,7 @@
   3. compiles the runtime + the generated code into a native program      -> build/
   4. puts a ready-to-play folder together                                  -> dist/
 
-usage: python build.py [--disc PATH] [--lang pt|id|de|es] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
+usage: python build.py [--disc PATH] [--lang pt|id|de|es|ja] [--pak] [--zip] [--into DIR] [--linux] [--debug] [--jobs N] [--clean]
 
   --disc PATH  your disc image (.cue or .bin); default: the first .cue (or .bin) in disc/
   --lang pt    the game's text in Brazilian Portuguese: downloads a fan translation's patch, applies it to
@@ -18,6 +18,8 @@ usage: python build.py [--disc PATH] [--lang pt|id|de|es] [--pak] [--zip] [--int
                stay in English). Rev 0 and the French disc do not work
   --lang es    in Spanish: like id (a fan translation that comes as a whole disc), with its font, in
                disc-es/ (menus stay in English)
+  --lang ja    in Japanese, from your own Japanese disc in the game folder: SLPS-02489, Rev 1, .bin + .cue
+               (or a .zip with them); its dialogue, font and menus onto a copy of your USA disc, in disc-ja/
   --pak        also turn your disc image into the compact data pack HarvestMoonBTN.pak and put it
                in the dist folder, so the game runs without the disc image
   --zip        also create a .zip of the dist folder
@@ -130,6 +132,26 @@ TRANSLATIONS = {
             'SLUS_011.15': '34e3b35dcd3fb1cd9a7d4813b8a9ef987915826e3d436f1908ecbe2d4fdf1444',
             'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
             'A_FILE.BIN': '42768cff0c43b9780f992d7702a40bbbc83032aeb7629d15f6a7a540acd08d7e',
+        },
+    },
+    # the Japanese disc: its dialogue, its own font (12x12, kana and kanji, drawn by runtime/japanese.c) and
+    # the texts of its executable, onto a copy of your USA disc (tools/transplant.py). Nothing to download
+    'ja': {
+        'name': 'Japanese, the text of the Japanese release (SLPS-02489 Rev 1)',
+        'source': 'Bokujou Monogatari - Harvest Moon (Japan) (Rev 1)',
+        'need': 'the Japanese PlayStation disc of the game (Bokujou Monogatari: Harvest Moon), serial\n'
+                'SLPS-02489, second edition (Rev 1), as a .bin + .cue dump or a .zip with them (Redump name\n'
+                '"Bokujou Monogatari - Harvest Moon (Japan) (Rev 1)").',
+        'wrong': {'SLPS_024.89': 'a Japanese disc (SLPS-02489), but not the Rev 1 edition: this needs Rev 1'},
+        'source_files': {
+            'SLPS_024.89': 'eeccde9569420a224723c0e1460e6daaa94771364256bf88aa415f70bacba82f',
+            'A_FILE.BIN': 'a0f3d6c60d047baf1bee252923dc80350ef4cc103b9932cc493e1c0aea116da1',
+        },
+        'image': 'HarvestMoon-BTN-JA',
+        'files': {
+            'SLUS_011.15': 'e802058c37e89b8e33f2ca38a4e07ab6c8b31109e3e3c4907b09fa313ec34788',
+            'A_FILE.HDT': '0cae44d6bdb29e078a182d7cd9a780c21e35dc54f55eb94c2d9ea8deb20c82dd',
+            'A_FILE.BIN': '0fd4eb38a5f7231c31d4f3f5f8a6320a7da8e11e01b4d1a0d11ffbc05eda3a5d',
         },
     },
 }

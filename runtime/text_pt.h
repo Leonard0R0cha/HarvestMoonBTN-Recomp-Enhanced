@@ -20,8 +20,29 @@ static inline int es_glyph(const char **s) {
     return -1;
 }
 
-/* *s at a UTF-8 accented letter: its glyph, *s moved to the sequence's last byte; else -1 */
+/* the Japanese font (build.py --lang ja) has capitals, digits and some signs of its own: the port's
+ * texts in it are in capitals */
+static inline int ja_ascii(char ch) {
+    if (ch >= 'A' && ch <= 'Z') return 161 + ch - 'A';
+    if (ch >= 'a' && ch <= 'z') return 161 + ch - 'a';
+    if (ch >= '0' && ch <= '9') return 187 + ch - '0';
+    switch (ch) {
+    case ' ': case '\'': return 0x0FFD;
+    case '.': return 197;  case ',': return 198;  case '?': return 202;  case '!': return 203;
+    case ':': return 206;  case '+': return 207;  case '-': return 199;  case '(': return 209;
+    default: return -1;
+    }
+}
+
+/* a digit's glyph */
+static inline uint16_t game_digit(int d) {
+    return (uint16_t)(g_game_lang == 5 ? 187 + d : 0x40 + d);
+}
+
+/* *s at a UTF-8 accented letter: its glyph, *s moved to the sequence's last byte; else -1 (in Japanese:
+ * the glyph of every letter, digit and sign it has) */
 static inline int pt_glyph(const char **s) {
+    if (g_game_lang == 5) return ja_ascii(**s);
     if (g_game_lang == 4) return es_glyph(s);
     static const struct { uint8_t utf8; uint16_t glyph; } letters[] = {
         { 0x82, 0x1A }, { 0x83, 0x1C }, { 0x95, 0x1D },                          /* Â Ã Õ */
