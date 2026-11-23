@@ -1444,6 +1444,17 @@ static void window_pixels(int *w, int *h, float *mx, float *my) {
 
 int platform_can_pause(void) { return !netplay_active(); }
 
+/* a save state was loaded (savestate.c): the sound queued and the picture are the old game's; a
+ * recording ends (its replay runs from the boot) */
+void platform_state_loaded(void) {
+    if (audio_ok) SDL_ClearQueuedAudio(audio);
+    px_valid = false;
+    if (rec_file) {
+        LOGI("recording: ended, a save state was loaded");
+        record_close();
+    }
+}
+
 /* while the overlay is open: the player's keys, mouse and controller go to it (F6, F11, F12 and
  * Alt+Enter still to the game's window) */
 static int overlay_takes(const SDL_Event *e) {
@@ -1560,6 +1571,10 @@ void platform_frame(void) {
                     platform_crt((g_cfg.crt + 1) % 3);      /* off, scanlines, CRT */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F7) {
                     overlay_show(1);            /* (co-op: not paused, overlay_pauses) */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F8) {
+                    savestate_request(0, savestate_slot());     /* save state (savestate.c; slots in F7) */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F10) {
+                    savestate_request(1, savestate_slot());
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
                     SDL_SetWindowFullscreen(win, 0);
@@ -1694,7 +1709,7 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
-    if (overlay_open() && shown) {      /* the overlay over this picture (the game runs behind it) */
+    if (overlay_visible() && shown) {   /* the overlay over this picture (the game runs behind it) */
         int ow, oh;
         float a, c;
         window_pixels(&ow, &oh, &a, &c);
