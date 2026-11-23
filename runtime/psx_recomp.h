@@ -293,6 +293,7 @@ uint32_t bell_keep_going(CPU *c, uint32_t near);
 void bell_through(CPU *c);
 #define BELL_WALKERS 20
 void animal_marks(CPU *c);                       /* marks.c: the cares left over the animals */
+void mail_mark(CPU *c);                          /* marks.c: an envelope over the mailbox */
 int bell_walker(uint32_t rec);                   /* an animal the bell leads: its number, else -1 */
 uint32_t jukebox_song(uint32_t song);            /* jukebox.c: the farm's music, as chosen (F7) */
 uint32_t sprite_talked(CPU *c, uint32_t flags);  /* sprites.c: the sprites hired through the Chef */

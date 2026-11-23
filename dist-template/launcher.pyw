@@ -118,6 +118,7 @@ OPTIONS = [
     ('mods', 'behaviour', 'bellherd', 'bool'),
     ('mods', 'behaviour', 'doorreach', 'bool'),
     ('mods', 'behaviour', 'animalmarks', 'bool'),
+    ('mods', 'behaviour', 'mailmark', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
     ('mods', 'behaviour', 'birthdays', 'bool'),
@@ -305,6 +306,7 @@ TEXT = {
                      'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
                      'may stay behind: ring again. It works on rainy days too. Off: the bell only calls some animals to you.'),
         'animalmarks': ('Marks over the animals', 'Over each cow, sheep, chicken, your horse and your dog, a small icon for each thing still left today: a speech bubble (talk), a brush, a milk bottle, scissors (shear) and a feed sack (the hens). Each icon goes away once it is done; an animal with nothing left shows nothing. They start again the next day.'),
+        'mailmark': ('Letter over the mailbox', 'While a letter is waiting in the mailbox on your farm, a small envelope floats over it. It goes away once you read the letter.'),
         'friendpage': ('Town friendships page', 'One more page in the START menu (Left / Right): the 32 people of the town with their hearts (the bachelorettes in their heart colour); Up / Down pick one to see their portrait (the redrawn one with Redrawn portraits) and whether you talked to them and gave them a gift today.'),
         'birthdays': ('Birthdays on the calendar', 'The calendar in your house marks with a heart the days someone in town (or a Harvest Sprite) has a birthday, and X on that day tells whose birthday it is.'),
         'randomnames': ('Random names', 'On the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal; press it again for another. Your own lists go in names.txt next to the game.'),
@@ -407,6 +409,7 @@ TEXT = {
                      'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
                      'para trás: toque de novo. Funciona também em dia de chuva. Desligado: o sino só chama alguns animais até você.'),
         'animalmarks': ('Marcas em cima dos animais', 'Em cima de cada vaca, ovelha, galinha, do cavalo e do cachorro, um ícone para cada coisa que ainda falta hoje: balão de fala (conversar), escova, garrafa de leite (ordenhar), tesoura (tosquiar) e saco de ração (galinhas). Cada ícone some quando você faz; animal sem nada faltando não mostra nada. Recomeça no dia seguinte.'),
+        'mailmark': ('Cartinha na caixa de correio', 'Quando chega carta na caixa de correio da fazenda, aparece uma cartinha em cima dela. Some depois que você lê a carta.'),
         'friendpage': ('Página de amizades da cidade', 'Mais uma página no menu START (Esquerda / Direita): os 32 moradores com os corações (as garotas na cor do coração delas); Cima / Baixo escolhem um para ver o retrato (o redesenhado, com Retratos redesenhados) e se você já conversou e deu presente hoje.'),
         'birthdays': ('Aniversários no calendário', 'O calendário da sua casa marca com um coração os dias de aniversário dos moradores (e dos duendes), e o X no dia diz de quem é o aniversário.'),
         'randomnames': ('Nomes aleatórios', 'Na tela de nome, o Select sorteia um nome para o fazendeiro, a fazenda, o cachorro, o cavalo, o bebê ou o animal; aperte de novo para outro. Suas próprias listas vão no names.txt, na pasta do jogo.'),
@@ -512,6 +515,7 @@ TEXT = {
                      'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '
                      'se quedan atrás: toca otra vez. También funciona en días de lluvia. Desactivado: la campana solo llama a algunos animales.'),
         'animalmarks': ('Marcas sobre los animales', 'Sobre cada vaca, oveja, gallina, tu caballo y tu perro, un icono por cada cosa que aún falta hoy: bocadillo (hablar), cepillo, botella de leche (ordeñar), tijeras (esquilar) y saco de pienso (gallinas). Cada icono se va al hacerlo; un animal sin nada pendiente no muestra nada. Vuelven al día siguiente.'),
+        'mailmark': ('Carta sobre el buzón', 'Cuando llega una carta al buzón de tu granja, aparece un sobre pequeño encima. Se va al leer la carta.'),
         'friendpage': ('Página de amistades del pueblo', 'Una página más en el menú START (Izquierda / Derecha): las 32 personas del pueblo con sus corazones (las chicas en el color de su corazón); Arriba / Abajo eligen una para ver su retrato (el redibujado, con Retratos redibujados) y si ya hablaste con ella y le diste un regalo hoy.'),
         'birthdays': ('Cumpleaños en el calendario', 'El calendario de tu casa marca con un corazón los días de cumpleaños de la gente del pueblo (y de los duendes), y X en ese día dice de quién es el cumpleaños.'),
         'randomnames': ('Nombres al azar', 'En la pantalla de nombre, Select elige un nombre al azar para el granjero, la granja, el perro, el caballo, el bebé o el animal; púlsalo otra vez para otro. Tus propias listas van en names.txt, junto al juego.'),

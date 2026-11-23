@@ -256,15 +256,15 @@ static unsigned cares_left(uint32_t rec, int *tall) {
     return need;
 }
 
-/* one icon (a sprite from the HUD's page) first in the table's entry ot */
-static void icon(uint32_t ot, uint32_t p, int care, int x, int y, int sx, int sy) {
+/* one icon (a sprite from the HUD's page, at vx, vy in VRAM) first in the table's entry ot */
+static void icon(uint32_t ot, uint32_t p, int vx, int vy, int x, int y, int sx, int sy) {
     MEM_W32(p, 5u << 24 | (MEM_R32(ot) & 0xFFFFFFu));
     MEM_W32(ot, (MEM_R32(ot) & 0xFF000000u) | (p & 0xFFFFFFu));
     MEM_W32(p + 4, DRAW_MODE);
     MEM_W32(p + 8, 0x64808080u);
     MEM_W32(p + 12, (uint32_t)(uint16_t)y << 16 | (uint16_t)x);
-    uint32_t u = (VRAM_X - PAGE_X) * 4 + (uint32_t)care * CELL;
-    MEM_W32(p + 16, (uint32_t)(CLUT_Y << 6 | CLUT_X >> 4) << 16 | (uint32_t)VRAM_Y << 8 | u);
+    uint32_t u = (uint32_t)(vx - PAGE_X) * 4;     /* vx, vy: the icon in VRAM (4-bit: 4 pixels a halfword) */
+    MEM_W32(p + 16, (uint32_t)(CLUT_Y << 6 | CLUT_X >> 4) << 16 | (uint32_t)vy << 8 | u);
     MEM_W32(p + 20, (uint32_t)ICON << 16 | ICON);
     if (g_sprite_tags) {            /* placed, scaled and squeezed with the animal's point */
         gpu_sprite_begin((int16_t)sx, (int16_t)sy);
@@ -312,10 +312,113 @@ void animal_marks(CPU *c) {
         uint32_t p = call4(c, ALLOC_AT, (uint32_t)n * PRIM_SIZE, 0, 0, 0);
         for (int i = 0; i < CARES; i++) {
             if (!(need >> i & 1)) continue;
-            icon(ot, p, i, x, y, sx, sy);
+            icon(ot, p, VRAM_X + i * CELL / 4, VRAM_Y, x, y, sx, sy);
             p += PRIM_SIZE;
             x += STEP;
         }
+    }
+    memcpy(c->r, regs, sizeof regs);
+    c->hi = hi;
+    c->lo = lo;
+}
+
+/* A letter over the mailbox (mailmark): while a letter waits in it, an envelope over the farm's
+ * mailbox. The mail waiting is a queue of 20 entries of 4 bytes at 8007121C (+0 the text, +2 -1 when
+ * empty); X on the mailbox (800F24B0, from the X routine 800C7AC0) reads the first and moves the
+ * rest up (800F2724). The mailbox is the area's X spot (8009F78C + 16, 50 x 44 bytes) of kind 4000
+ * and number 6; the envelope goes over the middle of its box (+14 / +18 .. +20 / +24). Drawn after the
+ * farmer is drawn (800C9E90, on the horse 800CA580), once a frame for each run, as the animals' marks. Its picture is in
+ * VRAM the game never uses (924-927 x 13-24, the HUD font's page as the others), with their palette. */
+#define MAIL_QUEUE 0x8007121Cu
+#define SPOTS 0x8009F79Cu
+#define SPOT_SIZE 44u
+#define SPOT_COUNT 50u
+#define SPOT_KIND 0x4000
+#define MAILBOX 6
+#define MAIL_LIFT 260               /* the point over the mailbox */
+#define MAIL_ABOVE 12
+#define MAIL_X 924
+#define MAIL_Y 13
+
+static const char *const envelope[ICON] = {
+    "............",
+    "############",
+    "##wwwwwwww##",
+    "#w#wwwwww#w#",
+    "#ww#wwww#ww#",
+    "#www#ww#www#",
+    "#wwww##wwww#",
+    "#wwwwrrwwww#",
+    "#lwwwrrwwwl#",
+    "#llwwwwwwll#",
+    "############",
+    "............" };
+
+static void send_envelope(void) {
+    static uint64_t sent[3] = { ~0ull, ~0ull, ~0ull };
+    static uint16_t pic[ICON][4];
+    static int drawn;
+    int s = g_machine ? 2 : g_view2_run ? 1 : 0;
+    if (sent[s] == frame_count()) return;
+    sent[s] = frame_count();
+    if (!made) make_icons();
+    if (!drawn) {
+        for (int y = 0; y < ICON; y++)
+            for (int x = 0; x < ICON; x++)
+                pic[y][x / 4] |= (uint16_t)(colour_of(envelope[y][x]) << (x % 4 * 4));
+        drawn = 1;
+    }
+    gpu_write_gp0(0xA0000000u);
+    gpu_write_gp0((uint32_t)MAIL_Y << 16 | MAIL_X);
+    gpu_write_gp0((uint32_t)ICON << 16 | 4);
+    for (int y = 0; y < ICON; y++)
+        for (int x = 0; x < 4; x += 2)
+            gpu_write_gp0(pic[y][x] | (uint32_t)pic[y][x + 1] << 16);
+    gpu_write_gp0(0xA0000000u);
+    gpu_write_gp0((uint32_t)CLUT_Y << 16 | CLUT_X);
+    gpu_write_gp0(1u << 16 | 16);
+    for (int i = 0; i < 16; i += 2)
+        gpu_write_gp0(clut[i] | (uint32_t)clut[i + 1] << 16);
+}
+
+/* after the farmer is drawn */
+void mail_mark(CPU *c) {
+    static uint64_t done[3] = { ~0ull, ~0ull, ~0ull };
+    if (!g_cfg.mailmark || MEM_R8(MAIL_QUEUE + 2) == 0xFF) return;
+    if (MEM_R32(HELD) & HELD_MASK || MEM_R8(HELD_B)) return;
+    int s = g_machine ? 2 : g_view2_run ? 1 : 0;
+    if (done[s] == frame_count()) return;  /* the second farmer's sprite too */
+    uint32_t e = 0;
+    for (uint32_t i = 0; i < SPOT_COUNT && !e; i++) {
+        uint32_t at = SPOTS + i * SPOT_SIZE;
+        if (MEM_R16(at) == SPOT_KIND && MEM_R16(at + 2) == MAILBOX) e = at;
+    }
+    if (!e) return;
+    done[s] = frame_count();
+
+    uint32_t regs[32], hi = c->hi, lo = c->lo;
+    memcpy(regs, c->r, sizeof regs);
+    uint32_t fsp = c->r[29] - 0x100;
+    uint32_t pos = fsp + 0x40, spot = fsp + 0x48;
+    MEM_W16(pos, (uint16_t)(((int16_t)MEM_R16(e + 14) + (int16_t)MEM_R16(e + 20)) / 2));
+    MEM_W16(pos + 2, (uint16_t)((int16_t)MEM_R16(e + 16) - MAIL_LIFT));
+    MEM_W16(pos + 4, (uint16_t)(((int16_t)MEM_R16(e + 18) + (int16_t)MEM_R16(e + 24)) / 2));
+    MEM_W16(pos + 6, 0);
+    c->r[29] = fsp;
+    int32_t depth = (int32_t)call4(c, PROJECT_AT, spot, pos, 0, 0);
+    int sx = (int32_t)MEM_R32(spot), sy = (int32_t)MEM_R32(spot + 4);
+    int x = sx - ICON / 2, y = sy - MAIL_ABOVE - ICON;
+    uint32_t base = MEM_R32(c->r[28] + 332);
+    uint32_t end = MEM_R32(base + 300) + MEM_R32(base + 296);
+    if (depth > 0 && x >= 4 && x + ICON <= 316 && y >= 4 && y <= 212 &&
+        MEM_R32(PRIM_AT) + PRIM_SIZE + 64 <= end) {
+        send_envelope();
+        int at = depth / 4 - 1;
+        at = at < 0 ? 0 : at >= OT_SIZE ? OT_SIZE - 1 : at;
+        uint32_t ot = MEM_R32(MEM_R32(GFX) + 288) + (uint32_t)at * 4;
+        c->r[29] = fsp;
+        uint32_t p = call4(c, ALLOC_AT, PRIM_SIZE, 0, 0, 0);
+        icon(ot, p, MAIL_X, MAIL_Y, x, y, sx, sy);
     }
     memcpy(c->r, regs, sizeof regs);
     c->hi = hi;

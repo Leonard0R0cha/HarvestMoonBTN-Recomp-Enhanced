@@ -268,6 +268,7 @@ static void set_option(const char *key, const char *val) {
     else if (!strcmp(key, "doorreach")) g_cfg.doorreach = atoi(val);
     else if (!strcmp(key, "jukebox")) jukebox_set(atoi(val));     /* the F7 overlay saves it */
     else if (!strcmp(key, "animalmarks")) g_cfg.animalmarks = atoi(val);
+    else if (!strcmp(key, "mailmark")) g_cfg.mailmark = atoi(val);
     else if (!strcmp(key, "randomnames")) g_cfg.randomnames = atoi(val);
     else if (!strcmp(key, "split")) g_split = atoi(val) != 0;      /* the farmers in different places (machine.c) */
     else if (!strcmp(key, "cheat_money")) g_cfg.cheat_money = atoi(val);
