@@ -730,8 +730,9 @@ static int on_trigger(void) {
         uint32_t e = TRIGGERS + i * 44;
         if (MEM_R16(e + 2) == 0xFFFF || (MEM_R16(e) & (0x6008 | 0x100 | 0x80))) continue;
         if (way_out(e)) continue;
-        if ((int16_t)MEM_R16(e + 14) < x && x < (int16_t)MEM_R16(e + 20) &&
-            (int16_t)MEM_R16(e + 18) < z && z < (int16_t)MEM_R16(e + 24)) return 1;
+        int32_t box[4];             /* wider with doorreach, as 800BDCE8 sees it (fixes.c) */
+        door_box(e, box);
+        if (box[0] < x && x < box[2] && box[1] < z && z < box[3]) return 1;
     }
     return 0;
 }

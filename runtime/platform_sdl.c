@@ -79,8 +79,10 @@ static char bind_pad[14][128] = {
     "leftshoulder", "rightshoulder", "lefttrigger", "righttrigger",
     "start", "back",
 };
-static SDL_Scancode key_codes[14][MAX_BIND];
-static int pad_codes[14][MAX_BIND];     /* SDL_GameControllerButton, or 1000+axis for triggers */
+/* fast-forward (held), not a PS button: key_fastforward / pad_fastforward, the last entry below */
+static char ff_keys[128] = "Tab", ff_pad[128] = "leftstick";
+static SDL_Scancode key_codes[15][MAX_BIND];
+static int pad_codes[15][MAX_BIND];     /* SDL_GameControllerButton, or 1000+axis for triggers */
 static int stick_as_dpad = 1;
 static int rumble = 1;
 
@@ -89,6 +91,7 @@ bool platform_set_binding(const char *key, const char *val) {
     if (!strcmp(key, "stick_as_dpad")) { stick_as_dpad = atoi(val); return true; }
     if (!strcmp(key, "rumble")) { rumble = atoi(val); return true; }
     if (!is_key && !is_pad) return false;
+    if (!strcmp(key + 4, "fastforward")) { snprintf(is_key ? ff_keys : ff_pad, 128, "%s", val); return true; }
     for (int i = 0; i < 14; i++) {
         if (!strcmp(key + 4, ps_buttons[i].name)) {
             snprintf(is_key ? bind_keys[i] : bind_pad[i], 128, "%s", val);
@@ -99,25 +102,26 @@ bool platform_set_binding(const char *key, const char *val) {
 }
 
 static void resolve_bindings(void) {
-    for (int i = 0; i < 14; i++) {
+    for (int i = 0; i < 15; i++) {
         for (int k = 0; k < MAX_BIND; k++) { key_codes[i][k] = SDL_SCANCODE_UNKNOWN; pad_codes[i][k] = -1; }
         char buf[128], *save = NULL;
-        snprintf(buf, sizeof buf, "%s", bind_keys[i]);
+        const char *what = i < 14 ? ps_buttons[i].name : "fastforward";
+        snprintf(buf, sizeof buf, "%s", i < 14 ? bind_keys[i] : ff_keys);
         int n = 0;
         for (char *t = strtok_r(buf, ",", &save); t && n < MAX_BIND; t = strtok_r(NULL, ",", &save)) {
             while (*t == ' ') t++;
             SDL_Scancode sc = SDL_GetScancodeFromName(t);
-            if (sc == SDL_SCANCODE_UNKNOWN) LOGW("unknown key name '%s' for %s", t, ps_buttons[i].name);
+            if (sc == SDL_SCANCODE_UNKNOWN) LOGW("unknown key name '%s' for %s", t, what);
             else key_codes[i][n++] = sc;
         }
-        snprintf(buf, sizeof buf, "%s", bind_pad[i]);
+        snprintf(buf, sizeof buf, "%s", i < 14 ? bind_pad[i] : ff_pad);
         n = 0;
         for (char *t = strtok_r(buf, ",", &save); t && n < MAX_BIND; t = strtok_r(NULL, ",", &save)) {
             while (*t == ' ') t++;
             if (!strcmp(t, "lefttrigger")) { pad_codes[i][n++] = 1000 + SDL_CONTROLLER_AXIS_TRIGGERLEFT; continue; }
             if (!strcmp(t, "righttrigger")) { pad_codes[i][n++] = 1000 + SDL_CONTROLLER_AXIS_TRIGGERRIGHT; continue; }
             SDL_GameControllerButton gb = SDL_GameControllerGetButtonFromString(t);
-            if (gb == SDL_CONTROLLER_BUTTON_INVALID) LOGW("unknown controller button '%s' for %s", t, ps_buttons[i].name);
+            if (gb == SDL_CONTROLLER_BUTTON_INVALID) LOGW("unknown controller button '%s' for %s", t, what);
             else pad_codes[i][n++] = gb;
         }
     }
@@ -187,6 +191,7 @@ static void parse_script(const char *s) {
             g_cfg.friendpage = 0;               /* written only when on */
             g_cfg.birthdays = 0;                /* nor birthdays= */
             g_cfg.bellherd = 0;                 /* nor bellherd= */
+            g_cfg.doorreach = 0;                /* nor doorreach= */
             g_jukebox = 0;                      /* nor jukebox= */
             g_cfg.animalmarks = 0;              /* nor animalmarks= */
             g_cfg.dualshock = 0;                /* nor dualshock=: a digital pad then */
@@ -217,6 +222,7 @@ static void parse_script(const char *s) {
         if (!strncmp(tok, "buildorder=", 11)) { g_cfg.buildorder = atoi(tok + 11); continue; }
         if (!strncmp(tok, "runthrough=", 11)) { g_cfg.runthrough = atoi(tok + 11); continue; }
         if (!strncmp(tok, "bellherd=", 9)) { g_cfg.bellherd = atoi(tok + 9); continue; }
+        if (!strncmp(tok, "doorreach=", 10)) { g_cfg.doorreach = atoi(tok + 10); continue; }
         if (!strncmp(tok, "jukebox=", 8)) { jukebox_set(atoi(tok + 8)); continue; }
         if (!strncmp(tok, "jukebox@", 8)) {
             if (n_jukebox_ev < JUKEBOX_EVENTS &&
@@ -594,6 +600,7 @@ int platform_init(void) {
             if (g_cfg.buildorder) fprintf(rec_file, "buildorder=%d\n", g_cfg.buildorder);
             if (g_cfg.runthrough) fprintf(rec_file, "runthrough=%d\n", g_cfg.runthrough);
             if (g_cfg.bellherd) fprintf(rec_file, "bellherd=%d\n", g_cfg.bellherd);
+            if (g_cfg.doorreach) fprintf(rec_file, "doorreach=%d\n", g_cfg.doorreach);
             if (g_jukebox) fprintf(rec_file, "jukebox=%d\n", g_jukebox);   /* the music changes the game's RAM */
             if (g_cfg.animalmarks) fprintf(rec_file, "animalmarks=%d\n", g_cfg.animalmarks);
             if (g_cfg.randomnames) fprintf(rec_file, "randomnames=%d\n", g_cfg.randomnames);
@@ -817,6 +824,23 @@ void platform_audio_push(const int16_t *stereo, int frames) {
  * the directions, 7 Square, 9 Cross, 1 Circle, 3 R1, + R2, / L1, * L2, 0 Triangle, Enter Start,
  * . Select) */
 static uint16_t p2_pad;
+
+/* the fast-forward key or controller button held (on any controller) */
+static bool fast_forward_held(void) {
+    const Uint8 *ks = SDL_GetKeyboardState(NULL);
+    for (int k = 0; k < MAX_BIND && key_codes[14][k] != SDL_SCANCODE_UNKNOWN; k++)
+        if (ks[key_codes[14][k]]) return true;
+    for (int p = 0; p < MAX_PADS; p++) {
+        if (!pads[p]) continue;
+        for (int k = 0; k < MAX_BIND && pad_codes[14][k] >= 0; k++) {
+            int code = pad_codes[14][k];
+            if (code >= 1000 ? SDL_GameControllerGetAxis(pads[p], (SDL_GameControllerAxis)(code - 1000)) > 16000
+                             : SDL_GameControllerGetButton(pads[p], (SDL_GameControllerButton)code))
+                return true;
+        }
+    }
+    return false;
+}
 
 static uint16_t read_controllers(void) {
     uint16_t b = 0, p2 = 0;
@@ -1441,6 +1465,17 @@ static void window_pixels(int *w, int *h, float *mx, float *my) {
 
 int platform_can_pause(void) { return !netplay_active(); }
 
+/* a save state was loaded (savestate.c): the sound queued and the picture are the old game's; a
+ * recording ends (its replay runs from the boot) */
+void platform_state_loaded(void) {
+    if (audio_ok) SDL_ClearQueuedAudio(audio);
+    px_valid = false;
+    if (rec_file) {
+        LOGI("recording: ended, a save state was loaded");
+        record_close();
+    }
+}
+
 /* while the overlay is open: the player's keys, mouse and controller go to it (F6, F11, F12 and
  * Alt+Enter still to the game's window) */
 static int overlay_takes(const SDL_Event *e) {
@@ -1557,6 +1592,10 @@ void platform_frame(void) {
                     platform_crt((g_cfg.crt + 1) % 3);      /* off, scanlines, CRT */
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_F7) {
                     overlay_show(1);            /* (co-op: not paused, overlay_pauses) */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F8) {
+                    savestate_request(0, savestate_slot());     /* save state (savestate.c; slots in F7) */
+                } else if (ev.key.keysym.scancode == SDL_SCANCODE_F10) {
+                    savestate_request(1, savestate_slot());
                 } else if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE && fullscreen) {
                     fullscreen = 0;
                     SDL_SetWindowFullscreen(win, 0);
@@ -1564,10 +1603,7 @@ void platform_frame(void) {
                 break;
             }
         }
-        {
-            const Uint8 *ks = SDL_GetKeyboardState(NULL);
-            fast_forward = ks[SDL_SCANCODE_TAB] && g_cfg.allow_fast_forward && !overlay_open();
-        }
+        fast_forward = g_cfg.allow_fast_forward && !overlay_open() && fast_forward_held();
         uint16_t b = read_controllers();
         if (overlay_open()) b = 0;          /* the overlay has the player's controls */
         update_rumble();
@@ -1691,7 +1727,7 @@ void platform_frame(void) {
     }
 
     if (shot_request) { save_screenshot(frame_px, w, h, frame, wide); shot_request = 0; }
-    if (overlay_open() && shown) {      /* the overlay over this picture (the game runs behind it) */
+    if (overlay_visible() && shown) {   /* the overlay over this picture (the game runs behind it) */
         int ow, oh;
         float a, c;
         window_pixels(&ow, &oh, &a, &c);

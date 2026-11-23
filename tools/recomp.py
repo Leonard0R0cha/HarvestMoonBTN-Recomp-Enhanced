@@ -465,6 +465,10 @@ SITE_HOOKS[0x80018FC0] = 'R[2] += (uint32_t)ja_advance();'
 SITE_HOOKS[0x8001AA04] = 'if (ja_advance()) R[9] = 199;'
 SITE_HOOKS[0x80018EE4] = 'ja_macro(R[2]);'                     # ... and in the texts put in by number
 SITE_HOOKS[0x8001AA58] = 'if (ja_advance()) R[2] += 187 - 64;'
+# Save states (runtime/savestate.c): the top of the game's frame loop (80011C80, in 80011C24, which the
+# main loop 80011370 calls for each scene and which never returns itself): the game between two frames,
+# the native calls under it always the same. In the delay slot of its first jal, before the call.
+SITE_HOOKS[0x80011C84] = 'savestate_point(c);'
 TAG_STORES_IN = {0x80016280, 0x800165D8, 0x80016C08, 0x800D7144, *HUD_BUILDERS}
 # Functions whose cost stays at the console's speed under the overclock (CYC): the libetc
 # VSync wait (80032CFC) times out after (n-1) << 15 turns of its loop, so a faster loop would
@@ -504,6 +508,10 @@ SITE_HOOKS[0x8001FAD8] = 'g_sfx_quiet = 0;'
 # (runtime/fixes.c)
 SITE_HOOKS[0x8001254C] = 'small_draw_room();'
 SITE_HOOKS[0x800127C8] = 'small_draw_room();'
+# the new game's birthday screen: the four seasons' icons (a1 at 80023504) and names (a2 at
+# 80023530) spread over the box when a translated name is too long for 64 pixels (runtime/fixes.c)
+SITE_HOOKS[0x80023504] = 'R[5] = season_icon_x(c, R[17], R[5]);'
+SITE_HOOKS[0x80023530] = 'R[6] = season_name_x(R[17], R[6]);'
 
 # Hooks in one overlay only (overlays share load addresses). saveload: the three save/load
 # screens ask "Select a MEMORY CARD slot" through the menu at 80136990 (0/1 = slot, -1 =
@@ -615,6 +623,9 @@ MODULE_ENTRY_HOOKS = {'saveload': {0x80136990: 'if (memcard_slot_auto()) { R[2] 
                                   # a thrown item's flight (800CC7CC, a0 = the item): falling near a
                                   # shipping bin, it goes in (runtime/fixes.c)
                                   0x800CC7CC: 'if (ship_reach(c)) { R[2] = 1; return; }',
+                                  # the area's events under the farmer (800BDCE8): the X doors' boxes
+                                  # wider for the player's look (runtime/fixes.c)
+                                  0x800BDCE8: 'if (door_reach(c)) return;',
                                   # trading between the farmers in the storage menus (runtime/p2.c)
                                   0x800F7D34: 'if (p2_trade_move(c)) return;',
                                   0x800D57A4: 'if (p2_trade_kind(c)) return;',

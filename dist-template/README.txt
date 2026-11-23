@@ -68,7 +68,7 @@ CONTROLS
                      them. The game pauses, or runs behind it with "Pause the game" off. Hold Tab
                      or L2 to hide it. Mouse, arrows + Space, or a controller (A). Esc closes
   F9                 60 fps camera on / off, to compare
-  Tab (hold)         fast-forward (can be disabled)
+  Tab / L3 (hold)    fast-forward (can be disabled)
   F1 - F4            memory card 1 - 4 in slot 1 (shown in the window title)
   L1 / R1            on a diary list (saving or loading): previous / next memory card
   Triangle (hold)    on a diary list: hold 2 seconds to delete that diary

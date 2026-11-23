@@ -261,7 +261,7 @@ ways:
 | F1–F4 | put memory card 1–4 in slot 1 (3 diaries each; shown in the window title; not in online co-op) |
 | L1 / R1 on a diary list | previous / next memory card (shown above the list); when loading, only cards that have a diary |
 | Triangle (hold 2 s) on a diary list | delete the diary under the cursor |
-| Tab (hold) | fast-forward (can be disabled) |
+| Tab / L3 (hold) | fast-forward (can be disabled) |
 | START (hold, during a cutscene) | fast-forward the cutscene (`skipscenes`) |
 
 Farmer 2's controls (second controller or numeric keypad) are under [Co-op](#co-op).
@@ -302,7 +302,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `portraits` | `0` | `1` = draw the dialogue portraits with the redrawn images in `textures/portraits/` (same format as a texture pack, switched on and off on its own; needs `upscale` 2+; the launcher downloads them the first time) |
 |  | `dumptextures` | `0` | `1` = write each 2D sprite texture the game shows to `textures/dump/`, to draw a texture pack from (needs `upscale` 2+) |
 |  | `p2view_upscale` | `auto` | resolution of farmer 2's window in local co-op; `1` is the lightest |
-| `[behaviour]` | `fastforward` | `1` | allow holding Tab to fast-forward |
+| `[behaviour]` | `fastforward` | `1` | allow holding Tab (or L3) to fast-forward |
 |  | `fastcd` | `8` | shorter loading pauses: `1` = disc data 4× faster, `2` or more = that many times, `0` = original (music streaming is unaffected) |
 |  | `autoslot` | `1` | saving and loading use MEMORY CARD slot 1 without the "Select a MEMORY CARD slot" menu; `0` = ask |
 |  | `fastcard` | `1` | the game runs at full speed while the memory card is searched, loaded or saved; `0` = original wait |
@@ -317,7 +317,7 @@ what was learned about the game while making them: [docs/GRAPHICS.md](docs/GRAPH
 |  | `friendpage` | `0` | one more page in the START menu (Left / Right): the town's 32 people with their hearts (the bachelorettes in their heart colour); Up / Down pick one: their portrait (redrawn with `portraits`) and whether you talked to them / gave them a gift today; `0` = original |
 |  | `birthdays` | `0` | the calendar in your house marks the birthdays of the town's people (and the Harvest Sprites) with a heart, and X on the day says whose; `0` = original |
 |  | `jukebox` | `0` | the farm's music, chosen in the overlay (F7), which saves it here: `1`-`4` spring, summer, autumn, winter, `22` a rainy day; festivals and storms keep theirs; `0` = the game's own |
-|  | `earlycabinet`, `cropwalk`, `runthrough`, `bellherd`, `animalmarks`, `randomnames`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
+|  | `earlycabinet`, `cropwalk`, `runthrough`, `bellherd`, `doorreach`, `animalmarks`, `randomnames`, `staminabar`, `bulkfood` | `0` | the mods, see [Mods and cheats](#mods-and-cheats) |
 |  | `split` | `0` | `1` = farmer 2 can go into buildings alone (online co-op only, experimental), see [Co-op](#co-op) |
 |  | `record` | `0` | `1` = record every session to `recordings/` (button presses and the memory card at the start), to replay a problem exactly |
 | `[cheats]` | `cheat_money`, `cheat_stamina`, `cheat_clock`, `cheat_bag`, `cheat_items`, `cheat_tools` | `0` | see [Mods and cheats](#mods-and-cheats) |
@@ -384,6 +384,7 @@ plays. All are off by default; in online co-op the host's choice counts.
 | `earlycabinet` | Cabinet in the first house: the pile of boxes opens the cabinet before the house is extended |
 | `runthrough` | Run through animals: running goes through the cows, the sheep and the horse; walking still pushes them |
 | `bellherd` | The bell herds the animals: ringing the bell in the barn, every cow and sheep there walks out through the door to the pasture in front of it (in rows, not on top of each other); ringing it on the pasture, they all walk back in, each to the spot it left from. The ones at the back of the barn may stay behind the troughs: ring again |
+| `doorreach` | Doors from wider: the doors that open with X (the house, the barn, the hen house, the shops in town) work from a wider spot in front of them, not only from just before the middle of the door. The doors walked through and the farm's ways out are as in the original. |
 | `animalmarks` | Marks over the animals: over each cow, sheep, chicken, the horse and the dog, a small icon for each care still left today (talk, brush, milk, shear, feed); each goes away once done, and they come back the next day |
 | `randomnames` | Random names: on the naming screen, Select fills in a random name for the farmer, the farm, the dog, the horse, the baby or the animal (again for another). The lists follow the game's language; your own go in `names.txt` next to the exe (see `names-example.txt`; not read online, where both sides use the built-in lists) |
 | `cropwalk` | Walk through crops and weeds: you can walk through your planted crops, so the one in the middle of a 3×3 patch is always in reach; X picks the ripe crop (or weed) in front of you, or the ripe one under you, without lining up |

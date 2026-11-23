@@ -116,12 +116,13 @@ OPTIONS = [
     ('mods', 'behaviour', 'buildorder', 'bool'),
     ('mods', 'behaviour', 'runthrough', 'bool'),
     ('mods', 'behaviour', 'bellherd', 'bool'),
+    ('mods', 'behaviour', 'doorreach', 'bool'),
     ('mods', 'behaviour', 'animalmarks', 'bool'),
     ('mods', 'behaviour', 'randomnames', 'bool'),
     ('mods', 'behaviour', 'friendpage', 'bool'),
     ('mods', 'behaviour', 'birthdays', 'bool'),
-] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS] \
-  + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS] \
+] + [('keyboard', 'keyboard', 'key_' + b, 'key') for b in BUTTONS + ['fastforward']] \
+  + [('controller', 'controller', 'pad_' + b, 'pad') for b in BUTTONS + ['fastforward']] \
   + [('controller', 'controller', 'stick_as_dpad', 'bool'), ('controller', 'controller', 'rumble', 'bool:1')] \
   + [('coop', 'netplay', 'coop_address', 'text'), ('coop', 'netplay', 'coop_port', 'text'),
      ('coop', 'netplay', 'coop_delay', 'choice:3|2|4|5|6|8'), ('coop', 'netplay', 'coop_p2', 'bool')]   + [('p2', 'video', 'p2view_upscale', 'choice:auto|1|2|3|4'), ('p2', 'behaviour', 'split', 'bool')] \
@@ -276,7 +277,7 @@ TEXT = {
                    'is not affected.'),
         'textspeed': ('Text speed', 'How fast dialogue is typed: 1 = original, up to 16.'),
         'skipscenes': ('Fast-forward cutscenes', 'Hold START during a cutscene.'),
-        'fastforward': ('Fast-forward with Tab', 'Hold Tab to run the game at full speed.'),
+        'fastforward': ('Fast-forward with Tab / L3', 'Hold Tab (or L3 on the controller) to run the game at full speed.'),
         'overclock': ('Processor speed', 'In percent: 100 = the original PlayStation (slows down in busy '
                       'scenes), 200 = no slowdowns.'),
         'emptybag': ('Empty rucksack: R1 / R2 do nothing', 'So running doesn\'t stop when you press them by '
@@ -291,11 +292,14 @@ TEXT = {
                      'hands, the rest go to the rucksack and then to the fridge.'),
         'spritehire': ('Hire the sprites through the Chef', 'The Chef asks how many of the free sprites go '
                        'and for how long: 1 week (200G each) or 30 days (450G each). Talk to a hired sprite to change its '
-                       'job. Sprites also work in spring, 3 times as fast, with their skills at the highest.'),
+                       'job or renew the contract of all of them (left or right picks 1 week or 30 days). Sprites also work in spring, 3 times as fast, with their skills at the highest.'),
         'sturdygreenhouse': ('Storm-proof greenhouse', 'Typhoons and blizzards no longer break the greenhouse. With the building order on, Gotz builds it: 10000G and 700 lumber.'),
         'biggreenhouse': ('Bigger greenhouse', 'The greenhouse is 12 rows deeper: 7 x 19 fields instead of 7 x 7. With the building order on, Gotz builds it after the storm-proof one: 30000G and 500 lumber.'),
         'buildorder': ('Pick the building order', 'Gotz asks which extension to build next (hen house, kitchen, barn, bigger house, greenhouse) instead of the fixed order; each keeps its own price and lumber.'),
         'runthrough': ('Run through animals', 'Running goes through the cows, the sheep and the horse; walking still pushes them.'),
+        'doorreach': ('Doors from wider', 'The doors you open with X (your house, the barn, the hen house, the shops in town) work from '
+                      'a wider spot in front of them: you do not need to stand just before the middle of the door. '
+                      'Off: only from the narrow original spot.'),
         'bellherd': ('The bell herds the animals', 'Ring the bell inside the barn: every cow and sheep there walks to the door on its own '
                      'and out to the pasture, where they stand in rows in front of the barn. Ring it on the pasture: they all walk back in, '
                      'each to the spot it left from. They can take up to a minute; the ones at the back of the barn go round the troughs and '
@@ -376,7 +380,7 @@ TEXT = {
                    '16 = 16x. A música não é afetada.'),
         'textspeed': ('Velocidade do texto', 'Quão rápido o diálogo aparece: 1 = original, até 16.'),
         'skipscenes': ('Acelerar cenas', 'Segure START durante uma cena.'),
-        'fastforward': ('Acelerar com Tab', 'Segure Tab para o jogo rodar em velocidade máxima.'),
+        'fastforward': ('Acelerar com Tab / L3', 'Segure Tab (ou L3 no controle) para o jogo rodar em velocidade máxima.'),
         'overclock': ('Velocidade do processador', 'Em porcentagem: 100 = o PlayStation original (fica lento em '
                       'cenas cheias), 200 = sem lentidão.'),
         'emptybag': ('Mochila vazia: R1 / R2 não fazem nada', 'Para não parar de correr ao apertar sem querer.'),
@@ -390,11 +394,14 @@ TEXT = {
                      'fica na mão, o resto vai para a mochila e depois para a geladeira.'),
         'spritehire': ('Contratar os duendes pelo Chef', 'O Chef pergunta quantos dos duendes livres vão e por '
                        'quanto tempo: 1 semana (200G cada) ou 30 dias (450G cada). Fale com um duende contratado para '
-                       'trocar o trabalho dele. Eles também trabalham na primavera, 3 vezes mais rápido e com as habilidades no máximo.'),
+                       'trocar o trabalho dele ou renovar o contrato de todos (esquerda ou direita escolhe 1 semana ou 30 dias). Eles também trabalham na primavera, 3 vezes mais rápido e com as habilidades no máximo.'),
         'sturdygreenhouse': ('Estufa resistente', 'Tufões e nevascas não quebram mais a estufa. Com a ordem das ampliações ligada, o Gotz constrói: 10000G e 700 de madeira.'),
         'biggreenhouse': ('Estufa maior', 'A estufa fica 12 fileiras mais funda: 7 x 19 canteiros em vez de 7 x 7. Com a ordem das ampliações ligada, o Gotz amplia depois da resistente: 30000G e 500 de madeira.'),
         'buildorder': ('Escolher a ordem das ampliações', 'O Gotz pergunta qual ampliação construir (galinheiro, cozinha, estábulo, casa maior, estufa) em vez da ordem fixa; cada uma com seu preço e sua madeira.'),
         'runthrough': ('Correr atravessa os animais', 'Correndo você passa pelas vacas, ovelhas e pelo cavalo; andando continua empurrando.'),
+        'doorreach': ('Portas com alcance maior', 'As portas que se abrem com X (a sua casa, o celeiro, o galinheiro, as lojas da cidade) '
+                      'funcionam de um trecho mais largo na frente delas: não precisa ficar bem no meio da porta. '
+                      'Desligado: só do ponto estreito do jogo original.'),
         'bellherd': ('Sino leva os animais', 'Toque o sino dentro do celeiro: todas as vacas e ovelhas de lá andam sozinhas até a porta '
                      'e saem para o pasto, onde ficam em fileiras na frente do celeiro. Toque o sino no pasto: todas voltam andando para dentro, '
                      'cada uma para o lugar de onde saiu. Elas levam até 1 minuto; as do fundo do celeiro contornam os cochos e às vezes ficam '
@@ -478,7 +485,7 @@ TEXT = {
                    'La música no se ve afectada.'),
         'textspeed': ('Velocidad del texto', 'Qué tan rápido aparece el diálogo: 1 = original, hasta 16.'),
         'skipscenes': ('Acelerar escenas', 'Mantén START durante una escena.'),
-        'fastforward': ('Acelerar con Tab', 'Mantén Tab para que el juego corra a velocidad máxima.'),
+        'fastforward': ('Acelerar con Tab / L3', 'Mantén Tab (o L3 en el mando) para que el juego corra a velocidad máxima.'),
         'overclock': ('Velocidad del procesador', 'En porcentaje: 100 = la PlayStation original (se ralentiza en '
                       'escenas cargadas), 200 = sin ralentizaciones.'),
         'emptybag': ('Mochila vacía: R1 / R2 no hacen nada', 'Para no dejar de correr si los pulsas sin querer.'),
@@ -492,11 +499,14 @@ TEXT = {
                      'queda en tus manos, el resto va a la mochila y luego a la nevera.'),
         'spritehire': ('Contratar a los duendes con el Chef', 'El Chef pregunta cuántos de los duendes libres van y '
                        'por cuánto tiempo: 1 semana (200G cada uno) o 30 días (450G cada uno). Habla con un duende contratado '
-                       'para cambiar su trabajo. También trabajan en primavera, 3 veces más rápido y con las habilidades al máximo.'),
+                       'para cambiar su trabajo o renovar el contrato de todos (izquierda o derecha elige 1 semana o 30 días). También trabajan en primavera, 3 veces más rápido y con las habilidades al máximo.'),
         'sturdygreenhouse': ('Invernadero resistente', 'Los tifones y las ventiscas ya no rompen el invernadero. Con el orden de ampliaciones activo, Gotz lo construye: 10000G y 700 de madera.'),
         'biggreenhouse': ('Invernadero más grande', 'El invernadero tiene 12 filas más de fondo: 7 x 19 parcelas en vez de 7 x 7. Con el orden de ampliaciones activo, Gotz lo amplía después del resistente: 30000G y 500 de madera.'),
         'buildorder': ('Elegir el orden de las ampliaciones', 'Gotz pregunta qué ampliación construir (gallinero, cocina, establo, casa más grande, invernadero) en vez del orden fijo; cada una con su precio y su madera.'),
         'runthrough': ('Correr atraviesa los animales', 'Corriendo pasas a través de las vacas, las ovejas y el caballo; caminando sigues empujándolos.'),
+        'doorreach': ('Puertas con más alcance', 'Las puertas que se abren con X (tu casa, el establo, el gallinero, las tiendas del pueblo) '
+                      'funcionan desde un tramo más ancho frente a ellas: no hace falta quedarse justo en el medio de la puerta. '
+                      'Desactivado: solo desde el punto estrecho del juego original.'),
         'bellherd': ('La campana lleva a los animales', 'Toca la campana dentro del establo: todas las vacas y ovejas de allí caminan solas hasta '
                      'la puerta y salen al prado, donde quedan en filas frente al establo. Tócala en el prado: todas vuelven caminando adentro, '
                      'cada una al lugar de donde salió. Pueden tardar hasta 1 minuto; las del fondo del establo rodean los comederos y a veces '
@@ -538,13 +548,13 @@ TEXT = {
 BUTTON_NAMES = {
     'en': {'up': 'Up', 'down': 'Down', 'left': 'Left', 'right': 'Right', 'cross': 'Cross (X)',
            'circle': 'Circle (O)', 'square': 'Square', 'triangle': 'Triangle', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Fast-forward (hold)'},
     'pt': {'up': 'Cima', 'down': 'Baixo', 'left': 'Esquerda', 'right': 'Direita', 'cross': 'Xis (X)',
            'circle': 'Círculo (O)', 'square': 'Quadrado', 'triangle': 'Triângulo', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Acelerar (segurar)'},
     'es': {'up': 'Arriba', 'down': 'Abajo', 'left': 'Izquierda', 'right': 'Derecha', 'cross': 'Equis (X)',
            'circle': 'Círculo (O)', 'square': 'Cuadrado', 'triangle': 'Triángulo', 'l1': 'L1', 'r1': 'R1',
-           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT'},
+           'l2': 'L2', 'r2': 'R2', 'start': 'START', 'select': 'SELECT', 'fastforward': 'Acelerar (mantener)'},
 }
 UI = {
     'en': {
@@ -567,7 +577,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'On a diary list: previous / next memory card'),
             ('Triangle (hold)', 'On a diary list: hold 2 seconds to delete that diary'),
             ('START (hold)', 'Fast-forward a cutscene'),
-            ('Tab (hold)', 'Fast-forward the game'),
+            ('Tab / L3 (hold)', 'Fast-forward the game'),
             ('F5', 'Cheats, while playing'),
             ('F9', '60 fps camera on / off'),
             ('F11  /  Alt+Enter', 'Fullscreen'),
@@ -687,7 +697,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'Na lista de diários: memory card anterior / seguinte'),
             ('Triângulo (segurar)', 'Na lista de diários: segure 2 segundos para apagar o diário'),
             ('START (segurar)', 'Acelera uma cena'),
-            ('Tab (segurar)', 'Acelera o jogo'),
+            ('Tab / L3 (segurar)', 'Acelera o jogo'),
             ('F5', 'Cheats, durante o jogo'),
             ('F9', 'Liga / desliga a câmera a 60 fps'),
             ('F11  /  Alt+Enter', 'Tela cheia'),
@@ -808,7 +818,7 @@ UI = {
             ('L1 / R1  (Q / W)', 'En la lista de diarios: memory card anterior / siguiente'),
             ('Triángulo (mantener)', 'En la lista de diarios: mantén 2 segundos para borrar ese diario'),
             ('START (mantener)', 'Acelera una escena'),
-            ('Tab (mantener)', 'Acelera el juego'),
+            ('Tab / L3 (mantener)', 'Acelera el juego'),
             ('F5', 'Trucos, durante el juego'),
             ('F9', 'Activa / desactiva la cámara a 60 fps'),
             ('F11  /  Alt+Enter', 'Pantalla completa'),
@@ -1977,10 +1987,12 @@ def main():
         if job['proc']:
             return
         disc = game_data(val('disc'))
+        make_pak = val('build_pak') == '1'
         if not disc or not disc.lower().endswith(('.cue', '.bin')):
             disc = None                     # a rebuild can do with the files a build took from the disc
-            if val('build_pak') == '1' or not all(os.path.exists(os.path.join(WORK, 'extract', n))
-                                                  for n in GAME_FILES):
+            if make_pak and os.path.exists(os.path.join(HERE, 'HarvestMoonBTN.pak')):
+                make_pak = False            # no disc image to make it from, and the pack made before stays
+            if make_pak or not all(os.path.exists(os.path.join(WORK, 'extract', n)) for n in GAME_FILES):
                 messagebox.showwarning('Harvest Moon', T('need_cue'))
                 return
         save()
@@ -1993,7 +2005,7 @@ def main():
         own_cc = os.name != 'nt' and not getattr(sys, 'frozen', False) and shutil.which('cc')
         cmds = [] if own_cc else [[sys.executable, os.path.join(WORK, 'tools', 'fetch_deps.py'), '--min']]
         cmds.append([sys.executable, os.path.join(WORK, 'build.py'), '--into', HERE] +
-                    (['--disc', disc] if disc else []) + (['--pak'] if val('build_pak') == '1' else []) +
+                    (['--disc', disc] if disc else []) + (['--pak'] if make_pak else []) +
                     (['--lang', want_lang()] if want_lang() != 'en' else []))
         env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT='1', PYTHONUNBUFFERED='1', PYTHONIOENCODING='utf-8')
         lines = queue.Queue()
@@ -2357,7 +2369,23 @@ def main():
 
     for v in vars_.values():
         v.trace_add('write', changed)
-    vars_['build_pak'] = tk.StringVar(value='0')    # the Build page's, not a setting
+    # the Build page's, kept in [launcher] (the rebuild after an update makes the pack again); never chosen:
+    # on if a pack is already there
+    vars_['build_pak'] = tk.StringVar(value=loaded.get('build_pak') if loaded.get('build_pak') in ('0', '1') else
+                                      '1' if os.path.exists(os.path.join(HERE, 'HarvestMoonBTN.pak')) else '0')
+
+    def keep_pak(*_):
+        nonlocal text
+        try:
+            if os.path.exists(INI):
+                text = open(INI, encoding='utf-8').read()
+            text = set_ini(text, 'launcher', 'build_pak', val('build_pak'))
+            with open(INI, 'w', encoding='utf-8') as f:
+                f.write(text)
+            loaded['build_pak'] = val('build_pak')
+        except Exception:
+            pass
+    vars_['build_pak'].trace_add('write', keep_pak)
     build()
     if rebuild:
         start_build()
