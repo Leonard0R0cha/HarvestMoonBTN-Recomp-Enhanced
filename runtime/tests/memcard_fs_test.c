@@ -20,6 +20,8 @@ int netplay_role(void) { return 0; }
 int netplay_active(void) { return 0; }
 const char *exe_dir_path(void) { return "./"; }
 void platform_audio_push(const int16_t *s, int n) { (void)s; (void)n; }
+unsigned netplay_build_id(void) { return 0; }
+void platform_state_loaded(void) {}
 
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
